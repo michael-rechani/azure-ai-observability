@@ -146,4 +146,11 @@ terraform -chdir=terraform\grafana test
 
 Mock tests do not contact Azure/Grafana and cannot prove that provider authentication, Flex deployment, region/SKU availability, metric dimensions, dashboards, KQL, billing permissions, or alert delivery work in your environment. Keep the provider lock files committed and use the same locked versions in automation.
 
+When updating providers, refresh the lock files for the platforms used by CI and contributors before committing them:
+
+```powershell
+terraform -chdir=terraform\azure providers lock -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_amd64 -platform=darwin_arm64
+terraform -chdir=terraform\grafana providers lock -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_amd64 -platform=darwin_arm64
+```
+
 **Destruction is destructive:** removing resources from configuration or running `terraform destroy` can remove dashboards, alerts, Grafana, telemetry resources, and stored telemetry. Review every plan and your retention policies. If intentionally retiring the entire stack, handle the Grafana stage first while the endpoint remains reachable, then the Azure stage. Existing model deployments and target account resources are not Terraform-managed.

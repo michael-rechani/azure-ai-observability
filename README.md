@@ -1,4 +1,6 @@
-# Azure AI observability
+# Azure AI Observatory
+
+**Foundry agents · OpenAI PTUs · Cost visibility**
 
 Monitoring-only starter for **Microsoft Foundry** and **Azure OpenAI provisioned throughput (PTUs)**, with separate dashboards on shared **Azure Managed Grafana + Azure Monitor + Application Insights / Log Analytics** infrastructure.
 
@@ -140,6 +142,8 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 - Log retention defaults to 30 days with a 1 GB daily ingestion cap. A cap can cause gaps and is **not** a complete spending limit.
 - The opt-in cost collector receives **Cost Management Reader for the subscription**, even though it queries only the selected account IDs. Grafana Viewer access is read-only, not a data-isolation boundary.
 - Grafana hosting, telemetry ingestion/retention, alert rules, Function execution, and storage can incur charges. PTU deployment and reservation charges remain separate.
+
+For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
 ## References
 
