@@ -97,6 +97,27 @@ resource "azurerm_storage_account" "cost" {
   shared_access_key_enabled        = false
   default_to_oauth_authentication  = true
   cross_tenant_replication_enabled = false
+
+  blob_properties {
+    delete_retention_policy {
+      days = 7
+    }
+
+    container_delete_retention_policy {
+      days = 7
+    }
+  }
+}
+
+resource "azurerm_monitor_diagnostic_setting" "cost_blob_read" {
+  count                      = var.enable_cost_pipeline ? 1 : 0
+  name                       = "cost-storage-blob-read"
+  target_resource_id         = "${azurerm_storage_account.cost[0].id}/blobServices/default"
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.monitoring.id
+
+  enabled_log {
+    category = "StorageRead"
+  }
 }
 
 resource "azurerm_storage_container" "cost_deployment" {

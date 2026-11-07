@@ -107,6 +107,19 @@ COST_DATA = {
         f"openai-prod,AmortizedCost,USD,{amortized_total - amortized_first:.2f},/subscriptions/demo/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/openai-prod\n"
     ),
 }
+BUSINESS_DATA = {
+    1: COST_DATA[2],
+    2: COST_DATA[3],
+    3: AGENT_DATA[2],
+    4: PTU_DATA[1],
+    5: COST_DATA[5],
+    6: AGENT_DATA[1],
+    7: PTU_DATA[3],
+    8: [
+        ("Input tokens", PTU_DATA[5][0][1]),
+        ("Output tokens", PTU_DATA[6][0][1]),
+    ],
+}
 
 
 def demo_dashboard(source, samples):
@@ -144,6 +157,7 @@ def build():
         "foundry-agents-demo.json": demo_dashboard(real["foundry-agents.json"], AGENT_DATA),
         "openai-ptu-demo.json": demo_dashboard(real["openai-ptu.json"], PTU_DATA),
         "azure-ai-costs-demo.json": demo_dashboard(real["azure-ai-costs.json"], COST_DATA),
+        "business-overview-demo.json": demo_dashboard(real["business-overview.json"], BUSINESS_DATA),
     }
 
 

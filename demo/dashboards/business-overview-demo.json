@@ -1,0 +1,671 @@
+{
+  "uid": "demo-azure-ai-business-overview",
+  "title": "DEMO - Azure AI - Business overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "azure",
+    "ai-observability",
+    "demo-simulated-data"
+  ],
+  "timezone": "utc",
+  "refresh": false,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 999,
+      "type": "text",
+      "title": "SIMULATED DATA ONLY",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Preview only.** Not connected to Azure; filters do not change the sample data."
+      }
+    },
+    {
+      "id": 1,
+      "title": "Cost collection status",
+      "type": "table",
+      "description": "Shows whether a complete snapshot is current and covers the selected period. Missing or stale collection is not zero cost.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "Status,Coverage,LastCollectedUTC,HistoryFromUTC,HistoryThroughUTC,ReportedRows\nCurrent,Within history,2026-10-31 06:00,2026-08-03,2026-10-31,360\n"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "LastCollectedUTC": true,
+              "HistoryFromUTC": true,
+              "HistoryThroughUTC": true,
+              "ReportedRows": true
+            },
+            "indexByName": {
+              "Status": 0,
+              "Coverage": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Actual cost by currency",
+      "type": "table",
+      "description": "Pretax account-attributed actual cost for the selected UTC period. Currencies remain separate; use the cost dashboard for amortized cost.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "Currency,Amount\nUSD,2575.80\n"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "Observed agent runs and failures",
+      "type": "timeseries",
+      "description": "Application Insights counts, weighted for sampling when present. No telemetry is not evidence of zero activity or healthy service. Counts are not a coverage percentage.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "ObservedRuns",
+          "stringInput": "1100,1150,1130,1200,1250,1230,1280,1320,1400,1350,1380,1420,1360,1340,1390,1350,1300,1320,1340,1310"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "FailedRuns",
+          "stringInput": "8,10,9,11,12,10,13,15,19,14,16,18,15,14,17,15,12,13,14,12"
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*ObservedRuns.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*FailedRuns.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "PTU utilization - average",
+      "type": "timeseries",
+      "description": "Azure platform metric for the configured provisioned deployment. Availability depends on the model and SKU.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "Average",
+          "stringInput": "48,50,49,52,51,53,56,59,57,55,59,61,58,56,55,58,57,55,54,56"
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Daily actual cost by currency",
+      "type": "timeseries",
+      "description": "Daily account-attributed actual cost. Each currency is a separate series; billing may be revised or delayed.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "Actual - USD",
+          "stringInput": "112.5,119.2,116.3,124.0,127.4,121.8,132.1,136.2,139.5,130.8,135.1,141.2,133.4,128.6,137.2,131.3,125.9,129.4,127.8,126.1"
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Agent run latency",
+      "type": "timeseries",
+      "description": "Percentiles reflect retained, instrumented spans and are not an end-to-end service-level objective.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "P50_ms",
+          "stringInput": "430,420,445,440,450,455,460,480,520,460,450,475,490,470,460,455,480,465,450,455"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "P95_ms",
+          "stringInput": "1050,1100,1080,1120,1150,1180,1200,1270,1450,1250,1200,1220,1300,1250,1200,1180,1280,1220,1190,1210"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "C",
+          "scenarioId": "csv_metric_values",
+          "alias": "P99_ms",
+          "stringInput": "1800,1850,1820,1900,1950,1980,2050,2150,2500,2150,2050,2100,2200,2150,2050,2000,2200,2100,2050,2100"
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "PTU requests by status code",
+      "type": "timeseries",
+      "description": "Azure platform request counts by status for the configured deployment. Counts are per time bucket, not per second.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "200",
+          "stringInput": "1050,1100,1080,1150,1200,1180,1250,1280,1310,1250,1290,1340,1300,1270,1320,1290,1250,1280,1300,1260"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "429",
+          "stringInput": "10,12,9,15,18,12,20,25,30,21,28,36,27,24,33,22,18,26,23,19"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*429.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "PTU input and output tokens",
+      "type": "timeseries",
+      "description": "Azure platform token counts per time bucket for the configured deployment.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "Input tokens",
+          "stringInput": "82000,86000,84000,91000,96000,93000,102000,110000,115000,108000,116000,120000,112000,109000,114000,107000,100000,103000,98000,95000"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "Output tokens",
+          "stringInput": "24000,26000,25000,28000,30000,31000,35000,39000,42000,37000,40000,43000,39000,38000,41000,37000,34000,36000,35000,33000"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "workspaceResourceId",
+        "label": "Agent telemetry workspace ARM ID",
+        "type": "textbox",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "current": {
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      },
+      {
+        "name": "monitoringWorkspaceResourceId",
+        "label": "Cost data workspace ARM ID",
+        "type": "textbox",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "current": {
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuSubscription",
+        "label": "ptuSubscription",
+        "type": "textbox",
+        "query": "00000000-0000-0000-0000-000000000000",
+        "current": {
+          "text": "00000000-0000-0000-0000-000000000000",
+          "value": "00000000-0000-0000-0000-000000000000"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuResourceGroup",
+        "label": "ptuResourceGroup",
+        "type": "textbox",
+        "query": "existing-openai-rg",
+        "current": {
+          "text": "existing-openai-rg",
+          "value": "existing-openai-rg"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuAccount",
+        "label": "ptuAccount",
+        "type": "textbox",
+        "query": "existing-openai-account",
+        "current": {
+          "text": "existing-openai-account",
+          "value": "existing-openai-account"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuRegion",
+        "label": "ptuRegion",
+        "type": "textbox",
+        "query": "eastus",
+        "current": {
+          "text": "eastus",
+          "value": "eastus"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuDeployment",
+        "label": "ptuDeployment",
+        "type": "textbox",
+        "query": "replace-with-provisioned-deployment-name",
+        "current": {
+          "text": "replace-with-provisioned-deployment-name",
+          "value": "replace-with-provisioned-deployment-name"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
+}

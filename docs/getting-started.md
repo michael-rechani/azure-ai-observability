@@ -139,7 +139,10 @@ Copy the example. Open `infra/main.local.bicepparam` in a text editor; keep it i
 
 ```powershell
 $parametersFile = Join-Path $repo 'infra' 'main.local.bicepparam'
-Copy-Item (Join-Path $repo 'infra' 'main.example.bicepparam') $parametersFile
+if (Test-Path -LiteralPath $parametersFile) {
+    throw "Refusing to overwrite '$parametersFile'; edit the existing local configuration."
+}
+Copy-Item -LiteralPath (Join-Path $repo 'infra' 'main.example.bicepparam') -Destination $parametersFile -ErrorAction Stop
 ```
 
 Replace every example subscription ID, account name, account resource group, account region, PTU deployment name, admin object ID, and email. Set:
@@ -153,7 +156,7 @@ Replace every example subscription ID, account name, account resource group, acc
 | `monitoredAccounts` | The existing accounts to monitor and their actual provisioned deployment names. Use `ptuDeployments: []` for an account without PTUs. |
 | `foundryDashboardAccount`, `ptuDashboardAccount` | Initial dashboard selections. Each non-null account must also appear in `monitoredAccounts`; use that account's actual region. |
 | `enableAgentAlerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
-| `enableCostPipeline` | Leave `false` for no cost collector, or set `true` after reviewing the permissions and charges in [cost collection](costs.md). This also deploys the cost dashboard. |
+| `enableCostPipeline` | Leave `false` for no cost collector, or set `true` after reviewing the permissions and charges in [cost collection](costs.md). This also enables the cost and business dashboards. |
 
 **Add** `param enablePtuAlerts = false` to the file: PTU alerts otherwise default to enabled. Turn them on later, after [discovering the metrics](setup.md#metric-discovery).
 
@@ -298,8 +301,15 @@ For either option, copy the provided backend declaration into **both** Terraform
 $azureStage = Join-Path $repo 'terraform' 'azure'
 $grafanaStage = Join-Path $repo 'terraform' 'grafana'
 $backendExample = Join-Path $repo 'terraform' 'azurerm.backend.tf.example'
-Copy-Item $backendExample (Join-Path $azureStage 'backend.local.tf')
-Copy-Item $backendExample (Join-Path $grafanaStage 'backend.local.tf')
+$azureBackendFile = Join-Path $azureStage 'backend.local.tf'
+$grafanaBackendFile = Join-Path $grafanaStage 'backend.local.tf'
+foreach ($destination in @($azureBackendFile, $grafanaBackendFile)) {
+    if (Test-Path -LiteralPath $destination) {
+        throw "Refusing to overwrite '$destination'; edit the existing local backend configuration."
+    }
+}
+Copy-Item -LiteralPath $backendExample -Destination $azureBackendFile -ErrorAction Stop
+Copy-Item -LiteralPath $backendExample -Destination $grafanaBackendFile -ErrorAction Stop
 ```
 
 Choose a unique, nonsecret key prefix for this deployment and environment, such as `dev-ai-observatory-team1`. Do not reuse another stack's keys. Initialize each stage with a **different key** in the same container:
@@ -330,7 +340,11 @@ The `backend.local.tf` files are ignored by Git and contain no credentials. Terr
 Copy the example and open `terraform/azure/local.tfvars` in a text editor:
 
 ```powershell
-Copy-Item (Join-Path $azureStage 'example.tfvars.example') (Join-Path $azureStage 'local.tfvars')
+$azureTfvarsFile = Join-Path $azureStage 'local.tfvars'
+if (Test-Path -LiteralPath $azureTfvarsFile) {
+    throw "Refusing to overwrite '$azureTfvarsFile'; edit the existing local configuration."
+}
+Copy-Item -LiteralPath (Join-Path $azureStage 'example.tfvars.example') -Destination $azureTfvarsFile -ErrorAction Stop
 ```
 
 Replace the example values:
@@ -342,7 +356,7 @@ Replace the example values:
 | `grafana_admin_object_id`, `notification_email` | Your Entra user object ID and the approved alert email address. |
 | `monitored_accounts` | The full account resource IDs and actual provisioned deployment names. Use `ptu_deployments = []` for accounts without PTUs; list a shared Foundry/PTU account only once. |
 | `enable_agent_alerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
-| `enable_cost_pipeline` | Leave `false`, or set `true` after reviewing the [cost permissions and charges](costs.md). The Grafana stage has a separate cost-dashboard switch. |
+| `enable_cost_pipeline` | Leave `false`, or set `true` after reviewing the [cost permissions and charges](costs.md). The Grafana stage has a separate switch for the cost and business dashboards. |
 
 Add `enable_ptu_alerts = false` to the file; the default is `true`. If one account is used for both Foundry and PTUs, the account map can look like this:
 
@@ -394,12 +408,16 @@ terraform "-chdir=$azureStage" output -raw workspace_resource_id
 Wait for your **Grafana Admin** assignment to propagate. Copy the example and open `terraform/grafana/local.tfvars`:
 
 ```powershell
-Copy-Item (Join-Path $grafanaStage 'example.tfvars.example') (Join-Path $grafanaStage 'local.tfvars')
+$grafanaTfvarsFile = Join-Path $grafanaStage 'local.tfvars'
+if (Test-Path -LiteralPath $grafanaTfvarsFile) {
+    throw "Refusing to overwrite '$grafanaTfvarsFile'; edit the existing local configuration."
+}
+Copy-Item -LiteralPath (Join-Path $grafanaStage 'example.tfvars.example') -Destination $grafanaTfvarsFile -ErrorAction Stop
 ```
 
 Set `grafana_endpoint` to the first output above, `subscription_id` to the selected subscription, and `dashboard_defaults.monitoring_workspace_resource_id` to the second output. Replace the `foundry_account` and `ptu_account` details with the existing accounts' resource groups, names, and **account regions**, plus the real PTU deployment name. If you do not have a PTU deployment, remove the `ptu_account` block; the PTU dashboard retains placeholder defaults until you configure one. You can also remove `foundry_account` if it is not relevant.
 
-If you enabled `enable_cost_pipeline` in the Azure stage, also set `enable_cost_dashboard = true` here. Otherwise leave it `false`. For agent telemetry in an existing workspace, configure the separate telemetry workspace and its access as described in the [Terraform guide](terraform.md#2-configure-the-grafana-stage). Save the file.
+If you enabled `enable_cost_pipeline` in the Azure stage, also set `enable_cost_dashboard = true` here. This provisions both the detailed cost dashboard and business overview. Otherwise leave it `false`. For agent telemetry in an existing workspace, configure the separate telemetry workspace and its access as described in the [Terraform guide](terraform.md#2-configure-the-grafana-stage). Save the file.
 
 Get a short-lived Grafana token without printing it, and review the plan:
 

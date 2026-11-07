@@ -34,6 +34,30 @@ def parameters():
 
 @unittest.skipUnless(PWSH, "PowerShell 7 is required to exercise Bicep deployment")
 class BicepDeploymentTests(unittest.TestCase):
+    @unittest.skipUnless(AZ, "Azure CLI with Bicep is required to inspect compiled cost resources")
+    def test_cost_storage_has_soft_delete_and_blob_read_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "cost.json"
+            result = subprocess.run(
+                [
+                    AZ, "bicep", "build", "--file", str(ROOT / "infra" / "modules" / "cost.bicep"),
+                    "--outfile", str(output),
+                ],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            template_resources = json.loads(output.read_text(encoding="utf-8"))["resources"]
+        resources = list(template_resources.values()) if isinstance(template_resources, dict) else template_resources
+        blob_service = next(item for item in resources if item["type"] == "Microsoft.Storage/storageAccounts/blobServices")
+        policies = blob_service["properties"]
+        self.assertEqual(policies["deleteRetentionPolicy"], {"enabled": True, "days": 7})
+        self.assertEqual(policies["containerDeleteRetentionPolicy"], {"enabled": True, "days": 7})
+        diagnostics = next(item for item in resources if item["type"] == "Microsoft.Insights/diagnosticSettings")
+        self.assertIn(
+            {"category": "StorageRead", "enabled": True},
+            diagnostics["properties"]["logs"],
+        )
+
     def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
@@ -120,20 +144,25 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(call["maximumRedirection"] == 0 for call in calls["http"]))
         posts = [call for call in calls["http"] if call["method"] == "Post"]
-        self.assertEqual(len(posts), 5)
+        self.assertEqual(len(posts), 6)
         source = posts[0]["body"]
         self.assertEqual(source["jsonData"]["azureAuthType"], "msi")
         self.assertEqual(source["jsonData"]["subscriptionId"], SUBSCRIPTION)
         dashboards = {call["body"]["dashboard"]["uid"]: call["body"] for call in posts[1:]}
-        self.assertEqual(len(dashboards), 4)
+        self.assertEqual(len(dashboards), 5)
         for body in dashboards.values():
             self.assertFalse(body["overwrite"])
             self.assertIn("managed-by-azure-ai-observability-bicep", body["dashboard"]["tags"])
             self.assertNotIn("${DS_AZURE_MONITOR}", json.dumps(body))
         agent_vars = dashboards["foundry-agent-operations"]["dashboard"]["templating"]["list"]
         cost_vars = dashboards["azure-ai-costs"]["dashboard"]["templating"]["list"]
+        business_vars = dashboards["azure-ai-business-overview"]["dashboard"]["templating"]["list"]
         self.assertIn("/resourceGroups/agents/", agent_vars[0]["current"]["value"])
         self.assertIn("/resourceGroups/monitoring/", cost_vars[0]["current"]["value"])
+        business_defaults = {item["name"]: item["current"]["value"] for item in business_vars}
+        self.assertIn("/resourceGroups/monitoring/", business_defaults["monitoringWorkspaceResourceId"])
+        self.assertEqual(business_defaults["ptuAccount"], "foundry-account")
+        self.assertEqual(business_defaults["ptuDeployment"], "ptu-one")
 
     def test_grafana_updates_owned_resources_with_versions(self):
         result, calls = self.run_harness("grafana", mode="existing")
@@ -141,7 +170,7 @@ class BicepDeploymentTests(unittest.TestCase):
         update = next(call for call in calls["http"] if call["method"] == "Put")
         self.assertEqual(update["body"]["version"], 7)
         dashboards = [call["body"] for call in calls["http"] if call["path"] == "/api/dashboards/db"]
-        self.assertEqual(len(dashboards), 4)
+        self.assertEqual(len(dashboards), 5)
         for body in dashboards:
             self.assertEqual(body["dashboard"]["version"], 12)
             self.assertEqual(body["dashboard"]["id"], 10)
@@ -189,7 +218,7 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertIn("host.json", calls["zipEntries"])
         self.assertIn("CollectCost/function.json", [name.replace("\\", "/") for name in calls["zipEntries"]])
         self.assertFalse(Path(calls["parameterTemp"]).exists())
-        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 4)
+        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
 
     def test_what_if_performs_no_publishing_or_grafana_changes(self):
         result, calls = self.run_harness("deploy", what_if=True)

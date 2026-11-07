@@ -35,7 +35,7 @@ class DemoDashboardTests(unittest.TestCase):
         self.assertIn("## Dashboards", introduction)
         self.assertIn("simulated data", introduction.lower())
         for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png",
-                     "cost-grafana-preview.png"):
+                     "cost-grafana-preview.png", "business-overview-preview.png"):
             path = f"docs/images/{name}"
             with self.subTest(image=name):
                 self.assertIn(f"]({path})", introduction)
@@ -65,6 +65,7 @@ class DemoDashboardTests(unittest.TestCase):
             ("foundry-agents.json", "foundry-agents-demo.json"),
             ("openai-ptu.json", "openai-ptu-demo.json"),
             ("azure-ai-costs.json", "azure-ai-costs-demo.json"),
+            ("business-overview.json", "business-overview-demo.json"),
         )
         for real_name, demo_name in pairs:
             real_panels = {panel["id"]: panel for panel in self.real[real_name]["panels"]}

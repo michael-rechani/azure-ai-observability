@@ -24,9 +24,13 @@ These are **actual Grafana screenshots with simulated data**, not results from a
 
 ![Grafana preview of Azure AI costs with simulated data](docs/images/cost-grafana-preview.png)
 
+### Business overview
+
+![Grafana preview of the Azure AI business overview with simulated data](docs/images/business-overview-preview.png)
+
 ## Deploy to Azure
 
-Choose **Terraform or Bicep**: both deploy Azure monitoring resources, roles, alerts, Grafana's data source, and dashboards. Either can also deploy the optional PowerShell Azure Function and cost dashboard. Neither path requires Python to deploy. Use only one tool for a given deployment; they do not share state or ownership.
+Choose **Terraform or Bicep**: both deploy Azure monitoring resources, roles, alerts, Grafana's data source, and dashboards. Either can also deploy the optional PowerShell Azure Function, cost dashboard, and business overview. The business overview is enabled with the cost dashboard and summarizes cost collection, observed agent activity, and PTU signals. Neither path requires Python to deploy. Use only one tool for a given deployment; they do not share state or ownership.
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
 
@@ -50,7 +54,7 @@ terraform -chdir=terraform\azure output
 
 **2. Deploy and configure Grafana dashboards**
 
-Copy `terraform/grafana/example.tfvars.example` to `terraform/grafana/local.tfvars`. Fill in `grafana_endpoint` and `dashboard_defaults.monitoring_workspace_resource_id` from the Azure outputs, plus the real subscription, Foundry account, and PTU account/deployment. Set `enable_cost_dashboard = true` if you enabled the cost pipeline. If agent telemetry already lives in another workspace, set `telemetry_workspace_resource_id` and grant Grafana access as described in the [deployment guide](docs/terraform.md#2-configure-the-grafana-stage).
+Copy `terraform/grafana/example.tfvars.example` to `terraform/grafana/local.tfvars`. Fill in `grafana_endpoint` and `dashboard_defaults.monitoring_workspace_resource_id` from the Azure outputs, plus the real subscription, Foundry account, and PTU account/deployment. Set `enable_cost_dashboard = true` if you enabled the cost pipeline; this also provisions the business overview. If agent telemetry already lives in another workspace, set `telemetry_workspace_resource_id` and grant Grafana access as described in the [deployment guide](docs/terraform.md#2-configure-the-grafana-stage).
 
 After the Grafana Admin role has propagated, use the same signed-in identity to apply the second stage:
 
@@ -67,7 +71,7 @@ Remove-Item Env:\GRAFANA_AUTH
 
 ### Deploy with Bicep
 
-Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. Set `enableCostPipeline = true` for the optional Function and cost dashboard. Use real account regions and deployment names in the dashboard defaults.
+Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. Set `enableCostPipeline = true` for the optional Function, cost dashboard, and business overview. Use real account regions and deployment names in the dashboard defaults.
 
 ```powershell
 az login
@@ -93,7 +97,8 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Evaluations | Optional evaluator score / pass-fail dashboard | Publish evaluation events explicitly; this repo does not run evaluations |
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
 | Alerting | Per-deployment PTU utilization and 429 metric alerts; opt-in agent failure-rate, p95 latency, and heartbeat alerts | Agent rules require matching telemetry; heartbeat also requires guaranteed expected traffic |
-| Cost visibility | Optional Function-fed dashboard for actual and amortized account-attributed pretax costs; current PTU allocation and an optional account-scoped budget | Billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
+| Business overview | Optional summary of cost collection, actual cost by currency, observed agent activity, and PTU signals | Cost dashboard toggle required; missing telemetry is not zero or proof of health |
+| Cost visibility | Optional Function-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | Billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
 This is a foundation for broad Foundry observability, **not a claim that every Foundry feature emits telemetry automatically**. See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.
@@ -109,9 +114,9 @@ This repository combines deployable Terraform or Bicep monitoring infrastructure
 ```text
 infra/       Bicep monitoring resources, access, alerts, and optional cost pipeline
 terraform/   Native Azure resources and Grafana data source/dashboard deployment
-dashboards/  Importable Foundry, agent, PTU, and optional cost dashboards
+dashboards/  Importable Foundry, agent, PTU, cost, and business overview dashboards
 demo/        Local-only Grafana preview using clearly labeled simulated data
-docs/images/ Actual Grafana screenshots with simulated data
+docs/images/ Actual Grafana screenshots with simulated data (no live Azure connection)
 queries/     Workspace KQL and Azure Resource Graph inventory query
 function/    Optional scheduled Azure Functions cost collector
 scripts/     Bicep/Grafana deployment helper and optional dashboard generators
@@ -143,7 +148,7 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 - The opt-in cost collector receives **Cost Management Reader for the subscription**, even though it queries only the selected account IDs. Grafana Viewer access is read-only, not a data-isolation boundary.
 - Grafana hosting, telemetry ingestion/retention, alert rules, Function execution, and storage can incur charges. PTU deployment and reservation charges remain separate.
 
-For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md).
+For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md). This repository is licensed under [Apache-2.0](LICENSE).
 
 ## References
 

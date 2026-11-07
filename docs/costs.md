@@ -1,6 +1,6 @@
 # Azure AI cost collection
 
-Both deployment paths can opt into a daily PowerShell Azure Function and a Grafana cost dashboard: `enable_cost_pipeline` plus `enable_cost_dashboard` in [Terraform](terraform.md#optional-cost-pipeline), or `enableCostPipeline` in [Bicep](bicep.md#optional-cost-collection-and-budget). This feature has not been validated with live Azure billing data.
+Both deployment paths can opt into a daily PowerShell Azure Function, a detailed Grafana cost dashboard, and a business overview: `enable_cost_pipeline` plus `enable_cost_dashboard` in [Terraform](terraform.md#optional-cost-pipeline), or `enableCostPipeline` in [Bicep](bicep.md#optional-cost-collection-and-budget). The overview shows collection freshness, actual cost by currency, observed agent activity, and PTU signals without blending them into a health score. This feature has not been validated with live Azure billing data.
 
 ## What the numbers mean
 
@@ -18,7 +18,7 @@ Daily queries use windows of at most 27 days to avoid calendar-month truncation,
 
 Each successful run appends a snapshot. A completion marker is written only after all data has been submitted, and the dashboard waits until the expected distinct row count is queryable. Failed or partially ingested runs are ignored; the next scheduled run starts over. The dashboard searches for completed snapshots from the last 14 days, flags those older than 48 hours as stale, and warns when the selected period is outside the collected window. No reported rows means **no cost data reported**, not zero cost.
 
-The workspace's retention and daily ingestion cap apply to these records. Snapshot copies, queries, storage, Function execution, Grafana, and alerts can incur charges. The Function and storage use public endpoints protected by Entra authorization; private networking requires a separate design.
+The workspace's retention and daily ingestion cap apply to these records. Snapshot copies, queries, storage, Function execution, Grafana, and alerts can incur charges. The deployment storage account enables seven-day soft delete for blobs and containers; deleted deployment packages remain recoverable during that window and can incur storage charges. Blob `StorageRead` diagnostics are sent to the monitoring workspace and can incur Log Analytics ingestion and retention charges. The Function and storage use public endpoints protected by Entra authorization; private networking requires a separate design.
 
 ## Troubleshooting
 

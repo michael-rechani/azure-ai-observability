@@ -13,7 +13,10 @@ locals {
     foundry_overview = "foundry-overview.json"
     foundry_agents   = "foundry-agents.json"
     openai_ptu       = "openai-ptu.json"
-  }, var.enable_cost_dashboard ? { azure_ai_costs = "azure-ai-costs.json" } : {})
+    }, var.enable_cost_dashboard ? {
+    azure_ai_costs    = "azure-ai-costs.json"
+    business_overview = "business-overview.json"
+  } : {})
 
   source_dashboards = {
     for key, filename in local.dashboard_files :
@@ -25,6 +28,9 @@ locals {
   })
   cost_defaults = var.dashboard_defaults.monitoring_workspace_resource_id == null ? tomap({}) : tomap({
     workspaceResourceId = var.dashboard_defaults.monitoring_workspace_resource_id
+  })
+  business_cost_defaults = var.dashboard_defaults.monitoring_workspace_resource_id == null ? tomap({}) : tomap({
+    monitoringWorkspaceResourceId = var.dashboard_defaults.monitoring_workspace_resource_id
   })
   foundry_defaults = var.dashboard_defaults.foundry_account == null ? tomap({}) : tomap({
     subscription  = var.subscription_id
@@ -40,11 +46,23 @@ locals {
     region        = var.dashboard_defaults.ptu_account.region
     deployment    = var.dashboard_defaults.ptu_account.deployment
   })
+  business_ptu_defaults = var.dashboard_defaults.ptu_account == null ? tomap({}) : tomap({
+    ptuSubscription  = var.subscription_id
+    ptuResourceGroup = var.dashboard_defaults.ptu_account.resource_group
+    ptuAccount       = var.dashboard_defaults.ptu_account.name
+    ptuRegion        = var.dashboard_defaults.ptu_account.region
+    ptuDeployment    = var.dashboard_defaults.ptu_account.deployment
+  })
   dashboard_default_values = {
     foundry_overview = merge(local.foundry_defaults, local.telemetry_defaults)
     foundry_agents   = local.telemetry_defaults
     openai_ptu       = local.ptu_defaults
     azure_ai_costs   = local.cost_defaults
+    business_overview = merge(
+      local.telemetry_defaults,
+      local.business_cost_defaults,
+      local.business_ptu_defaults,
+    )
   }
 }
 
@@ -72,8 +90,8 @@ resource "grafana_dashboard" "monitoring" {
 
   lifecycle {
     precondition {
-      condition     = each.key != "azure_ai_costs" || var.dashboard_defaults.monitoring_workspace_resource_id != null
-      error_message = "Set dashboard_defaults.monitoring_workspace_resource_id when enabling the cost dashboard."
+      condition     = !contains(["azure_ai_costs", "business_overview"], each.key) || var.dashboard_defaults.monitoring_workspace_resource_id != null
+      error_message = "Set dashboard_defaults.monitoring_workspace_resource_id when enabling cost dashboards."
     }
     precondition {
       condition = alltrue([

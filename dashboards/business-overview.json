@@ -1,0 +1,764 @@
+{
+  "uid": "azure-ai-business-overview",
+  "title": "Azure AI - Business overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "azure",
+    "ai-observability"
+  ],
+  "timezone": "utc",
+  "refresh": "1h",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Cost collection status",
+      "type": "table",
+      "description": "Shows whether a complete snapshot is current and covers the selected period. Missing or stale collection is not zero cost.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$monitoringWorkspaceResourceId"
+            ],
+            "query": "// Shared prefix: choose only the newest fully ingested snapshot.\nlet SnapshotRecords = materialize(\n    AICostSnapshot_CL\n    | where TimeGenerated >= ago(14d)\n    | where RecordType in (\"Cost\", \"Complete\")\n);\nlet CostRows = materialize(\n    SnapshotRecords\n    | where RecordType == \"Cost\" and isnotempty(RunId) and isnotempty(RowKey)\n    | summarize arg_max(TimeGenerated, *) by RunId, RowKey\n);\nlet RowCounts = CostRows | summarize IngestedRows = count() by RunId;\nlet LatestCompleteSnapshot = materialize(\n    SnapshotRecords\n    | where RecordType == \"Complete\" and isnotempty(RunId)\n    | summarize arg_max(TimeGenerated, *) by RunId\n    | join kind=leftouter RowCounts on RunId\n    | extend IngestedRows = coalesce(IngestedRows, long(0))\n    | where ExpectedRows == IngestedRows\n    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd\n    | top 1 by SnapshotTime desc\n);\nlet LatestCostRows = CostRows\n    | where RunId in (LatestCompleteSnapshot | project RunId);\n\nprint JoinKey = 1\n| join kind=leftouter (LatestCompleteSnapshot | extend JoinKey = 1) on JoinKey\n| extend Status = case(\n    isempty(RunId), \"Missing snapshot\",\n    SnapshotTime < ago(48h), \"Stale - check logs\",\n    ExpectedRows == 0, \"No cost data\",\n    \"Current\"\n)\n| extend Coverage = case(\n    isempty(RunId), \"No collection\",\n    startofday($__timeFrom()) < WindowStart, \"Before history\",\n    startofday($__timeTo()) > startofday(WindowEnd), \"After history\",\n    \"Within history\"\n)\n| project Status, Coverage, LastCollectedUTC = SnapshotTime, HistoryFromUTC = WindowStart, HistoryThroughUTC = WindowEnd, ReportedRows = ExpectedRows\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": false
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "LastCollectedUTC": true,
+              "HistoryFromUTC": true,
+              "HistoryThroughUTC": true,
+              "ReportedRows": true
+            },
+            "indexByName": {
+              "Status": 0,
+              "Coverage": 1
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Actual cost by currency",
+      "type": "table",
+      "description": "Pretax account-attributed actual cost for the selected UTC period. Currencies remain separate; use the cost dashboard for amortized cost.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$monitoringWorkspaceResourceId"
+            ],
+            "query": "// Shared prefix: choose only the newest fully ingested snapshot.\nlet SnapshotRecords = materialize(\n    AICostSnapshot_CL\n    | where TimeGenerated >= ago(14d)\n    | where RecordType in (\"Cost\", \"Complete\")\n);\nlet CostRows = materialize(\n    SnapshotRecords\n    | where RecordType == \"Cost\" and isnotempty(RunId) and isnotempty(RowKey)\n    | summarize arg_max(TimeGenerated, *) by RunId, RowKey\n);\nlet RowCounts = CostRows | summarize IngestedRows = count() by RunId;\nlet LatestCompleteSnapshot = materialize(\n    SnapshotRecords\n    | where RecordType == \"Complete\" and isnotempty(RunId)\n    | summarize arg_max(TimeGenerated, *) by RunId\n    | join kind=leftouter RowCounts on RunId\n    | extend IngestedRows = coalesce(IngestedRows, long(0))\n    | where ExpectedRows == IngestedRows\n    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd\n    | top 1 by SnapshotTime desc\n);\nlet LatestCostRows = CostRows\n    | where RunId in (LatestCompleteSnapshot | project RunId);\n\nLatestCostRows\n| where CostType == \"ActualCost\"\n| where UsageDate >= startofday($__timeFrom()) and UsageDate < $__timeTo()\n| summarize Amount = sum(Cost) by Currency\n| order by Currency asc\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": false
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 3,
+      "title": "Observed agent runs and failures",
+      "type": "timeseries",
+      "description": "Application Insights counts, weighted for sampling when present. No telemetry is not evidence of zero activity or healthy service. Counts are not a coverage percentage.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*ObservedRuns.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*FailedRuns.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "PTU utilization - average",
+      "type": "timeseries",
+      "description": "Azure platform metric for the configured provisioned deployment. Availability depends on the model and SKU.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIProvisionedManagedUtilizationV2",
+            "aggregation": "Average",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Daily actual cost by currency",
+      "type": "timeseries",
+      "description": "Daily account-attributed actual cost. Each currency is a separate series; billing may be revised or delayed.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$monitoringWorkspaceResourceId"
+            ],
+            "query": "// Shared prefix: choose only the newest fully ingested snapshot.\nlet SnapshotRecords = materialize(\n    AICostSnapshot_CL\n    | where TimeGenerated >= ago(14d)\n    | where RecordType in (\"Cost\", \"Complete\")\n);\nlet CostRows = materialize(\n    SnapshotRecords\n    | where RecordType == \"Cost\" and isnotempty(RunId) and isnotempty(RowKey)\n    | summarize arg_max(TimeGenerated, *) by RunId, RowKey\n);\nlet RowCounts = CostRows | summarize IngestedRows = count() by RunId;\nlet LatestCompleteSnapshot = materialize(\n    SnapshotRecords\n    | where RecordType == \"Complete\" and isnotempty(RunId)\n    | summarize arg_max(TimeGenerated, *) by RunId\n    | join kind=leftouter RowCounts on RunId\n    | extend IngestedRows = coalesce(IngestedRows, long(0))\n    | where ExpectedRows == IngestedRows\n    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd\n    | top 1 by SnapshotTime desc\n);\nlet LatestCostRows = CostRows\n    | where RunId in (LatestCompleteSnapshot | project RunId);\n\nLatestCostRows\n| where CostType == \"ActualCost\"\n| where UsageDate >= startofday($__timeFrom()) and UsageDate < $__timeTo()\n| summarize Amount = sum(Cost) by UsageDate, Currency\n| project TimeGenerated = UsageDate, Currency, Amount\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": false
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Agent run latency",
+      "type": "timeseries",
+      "description": "Percentiles reflect retained, instrumented spans and are not an end-to-end service-level objective.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize P50_ms = percentile(DurationMs, 50),\n    P95_ms = percentile(DurationMs, 95),\n    P99_ms = percentile(DurationMs, 99)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 5
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "PTU requests by status code",
+      "type": "timeseries",
+      "description": "Azure platform request counts by status for the configured deployment. Counts are per time bucket, not per second.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIRequests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              },
+              {
+                "dimension": "StatusCode",
+                "operator": "eq",
+                "filters": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*429.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "PTU input and output tokens",
+      "type": "timeseries",
+      "description": "Azure platform token counts per time bucket for the configured deployment.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "ProcessedPromptTokens",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "GeneratedTokens",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "workspaceResourceId",
+        "label": "Agent telemetry workspace ARM ID",
+        "type": "textbox",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "current": {
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      },
+      {
+        "name": "monitoringWorkspaceResourceId",
+        "label": "Cost data workspace ARM ID",
+        "type": "textbox",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "current": {
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuSubscription",
+        "label": "ptuSubscription",
+        "type": "textbox",
+        "query": "00000000-0000-0000-0000-000000000000",
+        "current": {
+          "text": "00000000-0000-0000-0000-000000000000",
+          "value": "00000000-0000-0000-0000-000000000000"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuResourceGroup",
+        "label": "ptuResourceGroup",
+        "type": "textbox",
+        "query": "existing-openai-rg",
+        "current": {
+          "text": "existing-openai-rg",
+          "value": "existing-openai-rg"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuAccount",
+        "label": "ptuAccount",
+        "type": "textbox",
+        "query": "existing-openai-account",
+        "current": {
+          "text": "existing-openai-account",
+          "value": "existing-openai-account"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuRegion",
+        "label": "ptuRegion",
+        "type": "textbox",
+        "query": "eastus",
+        "current": {
+          "text": "eastus",
+          "value": "eastus"
+        },
+        "hide": 0
+      },
+      {
+        "name": "ptuDeployment",
+        "label": "ptuDeployment",
+        "type": "textbox",
+        "query": "replace-with-provisioned-deployment-name",
+        "current": {
+          "text": "replace-with-provisioned-deployment-name",
+          "value": "replace-with-provisioned-deployment-name"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "__inputs": [
+    {
+      "name": "DS_AZURE_MONITOR",
+      "label": "Azure Monitor",
+      "type": "datasource",
+      "pluginId": "grafana-azure-monitor-datasource",
+      "pluginName": "Azure Monitor"
+    }
+  ],
+  "description": "A concise view of cost, observed agent activity, and Azure OpenAI PTU signals. It does not calculate a blended health score. Cost is optional; missing or stale data must not be interpreted as zero. Agent telemetry requires application instrumentation."
+}

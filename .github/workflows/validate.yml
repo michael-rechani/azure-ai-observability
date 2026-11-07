@@ -23,7 +23,7 @@ jobs:
           az bicep install
           az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
           az bicep build-params --file infra/main.example.bicepparam --outfile "$RUNNER_TEMP/parameters.json"
-      - name: Generate dashboards and check reproducibility
+      - name: Validate documentation, generate dashboards, and run tests
         run: |
           command -v pwsh >/dev/null || { echo "PowerShell 7 is required for collector tests"; exit 1; }
           python scripts/build_dashboards.py

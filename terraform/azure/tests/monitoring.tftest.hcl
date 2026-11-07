@@ -356,6 +356,14 @@ run "cost_pipeline_uses_managed_identity_and_complete_schema" {
   }
   assert {
     condition = (
+      azurerm_storage_account.cost[0].blob_properties[0].delete_retention_policy[0].days == 7 &&
+      azurerm_storage_account.cost[0].blob_properties[0].container_delete_retention_policy[0].days == 7 &&
+      length(azurerm_monitor_diagnostic_setting.cost_blob_read) == 1
+    )
+    error_message = "Cost deployment storage must retain deleted blobs and containers for seven days and log blob reads."
+  }
+  assert {
+    condition = (
       azurerm_log_analytics_workspace_table_custom_log.cost[0].name == "AICostSnapshot_CL" &&
       contains([for c in azurerm_log_analytics_workspace_table_custom_log.cost[0].column : c.name], "ExpectedRows") &&
       contains([for c in azurerm_log_analytics_workspace_table_custom_log.cost[0].column : c.name], "UsageDate")

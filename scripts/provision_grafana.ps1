@@ -39,6 +39,7 @@ $files = [ordered]@{
 }
 if ($DashboardConfiguration.enableCostDashboard) {
     $files['azure-ai-costs.json'] = 'cost'
+    $files['business-overview.json'] = 'business'
 }
 
 function Get-AccountDefaults {
@@ -103,6 +104,20 @@ foreach ($entry in $files.GetEnumerator()) {
         'agents' { @{ workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId } }
         'ptu' { Get-AccountDefaults $DashboardConfiguration.ptuAccount }
         'cost' { @{ workspaceResourceId = $DashboardConfiguration.monitoringWorkspaceResourceId } }
+        'business' {
+            $values = @{
+                workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId
+                monitoringWorkspaceResourceId = $DashboardConfiguration.monitoringWorkspaceResourceId
+            }
+            if ($DashboardConfiguration.ptuAccount) {
+                $values['ptuSubscription'] = $DashboardConfiguration.ptuAccount.subscriptionId
+                $values['ptuResourceGroup'] = $DashboardConfiguration.ptuAccount.resourceGroup
+                $values['ptuAccount'] = $DashboardConfiguration.ptuAccount.name
+                $values['ptuRegion'] = $DashboardConfiguration.ptuAccount.region
+                $values['ptuDeployment'] = $DashboardConfiguration.ptuAccount.deployment
+            }
+            $values
+        }
     }
     Set-DashboardDefaults -Dashboard $dashboard -Defaults $defaults
     $dashboard['tags'] = @($dashboard.tags | Where-Object { $_ -ne $ownerTag }) + @($ownerTag)

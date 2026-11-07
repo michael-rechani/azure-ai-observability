@@ -106,7 +106,7 @@ Terraform sets the checked-in dashboards' initial controls from `dashboard_defau
 
 By default, agent dashboards use the monitoring workspace. To use an **existing telemetry workspace** instead, add its full ARM ID as `dashboard_defaults.telemetry_workspace_resource_id` and add it to `existing_telemetry_workspace_ids` in the Azure stage so Grafana gets Log Analytics Reader access. The cost dashboard always uses `monitoring_workspace_resource_id`, because the Function writes its snapshots there. The workspace ARM ID is not a workspace GUID or Application Insights ID.
 
-If you enabled `enable_cost_pipeline` in the Azure stage, set `enable_cost_dashboard = true` in the Grafana stage. The monitoring workspace ID is required for this dashboard. Both settings are off by default. The separate [Bicep path](bicep.md) can provision the same cost collector and dashboard without Terraform.
+If you enabled `enable_cost_pipeline` in the Azure stage, set `enable_cost_dashboard = true` in the Grafana stage. This provisions both the detailed cost dashboard and the business overview; the monitoring workspace ID is required. Both settings are off by default. The overview keeps cost status, actual cost by currency, observed agent activity, and PTU signals distinct; it does not calculate an overall health score. The separate [Bicep path](bicep.md) can provision the same dashboards and cost collector without Terraform.
 
 For advanced customization, `dashboard_directory` can point at other dashboard JSON files. Explicit `dashboard_defaults` override matching textbox values in those files; Terraform rejects a configured default if its target textbox is missing. The optional Python generator is for maintaining or customizing JSON outside this deployment flow.
 

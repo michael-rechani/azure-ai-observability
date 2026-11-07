@@ -67,8 +67,17 @@ class DashboardTests(unittest.TestCase):
                 target = panel["targets"][0]
                 if target["queryType"] == "Azure Log Analytics":
                     query = target["azureLogAnalytics"]
-                    self.assertEqual(query["resources"], ["$workspaceResourceId"])
+                    expected_workspace = (
+                        "$monitoringWorkspaceResourceId"
+                        if dashboard["uid"] == "azure-ai-business-overview"
+                        and panel["id"] in {1, 2, 5}
+                        else "$workspaceResourceId"
+                    )
+                    self.assertEqual(query["resources"], [expected_workspace])
                     if dashboard["uid"] == "azure-ai-costs":
+                        self.assertIn("TimeGenerated >= ago(14d)", query["query"])
+                        self.assertFalse(query["dashboardTime"])
+                    elif dashboard["uid"] == "azure-ai-business-overview" and panel["id"] in {1, 2, 5}:
                         self.assertIn("TimeGenerated >= ago(14d)", query["query"])
                         self.assertFalse(query["dashboardTime"])
                     else:
@@ -92,6 +101,48 @@ class DashboardTests(unittest.TestCase):
                       "Before history", "After history"):
             self.assertIn(state, status)
         self.assertIn("ago(48h)", status)
+
+    def test_business_overview_keeps_data_sources_and_meaning_separate(self):
+        dashboard = self.dashboards["business-overview.json"]
+        panels = dashboard["panels"]
+        self.assertEqual(dashboard["time"], {"from": "now-7d", "to": "now"})
+        self.assertIn("does not calculate a blended health score", dashboard["description"])
+        self.assertEqual(len({item["id"] for item in panels}), len(panels))
+        self.assertEqual(panels[0]["title"], "Cost collection status")
+        self.assertIn("not zero cost", panels[0]["description"])
+        self.assertEqual([item["gridPos"]["w"] for item in panels], [8, 8, 8, 8, 8, 8, 12, 12])
+        collection_fields = panels[0]["transformations"][0]["options"]
+        self.assertEqual(
+            collection_fields["indexByName"],
+            {"Status": 0, "Coverage": 1},
+        )
+        self.assertEqual(
+            collection_fields["excludeByName"],
+            {
+                "LastCollectedUTC": True,
+                "HistoryFromUTC": True,
+                "HistoryThroughUTC": True,
+                "ReportedRows": True,
+            },
+        )
+        self.assertIn("ActualCost", panels[1]["targets"][0]["azureLogAnalytics"]["query"])
+        self.assertIn("Currency", panels[1]["targets"][0]["azureLogAnalytics"]["query"])
+        self.assertIn("not a coverage percentage", panels[2]["description"])
+        self.assertEqual(
+            panels[3]["targets"][0]["azureMonitor"]["metricName"],
+            "AzureOpenAIProvisionedManagedUtilizationV2",
+        )
+        self.assertEqual(
+            panels[6]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
+            ["*"],
+        )
+        self.assertEqual(
+            [item["name"] for item in dashboard["templating"]["list"]],
+            [
+                "workspaceResourceId", "monitoringWorkspaceResourceId", "ptuSubscription",
+                "ptuResourceGroup", "ptuAccount", "ptuRegion", "ptuDeployment",
+            ],
+        )
 
     def test_cost_totals_and_trends_keep_types_currencies_and_usage_dates_separate(self):
         panels = self.dashboards["azure-ai-costs.json"]["panels"]
@@ -134,6 +185,10 @@ class DashboardTests(unittest.TestCase):
         self.assertNotEqual(foundry_defaults["account"], ptu_defaults["account"])
         self.assertEqual(foundry_defaults["deployment"], "*")
         self.assertEqual(ptu_defaults["deployment"], self.config["ptu"]["deployment"])
+        business = self.dashboards["business-overview.json"]
+        business_defaults = {v["name"]: v["current"]["value"] for v in business["templating"]["list"]}
+        self.assertEqual(business_defaults["ptuAccount"], self.config["ptu"]["account"])
+        self.assertEqual(business_defaults["ptuDeployment"], self.config["ptu"]["deployment"])
 
     def test_all_configured_metrics_use_documented_aggregations(self):
         totals = {"AzureOpenAIRequests", "GeneratedTokens", "ProcessedPromptTokens", "TokenTransaction"}
