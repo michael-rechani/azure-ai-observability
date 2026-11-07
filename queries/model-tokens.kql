@@ -1,0 +1,11 @@
+union AppRequests, AppDependencies
+| where $__timeFilter(TimeGenerated)
+| where tostring(Properties["gen_ai.operation.name"]) in ("chat", "text_completion")
+| extend Model = tostring(Properties["gen_ai.response.model"]),
+    InputTokens = tolong(Properties["gen_ai.usage.input_tokens"]),
+    OutputTokens = tolong(Properties["gen_ai.usage.output_tokens"])
+| summarize InputTokens = sum(InputTokens * ItemCount),
+    OutputTokens = sum(OutputTokens * ItemCount),
+    MissingUsageSpans = countif(isnull(InputTokens) or isnull(OutputTokens))
+    by bin(TimeGenerated, $__interval), Model
+| order by TimeGenerated asc

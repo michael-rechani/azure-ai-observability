@@ -1,0 +1,10 @@
+__pycache__/
+.venv/
+*.pyc
+.env
+config.local.json
+local-dashboards/
+infra/main.json
+infra/*.local.bicepparam
+infra/*.local.parameters.json
+deployment-output.json

@@ -1,0 +1,15 @@
+{
+  "subscription": "00000000-0000-0000-0000-000000000000",
+  "foundry": {
+    "resourceGroup": "existing-foundry-rg",
+    "account": "existing-foundry-account",
+    "region": "eastus"
+  },
+  "ptu": {
+    "resourceGroup": "existing-openai-rg",
+    "account": "existing-openai-account",
+    "region": "eastus",
+    "deployment": "replace-with-provisioned-deployment-name"
+  },
+  "workspaceResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+}

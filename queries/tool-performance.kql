@@ -1,0 +1,8 @@
+union AppRequests, AppDependencies
+| where $__timeFilter(TimeGenerated)
+| where tostring(Properties["gen_ai.operation.name"]) == "execute_tool"
+| extend Tool = tostring(Properties["gen_ai.tool.name"])
+| summarize ObservedCalls = sum(ItemCount),
+    FailedCalls = sumif(ItemCount, Success == false),
+    P95_ms = percentile(DurationMs, 95) by Tool
+| order by P95_ms desc

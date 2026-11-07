@@ -1,0 +1,8 @@
+union AppRequests, AppDependencies
+| where $__timeFilter(TimeGenerated)
+| where tostring(Properties["gen_ai.operation.name"]) == "invoke_agent"
+| extend Agent = tostring(Properties["gen_ai.agent.name"])
+| summarize ObservedRuns = sum(ItemCount),
+    FailedRuns = sumif(ItemCount, Success == false)
+    by bin(TimeGenerated, $__interval), Agent
+| order by TimeGenerated asc

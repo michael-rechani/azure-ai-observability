@@ -1,0 +1,10 @@
+union AppRequests, AppDependencies
+| where $__timeFilter(TimeGenerated)
+| extend Operation = tostring(Properties["gen_ai.operation.name"]),
+    Agent = tostring(Properties["gen_ai.agent.name"])
+| summarize ObservedSpans = sum(ItemCount),
+    GenAISpans = sumif(ItemCount, isnotempty(Operation)),
+    AgentRuns = sumif(ItemCount, Operation == "invoke_agent"),
+    UnnamedAgentRuns = sumif(ItemCount, Operation == "invoke_agent" and isempty(Agent))
+    by bin(TimeGenerated, $__interval)
+| order by TimeGenerated asc

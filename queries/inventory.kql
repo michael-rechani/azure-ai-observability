@@ -1,0 +1,7 @@
+Resources
+| where type in~ (
+    "microsoft.cognitiveservices/accounts",
+    "microsoft.cognitiveservices/accounts/projects",
+    "microsoft.machinelearningservices/workspaces")
+| project name, type, kind, subscriptionId, resourceGroup, location, id
+| order by type asc, name asc

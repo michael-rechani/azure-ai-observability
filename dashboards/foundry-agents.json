@@ -1,0 +1,386 @@
+{
+  "uid": "foundry-agent-operations",
+  "title": "Foundry - Agent operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "azure",
+    "ai-observability"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Agent run latency",
+      "type": "timeseries",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize P50_ms = percentile(DurationMs, 50),\n    P95_ms = percentile(DurationMs, 95),\n    P99_ms = percentile(DurationMs, 99)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Agent runs and failures",
+      "type": "timeseries",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Tool performance",
+      "type": "table",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"execute_tool\"\n| extend Tool = tostring(Properties[\"gen_ai.tool.name\"])\n| summarize ObservedCalls = sum(ItemCount),\n    FailedCalls = sumif(ItemCount, Success == false),\n    P95_ms = percentile(DurationMs, 95) by Tool\n| order by P95_ms desc\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Model token usage and missing usage spans",
+      "type": "timeseries",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) in (\"chat\", \"text_completion\")\n| extend Model = tostring(Properties[\"gen_ai.response.model\"]),\n    InputTokens = tolong(Properties[\"gen_ai.usage.input_tokens\"]),\n    OutputTokens = tolong(Properties[\"gen_ai.usage.output_tokens\"])\n| summarize InputTokens = sum(InputTokens * ItemCount),\n    OutputTokens = sum(OutputTokens * ItemCount),\n    MissingUsageSpans = countif(isnull(InputTokens) or isnull(OutputTokens))\n    by bin(TimeGenerated, $__interval), Model\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Failed operations - trace IDs",
+      "type": "table",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where Success == false\n| where isnotempty(tostring(Properties[\"gen_ai.operation.name\"]))\n| project TimeGenerated, OperationId, Name, ResultCode, DurationMs,\n    Agent = tostring(Properties[\"gen_ai.agent.name\"]),\n    Operation = tostring(Properties[\"gen_ai.operation.name\"])\n| order by TimeGenerated desc\n| take 100\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 6,
+      "title": "Instrumentation coverage",
+      "type": "timeseries",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| extend Operation = tostring(Properties[\"gen_ai.operation.name\"]),\n    Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedSpans = sum(ItemCount),\n    GenAISpans = sumif(ItemCount, isnotempty(Operation)),\n    AgentRuns = sumif(ItemCount, Operation == \"invoke_agent\"),\n    UnnamedAgentRuns = sumif(ItemCount, Operation == \"invoke_agent\" and isempty(Agent))\n    by bin(TimeGenerated, $__interval)\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Evaluation results (optional custom events)",
+      "type": "table",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "AppEvents\n| where $__timeFilter(TimeGenerated)\n| where Name == \"obs.evaluation\"\n| extend Evaluator = tostring(Properties[\"obs.evaluator.name\"]),\n    Score = todouble(Properties[\"obs.evaluation.score\"]),\n    Passed = tobool(Properties[\"obs.evaluation.passed\"])\n| summarize EvaluatedSamples = count(), AverageScore = avg(Score),\n    FailedSamples = countif(Passed == false),\n    InvalidSamples = countif(isnull(Score) or isnull(Passed)) by Evaluator\n| order by Evaluator asc\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "workspaceResourceId",
+        "label": "Telemetry workspace ARM ID",
+        "type": "textbox",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "current": {
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "__inputs": [
+    {
+      "name": "DS_AZURE_MONITOR",
+      "label": "Azure Monitor",
+      "type": "datasource",
+      "pluginId": "grafana-azure-monitor-datasource",
+      "pluginName": "Azure Monitor"
+    }
+  ]
+}

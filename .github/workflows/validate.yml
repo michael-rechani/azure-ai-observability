@@ -1,0 +1,29 @@
+name: Validate monitoring assets
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Generate dashboards and check reproducibility
+        run: |
+          python scripts/build_dashboards.py
+          git diff --exit-code -- dashboards
+          python -m unittest discover -s tests -v
+          python -m compileall -q scripts examples tests
+      - name: Compile infrastructure without Azure login or deployment
+        run: |
+          az bicep install
+          az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
+          az bicep build-params --file infra/main.example.bicepparam --outfile "$RUNNER_TEMP/parameters.json"

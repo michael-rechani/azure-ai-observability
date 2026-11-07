@@ -1,0 +1,10 @@
+AppEvents
+| where $__timeFilter(TimeGenerated)
+| where Name == "obs.evaluation"
+| extend Evaluator = tostring(Properties["obs.evaluator.name"]),
+    Score = todouble(Properties["obs.evaluation.score"]),
+    Passed = tobool(Properties["obs.evaluation.passed"])
+| summarize EvaluatedSamples = count(), AverageScore = avg(Score),
+    FailedSamples = countif(Passed == false),
+    InvalidSamples = countif(isnull(Score) or isnull(Passed)) by Evaluator
+| order by Evaluator asc
