@@ -8,8 +8,14 @@ variable "subscription_id" {
 }
 
 variable "resource_group_name" {
-  description = "Existing resource group for the monitoring stack and alert rules."
+  description = "Resource group for the monitoring stack and alert rules."
   type        = string
+}
+
+variable "create_resource_group" {
+  description = "Create and manage the monitoring resource group instead of using an existing one."
+  type        = bool
+  default     = false
 }
 
 variable "location" {
@@ -114,6 +120,27 @@ variable "existing_telemetry_workspace_ids" {
       can(regex("^/subscriptions/[0-9a-fA-F-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.OperationalInsights/workspaces/[^/]+$", id))
     ])
     error_message = "existing_telemetry_workspace_ids must contain valid workspace ARM IDs."
+  }
+}
+
+variable "telemetry_publisher_principals" {
+  description = "Stable map of existing Entra principals allowed to publish to the new Application Insights resource."
+  type = map(object({
+    principal_id   = string
+    principal_type = optional(string, "ServicePrincipal")
+  }))
+  default = {}
+  validation {
+    condition = alltrue([
+      for principal in values(var.telemetry_publisher_principals) :
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", principal.principal_id)) &&
+      contains(["User", "Group", "ServicePrincipal"], principal.principal_type)
+    ])
+    error_message = "Each telemetry publisher needs an Entra object ID and a User, Group, or ServicePrincipal type."
+  }
+  validation {
+    condition     = length(distinct([for principal in values(var.telemetry_publisher_principals) : lower(principal.principal_id)])) == length(var.telemetry_publisher_principals)
+    error_message = "Each telemetry publisher principal must be listed only once."
   }
 }
 

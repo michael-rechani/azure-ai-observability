@@ -27,6 +27,17 @@ class DemoDashboardTests(unittest.TestCase):
                     dashboard,
                 )
 
+    def test_readme_leads_with_simulated_grafana_screenshots(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        introduction = readme.split("## What is included", 1)[0]
+        self.assertIn("## Dashboards", introduction)
+        self.assertIn("simulated data", introduction.lower())
+        for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png"):
+            path = f"docs/images/{name}"
+            with self.subTest(image=name):
+                self.assertIn(f"]({path})", introduction)
+                self.assertTrue((ROOT / path).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+
     def test_demo_cannot_be_confused_with_live_dashboard(self):
         real_uids = {dashboard["uid"] for dashboard in self.real.values()}
         for dashboard in self.demo.values():

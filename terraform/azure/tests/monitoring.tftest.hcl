@@ -63,6 +63,70 @@ run "alerts_can_be_disabled" {
   }
 }
 
+run "create_monitoring_resource_group" {
+  command = plan
+  variables {
+    create_resource_group = true
+    telemetry_publisher_principals = {
+      agent = {
+        principal_id = "00000000-0000-0000-0000-000000000003"
+      }
+    }
+  }
+  assert {
+    condition     = length(azurerm_resource_group.monitoring) == 1 && azurerm_resource_group.monitoring[0].name == "monitoring" && azurerm_resource_group.monitoring[0].location == "eastus"
+    error_message = "The monitoring resource group should be created when requested."
+  }
+  assert {
+    condition     = length(data.azurerm_resource_group.monitoring) == 0
+    error_message = "A managed resource group must not also be read as an existing group."
+  }
+  assert {
+    condition     = azurerm_role_assignment.telemetry_publisher["agent"].role_definition_name == "Monitoring Metrics Publisher" && azurerm_role_assignment.telemetry_publisher["agent"].principal_type == "ServicePrincipal"
+    error_message = "Configured agent identities must receive telemetry publishing permission."
+  }
+}
+
+run "use_existing_resource_group_by_default" {
+  command = plan
+  assert {
+    condition     = length(azurerm_resource_group.monitoring) == 0 && length(data.azurerm_resource_group.monitoring) == 1
+    error_message = "Existing deployments must keep using their existing resource group by default."
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.telemetry_publisher) == 0
+    error_message = "Telemetry publisher access must be opt-in."
+  }
+  assert {
+    condition     = local.suffix == substr(sha256(lower(data.azurerm_resource_group.monitoring[0].id)), 0, 8)
+    error_message = "Existing resource names must retain their resource-group-based suffix."
+  }
+}
+
+run "reject_duplicate_telemetry_publishers" {
+  command = plan
+  variables {
+    telemetry_publisher_principals = {
+      first  = { principal_id = "00000000-0000-0000-0000-000000000003" }
+      second = { principal_id = "00000000-0000-0000-0000-000000000003" }
+    }
+  }
+  expect_failures = [var.telemetry_publisher_principals]
+}
+
+run "reject_invalid_telemetry_publisher" {
+  command = plan
+  variables {
+    telemetry_publisher_principals = {
+      invalid = {
+        principal_id   = "not-an-object-id"
+        principal_type = "Application"
+      }
+    }
+  }
+  expect_failures = [var.telemetry_publisher_principals]
+}
+
 run "reject_other_subscription" {
   command = plan
   variables {

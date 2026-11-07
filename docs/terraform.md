@@ -2,7 +2,7 @@
 
 The two Terraform roots use **native AzureRM and Grafana provider resources**:
 
-1. `terraform/azure` creates Managed Grafana, Log Analytics, Application Insights, scoped RBAC, an action group, and per-account PTU metric alerts.
+1. `terraform/azure` creates Managed Grafana, Log Analytics, Application Insights, scoped RBAC, an action group, and per-account PTU metric alerts. It can also create the monitoring resource group and assign telemetry-publisher access to specified existing identities.
 2. `terraform/grafana` creates the Azure Monitor managed-identity data source and the three dashboards through the Grafana data-plane API.
 
 The deployment is intentionally two-stage: the Grafana endpoint and caller's Grafana Admin role need to exist and propagate before Terraform can connect to the data plane. These configurations do **not** create Foundry agents or model deployments, set up instrumentation in existing applications, deploy an evaluator, or resize PTUs. Run the [live acceptance checklist](setup.md#acceptance-checklist) afterward.
@@ -10,7 +10,7 @@ The deployment is intentionally two-stage: the Grafana endpoint and caller's Gra
 ## Before you start
 
 - Terraform 1.7+ (mock tests require 1.7+), Azure CLI, and Python 3.12+.
-- An existing monitoring resource group in a supported region. The caller needs creation and role-assignment permissions at the monitoring resource group and the specified account/workspace scopes.
+- A monitoring resource group in a supported region, either created by Terraform or already existing. The caller needs creation and role-assignment permissions at the monitoring resource group and the specified account/workspace scopes; creating a resource group also requires subscription-level permission.
 - Existing Foundry/OpenAI accounts. All monitored accounts must be in the **same subscription** as this Terraform Azure stage. Deploy separate stacks for other subscriptions. Existing telemetry workspace IDs can be specified separately; permissions must exist at those scopes.
 - The identity that runs the Grafana stage needs the Grafana Admin role; use its Entra **object ID** as `grafana_admin_object_id`, or assign it separately. The Azure subscription role alone is not Grafana data-plane access.
 - The environment must reach both Azure APIs and the Grafana endpoint. Public endpoints are enabled by this starter; private networking requires a separate design.
@@ -21,7 +21,22 @@ The deployment is intentionally two-stage: the Grafana endpoint and caller's Gra
 
 ## 1. Azure resources
 
-Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars`; replace all placeholder values. Account IDs are full ARM resource IDs; `ptu_deployments` are actual provisioned deployment names, not model names. Use an empty set for an account without PTUs. The example creates an alert email action group; the address is stored in Terraform state and Azure.
+Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars`; replace all placeholder values. The example sets `create_resource_group = true` for a new group. Set it to `false` to use an existing group; the variable defaults to `false` for compatibility with existing deployments. Account IDs are full ARM resource IDs; `ptu_deployments` are actual provisioned deployment names, not model names. Use an empty set for an account without PTUs. The example creates an alert email action group; the address is stored in Terraform state and Azure.
+
+Optionally list existing application identities to grant **Monitoring Metrics Publisher** on the new Application Insights resource. Use Entra **object IDs**, not application/client IDs; omit the map if another process manages these permissions:
+
+```hcl
+telemetry_publisher_principals = {
+  agent = {
+    principal_id   = "00000000-0000-0000-0000-000000000000"
+    principal_type = "ServicePrincipal" # Also accepts User or Group.
+  }
+}
+```
+
+The role enables authenticated ingestion; it does not instrument the application or connect a Foundry project. Configure the supported tracing/exporter for your agent separately as described in [telemetry](telemetry.md). Use stable map keys and import any pre-existing identical role assignment rather than creating a duplicate.
+
+**Resource group ownership is a lifecycle decision.** Do not toggle `create_resource_group` on an existing stack without a deliberate state migration and reviewed plan. Changing it from `true` to `false` without removing the resource from Terraform state can plan deletion of the entire resource group and its contents; changing from `false` to `true` for an existing group requires import. A Terraform-managed resource group may also be deleted on destroy.
 
 Discover metric definitions and confirm dimensions before enabling alerts as described in [metric discovery](setup.md#metric-discovery). To provision access first, set `enable_ptu_alerts = false`, then enable after verification. Account map keys must be stable; renaming one changes its Terraform addresses.
 
@@ -37,7 +52,7 @@ terraform -chdir=terraform\azure apply -var-file=local.tfvars
 terraform -chdir=terraform\azure output
 ```
 
-The monitoring resource group must already exist. Deployment may fail for lack of resource/role assignment permissions, unsupported Grafana version, unavailable metric dimensions, or restricted network access; correct the issue rather than bypassing metric validation.
+Deployment may fail for lack of resource/role assignment permissions, unsupported Grafana version, unavailable metric dimensions, or restricted network access; correct the issue rather than bypassing metric validation.
 
 ## 2. Configure dashboard defaults
 

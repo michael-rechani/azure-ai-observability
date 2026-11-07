@@ -1,3 +1,7 @@
+output "resource_group_id" {
+  value = local.resource_group_id
+}
+
 output "grafana_endpoint" {
   value = azurerm_dashboard_grafana.monitoring.endpoint
 }

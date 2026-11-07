@@ -4,6 +4,24 @@ Monitoring-only starter for **Microsoft Foundry** and **Azure OpenAI provisioned
 
 **No Prometheus, Kubernetes cluster, model deployments, PTU scaling, or reservations are created.** Azure infrastructure is deployed only when you explicitly run the deployment commands. This monitors Azure-hosted OpenAI, not OpenAI's direct API.
 
+## Dashboards
+
+These are **actual Grafana screenshots with simulated data**, not results from an Azure deployment. The included dashboards use the same layouts with Azure Monitor and Log Analytics when deployed.
+
+### Foundry agent operations
+
+![Grafana preview of Foundry agent operations with simulated data](docs/images/foundry-grafana-preview.png)
+
+### Azure OpenAI PTU performance
+
+![Grafana preview of Azure OpenAI PTU performance with simulated data](docs/images/ptu-grafana-preview.png)
+
+## Deploy with Terraform
+
+Terraform can create the monitoring resource group, Managed Grafana, Log Analytics, Application Insights, scoped permissions, PTU alerts, the Grafana data source, and all three dashboards. Deployment uses two Terraform stages: Azure infrastructure first, then Grafana's data-plane resources after access has propagated. Follow the [Terraform deployment guide](docs/terraform.md).
+
+Existing Foundry/OpenAI accounts and PTU deployments are monitored, not created or resized. Applications still need to send agent telemetry, and live metric support, permissions, and alert delivery must be verified in your environment.
+
 ## What is included
 
 | Area | Included | Prerequisite / boundary |
@@ -14,7 +32,7 @@ Monitoring-only starter for **Microsoft Foundry** and **Azure OpenAI provisioned
 | Evaluations | Optional evaluator score / pass-fail dashboard | Publish evaluation events explicitly; this repo does not run evaluations |
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
 | Alerting | Per-deployment sustained PTU utilization and 429 metric alerts with an email action group | Named PTU deployments supplied in infrastructure parameters |
-| Operations | Bicep, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
+| Operations | Terraform, Bicep alternative, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
 This is a foundation for broad Foundry observability, **not a claim that every Foundry feature emits telemetry automatically**. See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.
 
@@ -55,6 +73,7 @@ infra/       Bicep monitoring resources, existing-target RBAC, PTU alerts
 terraform/   Native Azure resources and Grafana data source/dashboard deployment
 dashboards/  Importable Foundry overview, agent operations, and PTU dashboards
 demo/        Local-only Grafana preview using clearly labeled simulated data
+docs/images/ Actual Grafana screenshots with simulated data
 queries/     Workspace KQL and Azure Resource Graph inventory query
 scripts/     Standard-library dashboard generator
 examples/    Synthetic OpenTelemetry example (no model calls)
@@ -77,7 +96,7 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 ## Security and cost defaults
 
 - Managed identity for Grafana; scoped read roles, no model management permissions.
-- Application Insights local authentication disabled; telemetry senders need Entra authentication and the **Monitoring Metrics Publisher** role on the Application Insights resource.
+- Application Insights local authentication disabled; telemetry senders need Entra authentication and the **Monitoring Metrics Publisher** role on the Application Insights resource. Terraform can assign this role to explicitly listed principals.
 - Public endpoints with Entra authorization in this starter. Private endpoints and Azure Monitor Private Link require a separate networking design; see setup.
 - No prompt, response, tool-argument, or exception-content capture in the demo.
 - Log retention defaults to 30 days with a 1 GB daily ingestion cap. A cap can cause gaps and is **not** a complete spending limit.

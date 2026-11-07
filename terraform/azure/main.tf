@@ -1,17 +1,26 @@
 data "azurerm_resource_group" "monitoring" {
-  name = var.resource_group_name
+  count = var.create_resource_group ? 0 : 1
+  name  = var.resource_group_name
+}
+
+resource "azurerm_resource_group" "monitoring" {
+  count    = var.create_resource_group ? 1 : 0
+  name     = var.resource_group_name
+  location = var.location
 }
 
 locals {
-  suffix         = substr(sha256(lower(data.azurerm_resource_group.monitoring.id)), 0, 8)
-  grafana_name   = "${var.name_prefix}-${local.suffix}"
-  alert_accounts = { for key, account in var.monitored_accounts : key => account if var.enable_ptu_alerts && length(account.ptu_deployments) > 0 }
+  resource_group_name = var.create_resource_group ? azurerm_resource_group.monitoring[0].name : data.azurerm_resource_group.monitoring[0].name
+  resource_group_id   = var.create_resource_group ? azurerm_resource_group.monitoring[0].id : data.azurerm_resource_group.monitoring[0].id
+  suffix              = substr(sha256(lower(var.create_resource_group ? "/subscriptions/${var.subscription_id}/resourceGroups/${var.resource_group_name}" : data.azurerm_resource_group.monitoring[0].id)), 0, 8)
+  grafana_name        = "${var.name_prefix}-${local.suffix}"
+  alert_accounts      = { for key, account in var.monitored_accounts : key => account if var.enable_ptu_alerts && length(account.ptu_deployments) > 0 }
 }
 
 resource "azurerm_log_analytics_workspace" "monitoring" {
   name                       = "${var.name_prefix}-logs-${local.suffix}"
   location                   = var.location
-  resource_group_name        = data.azurerm_resource_group.monitoring.name
+  resource_group_name        = local.resource_group_name
   sku                        = "PerGB2018"
   retention_in_days          = var.retention_in_days
   daily_quota_gb             = var.daily_quota_gb
@@ -22,7 +31,7 @@ resource "azurerm_log_analytics_workspace" "monitoring" {
 resource "azurerm_application_insights" "monitoring" {
   name                         = "${var.name_prefix}-appinsights-${local.suffix}"
   location                     = var.location
-  resource_group_name          = data.azurerm_resource_group.monitoring.name
+  resource_group_name          = local.resource_group_name
   application_type             = "web"
   workspace_id                 = azurerm_log_analytics_workspace.monitoring.id
   local_authentication_enabled = false
@@ -33,7 +42,7 @@ resource "azurerm_application_insights" "monitoring" {
 resource "azurerm_dashboard_grafana" "monitoring" {
   name                              = local.grafana_name
   location                          = var.location
-  resource_group_name               = data.azurerm_resource_group.monitoring.name
+  resource_group_name               = local.resource_group_name
   grafana_major_version             = var.grafana_major_version
   sku                               = "Standard"
   api_key_enabled                   = false
@@ -86,9 +95,18 @@ resource "azurerm_role_assignment" "existing_workspace_reader" {
   skip_service_principal_aad_check = true
 }
 
+resource "azurerm_role_assignment" "telemetry_publisher" {
+  for_each                         = var.telemetry_publisher_principals
+  scope                            = azurerm_application_insights.monitoring.id
+  role_definition_name             = "Monitoring Metrics Publisher"
+  principal_id                     = each.value.principal_id
+  principal_type                   = each.value.principal_type
+  skip_service_principal_aad_check = each.value.principal_type == "ServicePrincipal"
+}
+
 resource "azurerm_monitor_action_group" "notifications" {
   name                = "${var.name_prefix}-alerts"
-  resource_group_name = data.azurerm_resource_group.monitoring.name
+  resource_group_name = local.resource_group_name
   short_name          = "AIObserve"
   enabled             = true
   email_receiver {
@@ -101,7 +119,7 @@ resource "azurerm_monitor_action_group" "notifications" {
 resource "azurerm_monitor_metric_alert" "utilization" {
   for_each            = local.alert_accounts
   name                = "${var.name_prefix}-${substr(sha256(lower(each.value.resource_id)), 0, 8)}-ptu-utilization"
-  resource_group_name = data.azurerm_resource_group.monitoring.name
+  resource_group_name = local.resource_group_name
   scopes              = [each.value.resource_id]
   description         = "Sustained PTU utilization; investigate workload and capacity before changing deployments."
   severity            = 2
@@ -130,7 +148,7 @@ resource "azurerm_monitor_metric_alert" "utilization" {
 resource "azurerm_monitor_metric_alert" "throttling" {
   for_each            = local.alert_accounts
   name                = "${var.name_prefix}-${substr(sha256(lower(each.value.resource_id)), 0, 8)}-ptu-throttling"
-  resource_group_name = data.azurerm_resource_group.monitoring.name
+  resource_group_name = local.resource_group_name
   scopes              = [each.value.resource_id]
   description         = "One or more HTTP 429 responses on a named PTU deployment in five minutes."
   severity            = 2
