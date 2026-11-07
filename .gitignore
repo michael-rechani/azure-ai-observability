@@ -9,6 +9,8 @@ infra/*.local.bicepparam
 infra/*.local.parameters.json
 deployment-output.json
 **/.terraform/
+backend.local.tf
+*.tfbackend
 *.tfstate
 *.tfstate.*
 *.tfplan
