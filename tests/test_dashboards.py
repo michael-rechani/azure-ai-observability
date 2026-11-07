@@ -111,6 +111,27 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("MissingUsageSpans", query)
         self.assertNotIn('"invoke_agent"', query)
 
+    def test_agent_table_duration_units(self):
+        panels = self.dashboards["foundry-agents.json"]["panels"]
+        for index, field in ((2, "P95_ms"), (4, "DurationMs")):
+            with self.subTest(field=field):
+                matches = [
+                    override for override in panels[index]["fieldConfig"]["overrides"]
+                    if override["matcher"]["options"] == f"/^{field}$/"
+                ]
+                self.assertEqual(len(matches), 1)
+                self.assertIn({"id": "unit", "value": "ms"}, matches[0]["properties"])
+
+    def test_instrumentation_counts_do_not_imply_percentage(self):
+        panels = (
+            self.dashboards["foundry-agents.json"]["panels"][5],
+            self.dashboards["foundry-overview.json"]["panels"][1],
+        )
+        for panel in panels:
+            with self.subTest(title=panel["title"]):
+                self.assertIn("Observed", panel["title"])
+                self.assertIn("not a coverage percentage", panel["description"])
+
 
 if __name__ == "__main__":
     unittest.main()

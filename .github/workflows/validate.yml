@@ -19,7 +19,8 @@ jobs:
       - name: Generate dashboards and check reproducibility
         run: |
           python scripts/build_dashboards.py
-          git diff --exit-code -- dashboards
+          python scripts/build_demo_dashboards.py
+          git diff --exit-code -- dashboards demo/dashboards
           python -m unittest discover -s tests -v
           python -m compileall -q scripts examples tests
       - name: Compile infrastructure without Azure login or deployment

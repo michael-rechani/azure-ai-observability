@@ -1,0 +1,643 @@
+{
+  "uid": "demo-foundry-agent-operations",
+  "title": "DEMO - Foundry - Agent operations",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "tags": [
+    "azure",
+    "ai-observability",
+    "demo-simulated-data"
+  ],
+  "timezone": "browser",
+  "refresh": false,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 999,
+      "type": "text",
+      "title": "SIMULATED DATA ONLY",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Preview only.** Not connected to Azure; filters do not change the sample data."
+      }
+    },
+    {
+      "id": 1,
+      "title": "Agent run latency",
+      "type": "timeseries",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "P50_ms",
+          "stringInput": "430,420,445,440,450,455,460,480,520,460,450,475,490,470,460,455,480,465,450,455"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "P95_ms",
+          "stringInput": "1050,1100,1080,1120,1150,1180,1200,1270,1450,1250,1200,1220,1300,1250,1200,1180,1280,1220,1190,1210"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "C",
+          "scenarioId": "csv_metric_values",
+          "alias": "P99_ms",
+          "stringInput": "1800,1850,1820,1900,1950,1980,2050,2150,2500,2150,2050,2100,2200,2150,2050,2000,2200,2100,2050,2100"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*P50_ms.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*P95_ms.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*P99_ms.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Agent runs and failures",
+      "type": "timeseries",
+      "description": "Observed runs and failed runs are shown on separate axes. Counts are weighted by ItemCount when sampling is present; missing spans are not counted.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "ObservedRuns",
+          "stringInput": "1100,1150,1130,1200,1250,1230,1280,1320,1400,1350,1380,1420,1360,1340,1390,1350,1300,1320,1340,1310"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "FailedRuns",
+          "stringInput": "8,10,9,11,12,10,13,15,19,14,16,18,15,14,17,15,12,13,14,12"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 3
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*ObservedRuns.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*FailedRuns.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Tool performance",
+      "type": "table",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "Tool,ObservedCalls,FailedCalls,P95_ms\nfile_search,240,3,1180\nweb_search,180,4,1620\ncode_interpreter,92,2,2420\n"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^P95_ms$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Model token usage and missing usage spans",
+      "type": "timeseries",
+      "description": "Input/output token totals are derived from retained model spans. Missing usage spans use the right axis; absent usage is not evidence of zero token consumption.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "InputTokens",
+          "stringInput": "65000,68000,66000,71000,73000,72000,76000,81000,85000,80000,83000,87000,81000,79000,84000,80000,77000,79000,78000,76000"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "OutputTokens",
+          "stringInput": "24000,25000,24500,26000,27000,26500,28000,30000,32000,30000,31000,33000,30000,29000,31000,30000,28000,29000,28500,27500"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "C",
+          "scenarioId": "csv_metric_values",
+          "alias": "MissingUsageSpans",
+          "stringInput": "1,0,1,1,2,1,1,2,3,2,1,2,1,1,2,1,1,0,1,1"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*InputTokens.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*OutputTokens.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*MissingUsageSpans.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Failed operations - trace IDs",
+      "type": "table",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "OperationId,Name,ResultCode,DurationMs,Agent,Operation\nexample-trace-001,model-request,429,1200,sample-agent,chat\nexample-trace-002,search-tool,503,2100,sample-agent,execute_tool\n"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^DurationMs$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 6,
+      "title": "Observed instrumentation",
+      "type": "timeseries",
+      "description": "Counts of observed and recognized spans, not a coverage percentage. A completely silent workspace cannot establish telemetry health.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "ObservedSpans",
+          "stringInput": "1600,1650,1630,1700,1750,1730,1780,1820,1900,1850,1880,1920,1860,1840,1890,1850,1800,1820,1840,1810"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "B",
+          "scenarioId": "csv_metric_values",
+          "alias": "GenAISpans",
+          "stringInput": "1200,1250,1230,1300,1350,1330,1380,1420,1500,1450,1480,1520,1460,1440,1490,1450,1400,1420,1440,1410"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "C",
+          "scenarioId": "csv_metric_values",
+          "alias": "AgentRuns",
+          "stringInput": "1100,1150,1130,1200,1250,1230,1280,1320,1400,1350,1380,1420,1360,1340,1390,1350,1300,1320,1340,1310"
+        },
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "D",
+          "scenarioId": "csv_metric_values",
+          "alias": "UnnamedAgentRuns",
+          "stringInput": "4,5,4,5,6,5,5,6,7,6,5,6,5,5,6,5,4,5,5,4"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Evaluation results (optional custom events)",
+      "type": "table",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "Evaluator,EvaluatedSamples,AverageScore,FailedSamples,InvalidSamples\nexample-evaluator,80,0.84,8,0\n"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "workspaceResourceId",
+        "label": "Telemetry workspace ARM ID",
+        "type": "textbox",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "current": {
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
+}

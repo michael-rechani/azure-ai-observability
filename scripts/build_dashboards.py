@@ -39,17 +39,43 @@ def textbox(name, value, label=None):
 
 
 def panel(number, title, target, unit="short", kind="timeseries", description=""):
+    defaults = {"unit": unit, "noValue": "No data"}
+    if kind == "timeseries":
+        defaults.update({
+            "color": {"mode": "palette-classic"},
+            "custom": {
+                "drawStyle": "line",
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "gradientMode": "opacity",
+                "showPoints": "never",
+                "spanNulls": False,
+                "axisPlacement": "auto",
+            },
+        })
     return {
         "id": number, "title": title, "type": kind, "description": description,
         "datasource": DS, "targets": [target],
         "gridPos": {"h": 8, "w": 12, "x": ((number - 1) % 2) * 12, "y": ((number - 1) // 2) * 8},
-        "fieldConfig": {"defaults": {"unit": unit, "noValue": "No data"}, "overrides": []},
+        "fieldConfig": {"defaults": defaults, "overrides": []},
         "options": (
-            {"legend": {"displayMode": "list", "placement": "bottom"},
+            {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull"]},
              "tooltip": {"mode": "multi", "sort": "none"}}
             if kind == "timeseries" else {"showHeader": True}
         ),
     }
+
+
+def fixed_color(item, color):
+    item["fieldConfig"]["defaults"]["color"] = {"mode": "fixed", "fixedColor": color}
+
+
+def override(item, pattern, properties):
+    item["fieldConfig"]["overrides"].append({
+        "matcher": {"id": "byRegexp", "options": pattern},
+        "properties": [{"id": name, "value": value} for name, value in properties.items()],
+    })
 
 
 def metric(name, aggregation="Average", dimensions=None):
@@ -130,6 +156,11 @@ def build(config):
               description="Azure platform metric. Availability varies by model/SKU. Counts are per time bucket, not per second.")
         for i, (title, name, agg, unit, dimensions) in enumerate(specifications, 1)
     ])
+    for index, color in ((0, "green"), (1, "blue"), (3, "orange"),
+                         (4, "purple"), (5, "light-blue")):
+        fixed_color(ptu["panels"][index], color)
+    override(ptu["panels"][2], "/.*200.*/", {"color": {"mode": "fixed", "fixedColor": "green"}})
+    override(ptu["panels"][2], "/.*429.*/", {"color": {"mode": "fixed", "fixedColor": "orange"}})
     ptu["panels"][0]["fieldConfig"]["defaults"]["thresholds"] = {
         "mode": "absolute", "steps": [
             {"color": "green", "value": None}, {"color": "orange", "value": 85},
@@ -142,7 +173,7 @@ def build(config):
         ("Tool performance", "tool-performance.kql", "short", True),
         ("Model token usage and missing usage spans", "model-tokens.kql", "short", False),
         ("Failed operations - trace IDs", "failed-operations.kql", "short", True),
-        ("Instrumentation coverage", "telemetry-coverage.kql", "short", False),
+        ("Observed instrumentation", "telemetry-coverage.kql", "short", False),
         ("Evaluation results (optional custom events)", "evaluations.kql", "short", True),
     ]
     agents = dashboard("foundry-agent-operations", "Foundry - Agent operations", [workspace], [
@@ -150,6 +181,33 @@ def build(config):
               "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.")
         for i, (title, filename, unit, table) in enumerate(agent_specs, 1)
     ])
+    for field, color in (("P50_ms", "blue"), ("P95_ms", "purple"), ("P99_ms", "green")):
+        override(agents["panels"][0], f"/.*{field}.*/", {"color": {"mode": "fixed", "fixedColor": color}})
+    override(agents["panels"][1], "/.*ObservedRuns.*/", {"color": {"mode": "fixed", "fixedColor": "blue"}})
+    override(agents["panels"][1], "/.*FailedRuns.*/", {
+        "color": {"mode": "fixed", "fixedColor": "red"},
+        "custom.axisPlacement": "right",
+    })
+    override(agents["panels"][2], "/^P95_ms$/", {"unit": "ms"})
+    for field, color in (("InputTokens", "blue"), ("OutputTokens", "purple")):
+        override(agents["panels"][3], f"/.*{field}.*/", {"color": {"mode": "fixed", "fixedColor": color}})
+    override(agents["panels"][3], "/.*MissingUsageSpans.*/", {
+        "color": {"mode": "fixed", "fixedColor": "orange"},
+        "custom.axisPlacement": "right",
+    })
+    override(agents["panels"][4], "/^DurationMs$/", {"unit": "ms"})
+    agents["panels"][1]["description"] = (
+        "Observed runs and failed runs are shown on separate axes. Counts are weighted by ItemCount "
+        "when sampling is present; missing spans are not counted."
+    )
+    agents["panels"][3]["description"] = (
+        "Input/output token totals are derived from retained model spans. Missing usage spans use "
+        "the right axis; absent usage is not evidence of zero token consumption."
+    )
+    agents["panels"][5]["description"] = (
+        "Counts of observed and recognized spans, not a coverage percentage. A completely silent "
+        "workspace cannot establish telemetry health."
+    )
     inventory_target = {
         "refId": "A", "datasource": DS, "queryType": "Azure Resource Graph",
         "subscriptions": ["$subscription"],
@@ -165,7 +223,9 @@ def build(config):
     foundry = dashboard("foundry-overview", "Foundry - Resource and model overview", foundry_variables, [
         panel(1, "Accessible Foundry / OpenAI / ML resources", inventory_target, kind="table",
               description="Inventory is RBAC-filtered and includes ML workspaces; not every row is a Foundry hub."),
-        panel(2, "Agent telemetry coverage", logs("telemetry-coverage.kql")),
+        panel(2, "Observed agent telemetry", logs("telemetry-coverage.kql"),
+              description="Counts of observed and recognized spans, not a coverage percentage. "
+              "A completely silent workspace cannot establish telemetry health."),
         panel(3, "OpenAI requests by deployment and status", metric("AzureOpenAIRequests", "Total", request_dimensions)),
         panel(4, "OpenAI inference tokens per interval", metric("TokenTransaction", "Total")),
     ])

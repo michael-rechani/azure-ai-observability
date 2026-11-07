@@ -9,7 +9,7 @@ Monitoring-only starter for **Microsoft Foundry** and **Azure OpenAI provisioned
 | Area | Included | Prerequisite / boundary |
 | --- | --- | --- |
 | Foundry estate | Accessible accounts, projects, and ML workspace inventory | Resource Graph returns only resources visible to the Grafana identity |
-| Foundry agents | Run latency percentiles, failures, tool performance, token usage, trace IDs, telemetry coverage | Application Insights instrumentation matching the documented contract |
+| Foundry agents | Run latency percentiles, failures, tool performance, token usage, trace IDs, observed telemetry counts | Application Insights instrumentation matching the documented contract |
 | Foundry model usage | OpenAI requests and inference tokens on a selected Foundry account | OpenAI-specific metrics; not a universal endpoint for all Foundry model providers |
 | Evaluations | Optional evaluator score / pass-fail dashboard | Publish evaluation events explicitly; this repo does not run evaluations |
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
@@ -32,12 +32,29 @@ python .\scripts\build_dashboards.py --config .\config.local.json --output .\loc
 
 Keep personalized exports out of commits. Accounts can be switched with the dashboard controls; use a new dashboard copy for side-by-side environments. The Foundry agent dashboard aggregates the selected workspace, so use separate workspaces or add project/resource filters if teams share one.
 
+## Preview the dashboards without Azure
+
+With Docker and Docker Compose installed, run:
+
+```powershell
+docker compose -f .\demo\docker-compose.yml up -d
+```
+
+Open [Grafana at localhost:3100](http://127.0.0.1:3100), then open the **Simulated preview** folder. The two dashboards use Grafana's built-in TestData source, not Azure. Their banners, titles, and distinct UIDs mark every value as simulated; the displayed filter controls are layout examples and do not filter the sample data. The preview has the same panel positions and styles as the production dashboards, but Grafana's native interface may differ from the original illustrations.
+
+The demo listens on `127.0.0.1` and permits anonymous viewing for local evaluation only. Never expose it publicly or use it for production. Stop it when finished:
+
+```powershell
+docker compose -f .\demo\docker-compose.yml down
+```
+
 ## Repository layout
 
 ```text
 infra/       Bicep monitoring resources, existing-target RBAC, PTU alerts
 terraform/   Native Azure resources and Grafana data source/dashboard deployment
 dashboards/  Importable Foundry overview, agent operations, and PTU dashboards
+demo/        Local-only Grafana preview using clearly labeled simulated data
 queries/     Workspace KQL and Azure Resource Graph inventory query
 scripts/     Standard-library dashboard generator
 examples/    Synthetic OpenTelemetry example (no model calls)
@@ -49,6 +66,7 @@ tests/       Dashboard structure, units, filtering, and reproducibility checks
 
 ```powershell
 python .\scripts\build_dashboards.py
+python .\scripts\build_demo_dashboards.py
 python -m unittest discover -s .\tests -v
 az bicep build --file .\infra\main.bicep --outfile "$env:TEMP\ai-observability-main.json"
 az bicep build-params --file .\infra\main.example.bicepparam --outfile "$env:TEMP\ai-observability-params.json"

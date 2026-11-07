@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: Simulated dashboard preview
+    orgId: 1
+    folder: Simulated preview
+    type: file
+    disableDeletion: false
+    editable: false
+    options:
+      path: ${DEMO_DASHBOARD_PATH}
+      foldersFromFilesStructure: false

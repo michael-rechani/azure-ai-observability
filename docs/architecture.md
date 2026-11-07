@@ -36,7 +36,7 @@ No custom exporter is needed for PTU utilization. In particular, **utilization V
 | Billing, reservations, budgets | Azure Cost Management / reservation reporting; token counts and utilization are not invoices |
 | Multi-project attribution | Retain project/resource identity attributes and add filters or separate workspaces |
 
-Do not treat missing spans, missing metric definitions, or missing evaluation events as zero errors. The coverage panel helps distinguish generic application spans from recognized agent spans, but an entirely silent workspace still needs an independent telemetry-heartbeat alert.
+Do not treat missing spans, missing metric definitions, or missing evaluation events as zero errors. The observed-instrumentation panel distinguishes generic application spans from recognized agent spans, but does not calculate a coverage percentage. An entirely silent workspace still needs an independent telemetry-heartbeat alert.
 
 ## Metric interpretation
 
