@@ -1,0 +1,16 @@
+subscription_id         = "00000000-0000-0000-0000-000000000000"
+resource_group_name     = "monitoring-rg"
+location                = "eastus"
+grafana_admin_object_id = "00000000-0000-0000-0000-000000000000"
+notification_email      = "replace-me@example.invalid"
+monitored_accounts = {
+  foundry = {
+    resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/foundry-account"
+    ptu_deployments = []
+  }
+  ptu = {
+    resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/openai-rg/providers/Microsoft.CognitiveServices/accounts/openai-account"
+    ptu_deployments = ["replace-with-ptu-deployment"]
+  }
+}
+existing_telemetry_workspace_ids = []

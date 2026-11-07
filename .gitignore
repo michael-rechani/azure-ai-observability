@@ -8,3 +8,12 @@ infra/main.json
 infra/*.local.bicepparam
 infra/*.local.parameters.json
 deployment-output.json
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+crash.log
+crash.*.log

@@ -20,11 +20,9 @@ This is a foundation for broad Foundry observability, **not a claim that every F
 
 ## Quick start
 
-1. Follow [setup](docs/setup.md) to deploy the monitoring infrastructure or use an existing Grafana instance.
-2. Configure Grafana's Azure Monitor data source for managed identity authentication.
-3. Import the three JSON files in `dashboards/`, selecting that data source when prompted.
-4. Enter the target subscription/account/region and Log Analytics workspace ARM ID in the dashboard's top controls.
-5. Connect agent telemetry using [the instrumentation contract](docs/telemetry.md). Platform PTU metrics do not need an application exporter.
+1. Follow [Terraform setup](docs/terraform.md) to deploy the Azure resources, Azure Monitor data source, and dashboards, or use the [Bicep/manual setup](docs/setup.md). Pick one tool to own a deployment; do not apply both to the same resources.
+2. Enter the target subscription/account/region and Log Analytics workspace ARM ID in the dashboard's top controls, or generate personalized dashboard JSON before the Grafana Terraform stage.
+3. Connect agent telemetry using [the instrumentation contract](docs/telemetry.md). Platform PTU metrics do not need an application exporter.
 
 The checked-in dashboards use obvious example values. They are importable templates, not connected to a real subscription. For your own defaults, copy `config.example.json` to ignored `config.local.json`, then:
 
@@ -38,6 +36,7 @@ Keep personalized exports out of commits. Accounts can be switched with the dash
 
 ```text
 infra/       Bicep monitoring resources, existing-target RBAC, PTU alerts
+terraform/   Native Azure resources and Grafana data source/dashboard deployment
 dashboards/  Importable Foundry overview, agent operations, and PTU dashboards
 queries/     Workspace KQL and Azure Resource Graph inventory query
 scripts/     Standard-library dashboard generator
@@ -55,7 +54,7 @@ az bicep build --file .\infra\main.bicep --outfile "$env:TEMP\ai-observability-m
 az bicep build-params --file .\infra\main.example.bicepparam --outfile "$env:TEMP\ai-observability-params.json"
 ```
 
-These commands do not deploy anything. CI performs equivalent offline checks. Bicep compilation and structural dashboard checks do not replace live Azure metric, KQL, RBAC, and dashboard verification; use the [acceptance checklist](docs/setup.md#acceptance-checklist).
+These commands do not deploy anything. CI also validates and mock-tests both Terraform stages. Offline checks do not replace live Azure metric, KQL, RBAC, and dashboard verification; use the [acceptance checklist](docs/setup.md#acceptance-checklist).
 
 ## Security and cost defaults
 

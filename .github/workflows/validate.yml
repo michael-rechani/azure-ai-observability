@@ -27,3 +27,14 @@ jobs:
           az bicep install
           az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
           az bicep build-params --file infra/main.example.bicepparam --outfile "$RUNNER_TEMP/parameters.json"
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - name: Format, validate, and mock-test Terraform
+        run: |
+          terraform fmt -check -recursive terraform
+          for stage in azure grafana; do
+            terraform -chdir="terraform/$stage" init -backend=false -input=false -lockfile=readonly
+            terraform -chdir="terraform/$stage" validate
+            terraform -chdir="terraform/$stage" test
+          done

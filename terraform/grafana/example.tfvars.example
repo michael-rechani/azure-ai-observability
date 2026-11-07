@@ -1,0 +1,2 @@
+grafana_endpoint = "https://replace-with-grafana-endpoint.example.invalid"
+subscription_id  = "00000000-0000-0000-0000-000000000000"
