@@ -30,8 +30,6 @@ Choose **Terraform or Bicep**: both deploy Azure monitoring resources, roles, al
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
 
-Neither path has **been validated in a live Azure subscription**. Start in nonproduction and check permissions, metric availability, ingestion, dashboards, and alert delivery with the [acceptance checklist](docs/setup.md#acceptance-checklist).
-
 ### Deploy with Terraform
 
 Install Terraform 1.7+ and configure protected, locked remote Terraform state for real environments; state can contain sensitive values. Remote state is not configured automatically: follow the [state setup walkthrough](docs/getting-started.md#prepare-remote-state-for-terraform) before initializing either stage. The [Terraform guide](docs/terraform.md) covers both stages and access requirements.
