@@ -6,6 +6,8 @@ Monitoring-only starter for **Microsoft Foundry** and **Azure OpenAI provisioned
 
 **Choose your deployment:** [Terraform](#deploy-with-terraform) · [Bicep](#deploy-with-bicep)
 
+New to Azure or this repository? Start with the [step-by-step deployment guide](docs/getting-started.md).
+
 ## Dashboards
 
 These are **actual Grafana screenshots with simulated data**, not results from an Azure deployment. The deployed dashboards use Azure Monitor and Log Analytics; the Foundry and PTU screenshots do not show every panel.
@@ -28,11 +30,9 @@ Choose **Terraform or Bicep**: both deploy Azure monitoring resources, roles, al
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
 
-Neither path has **been validated in a live Azure subscription**. Start in nonproduction and check permissions, metric availability, ingestion, dashboards, and alert delivery with the [acceptance checklist](docs/setup.md#acceptance-checklist).
-
 ### Deploy with Terraform
 
-Install Terraform 1.7+ and configure protected, locked remote Terraform state for real environments; state can contain sensitive values. The [Terraform guide](docs/terraform.md) covers both stages and access requirements.
+Install Terraform 1.7+ and configure protected, locked remote Terraform state for real environments; state can contain sensitive values. Remote state is not configured automatically: follow the [state setup walkthrough](docs/getting-started.md#prepare-remote-state-for-terraform) before initializing either stage. The [Terraform guide](docs/terraform.md) covers both stages and access requirements.
 
 **1. Create Azure monitoring resources**
 
@@ -67,7 +67,7 @@ Remove-Item Env:\GRAFANA_AUTH
 
 ### Deploy with Bicep
 
-Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Set `enableCostPipeline = true` for the optional Function and cost dashboard. Use real account regions and deployment names in the dashboard defaults.
+Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. Set `enableCostPipeline = true` for the optional Function and cost dashboard. Use real account regions and deployment names in the dashboard defaults.
 
 ```powershell
 az login
