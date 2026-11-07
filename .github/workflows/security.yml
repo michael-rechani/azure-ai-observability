@@ -59,23 +59,85 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Scan infrastructure as code
+      - name: Scan Terraform
         run: |
           python -m pip install -r .github/requirements-iac.txt
-          checkov --directory . --framework terraform bicep --skip-download \
+          checkov --directory terraform --framework terraform --skip-download \
             --quiet --compact --soft-fail --output cli --output sarif \
             --output-file-path console,checkov.sarif
           test -s checkov.sarif
-      - name: Keep findings as an artifact
+      - name: Keep Terraform findings as an artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: checkov-sarif
           path: checkov.sarif
           if-no-files-found: error
           retention-days: 7
-      - name: Upload findings to GitHub code scanning
+      - name: Upload Terraform findings to GitHub code scanning
         if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           sarif_file: checkov.sarif
-          category: checkov-infrastructure
+          category: checkov-terraform
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.2
+      - name: Verify the ARM scanner
+        run: |
+          trivy config --disable-telemetry --skip-version-check --skip-check-update \
+            --misconfig-scanners azure-arm --file-patterns 'azure-arm:.*\.json' \
+            --format json --output "$RUNNER_TEMP/arm-fixture-report.json" \
+            .github/fixtures/insecure-arm-2.json
+          jq -e 'any(.Results[]?; .Type == "azure-arm" and
+            any(.Misconfigurations[]?; .ID == "AZU-0008" and .Status == "FAIL"))' \
+            "$RUNNER_TEMP/arm-fixture-report.json" > /dev/null
+      - name: Compile Bicep modules
+        run: |
+          az bicep install
+          output_dir="$RUNNER_TEMP/arm-scan"
+          while IFS= read -r -d '' source; do
+            relative="${source#infra/}"
+            output="$output_dir/${relative%.bicep}.json"
+            mkdir -p "$(dirname "$output")"
+            az bicep build --file "$source" --outfile "$output"
+          done < <(find infra -type f -name '*.bicep' -print0)
+          test -s "$output_dir/main.json"
+          test -s "$output_dir/modules/cost.json"
+      - name: Scan compiled ARM templates
+        run: |
+          output_dir="$RUNNER_TEMP/arm-scan"
+          report="$RUNNER_TEMP/bicep-arm-report.json"
+          trivy config --disable-telemetry --skip-version-check --skip-check-update \
+            --misconfig-scanners azure-arm --file-patterns 'azure-arm:.*\.json' \
+            --include-non-failures --format json --output "$report" "$output_dir"
+
+          while IFS= read -r -d '' template; do
+            relative="${template#"$output_dir"/}"
+            if ! jq -e --arg file "$relative" \
+              'any(.Results[]?; .Type == "azure-arm" and (.Target | endswith($file)))' \
+              "$report" > /dev/null; then
+              if [[ "$relative" == "modules/budget.json" ]]; then
+                echo "::warning file=infra/modules/budget.bicep::Trivy did not recognize this subscription-scoped ARM template; review it separately."
+              else
+                echo "::error::Trivy did not recognize compiled ARM template $relative."
+                exit 1
+              fi
+            fi
+          done < <(find "$output_dir" -type f -name '*.json' -print0)
+
+          jq -e 'any(.Results[]?; (.Target | endswith("modules/cost.json")) and
+            any(.Misconfigurations[]?; .ID == "AZU-0056"))' "$report" > /dev/null
+          {
+            echo "### Bicep ARM scan"
+            echo "Findings are report-only; expressions are not evaluated. See the artifact and SECURITY.md."
+            jq -r '.Results[] | "- \(.Target): \(.MisconfSummary.Failures // 0) findings"' "$report"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep ARM templates and findings as an artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bicep-arm-scan
+          path: |
+            ${{ runner.temp }}/arm-scan
+            ${{ runner.temp }}/bicep-arm-report.json
+          if-no-files-found: error
+          retention-days: 7
