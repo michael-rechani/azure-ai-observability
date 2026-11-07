@@ -64,6 +64,15 @@ class GettingStartedTests(unittest.TestCase):
         self.assertIn("foreach ($destination in @($azureBackendFile, $grafanaBackendFile))", self.markdown)
         self.assertIn("Test-Path -LiteralPath $destination", self.markdown)
 
+    def test_manual_import_documents_all_dashboards(self):
+        setup = (ROOT / "docs" / "setup.md").read_text(encoding="utf-8")
+        manual = setup.split("## Manual data-source and dashboard import", 1)[1].split("\n## ", 1)[0]
+        dashboards = sorted((ROOT / "dashboards").glob("*.json"))
+        self.assertTrue(dashboards, "No dashboards found to document.")
+        for dashboard in dashboards:
+            with self.subTest(dashboard=dashboard.name):
+                self.assertIn(f"dashboards/{dashboard.name}", manual)
+
     @unittest.skipUnless(PWSH, "PowerShell 7 is required to parse the documented examples")
     def test_powershell_examples_parse_without_execution(self):
         examples = re.findall(

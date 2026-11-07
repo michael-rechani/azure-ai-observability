@@ -3,9 +3,9 @@
 The two Terraform roots use **native AzureRM and Grafana provider resources**:
 
 1. `terraform/azure` creates Managed Grafana, Log Analytics, Application Insights, scoped RBAC, an action group, and per-account PTU metric alerts. It can also create the monitoring resource group, assign Grafana Viewer or telemetry-publisher access, and provision a cost-collection Function.
-2. `terraform/grafana` creates the Azure Monitor managed-identity data source and the dashboards through the Grafana data-plane API, with the cost dashboard opt-in.
+2. `terraform/grafana` creates the Azure Monitor managed-identity data source and dashboards through the Grafana data-plane API, with optional cost and business overview dashboards.
 
-The deployment is intentionally two-stage: the Grafana endpoint and caller's Grafana Admin role need to exist and propagate before Terraform can connect to the data plane. **No separate Python installation or local simulated preview is required to deploy.** These configurations do **not** create Foundry agents or model deployments, set up instrumentation in existing applications, deploy an evaluator, or resize PTUs. The Terraform path has not yet been validated in a live Azure subscription; start in nonproduction and run the [live acceptance checklist](setup.md#acceptance-checklist) afterward.
+The Grafana stage needs an existing endpoint and a propagated Grafana Admin role, so deploy it after the Azure stage. **No separate Python installation or local simulated preview is required to deploy.** These configurations do **not** create Foundry agents or model deployments, set up instrumentation in existing applications, deploy an evaluator, or resize PTUs. The Terraform path has not yet been validated in a live Azure subscription; start in nonproduction and run the [live acceptance checklist](setup.md#acceptance-checklist) afterward.
 
 ## Before you start
 
@@ -22,7 +22,7 @@ The deployment is intentionally two-stage: the Grafana endpoint and caller's Gra
 
 ## 1. Azure resources
 
-Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars`; replace all placeholder values. The example sets `create_resource_group = true` for a new group. Set it to `false` to use an existing group; the variable defaults to `false` for compatibility with existing deployments. Account IDs are full ARM resource IDs; `ptu_deployments` are actual provisioned deployment names, not model names. Use an empty set for an account without PTUs. The example creates an alert email action group; the address is stored in Terraform state and Azure. Set `enable_cost_pipeline = true` if you want the optional cost dashboard.
+Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars`; replace all placeholder values. The example sets `create_resource_group = true` for a new group. Set it to `false` to use an existing group; the variable defaults to `false` for compatibility with existing deployments. Account IDs are full ARM resource IDs; `ptu_deployments` are actual provisioned deployment names, not model names. Use an empty set for an account without PTUs. The example creates an alert email action group; the address is stored in Terraform state and Azure. Set `enable_cost_pipeline = true` to deploy the optional cost collector.
 
 Optionally list existing application identities to grant **Monitoring Metrics Publisher** on the new Application Insights resource. Use Entra **object IDs**, not application/client IDs; omit the map if another process manages these permissions:
 
@@ -71,7 +71,7 @@ enable_cost_pipeline = true
 cost_lookback_days   = 90 # UTC days, including today; allowed range: 31-366
 ```
 
-Terraform creates a Linux Flex Consumption Function, user-assigned managed identity, private keyless storage, a custom Log Analytics table, a data collection endpoint/rule, and their role assignments. The Function is scheduled daily at **06:00 UTC**, uses no always-ready instances, and queries Cost Management sequentially for each selected account and cost type. The storage account and Function endpoint are public-network resources protected by Entra authorization; sovereign clouds and private networking are not implemented.
+Terraform creates a Linux Flex Consumption Function, user-assigned managed identity, a storage account with shared-key access disabled, a custom Log Analytics table, a data collection endpoint/rule, and their role assignments. The Function is scheduled daily at **06:00 UTC**, uses no always-ready instances, and queries Cost Management sequentially for each selected account and cost type. The storage account and Function endpoint are public-network resources protected by Entra authorization; sovereign clouds and private networking are not implemented.
 
 Terraform packages the PowerShell Function and invokes `az functionapp deployment source config-zip` through a PowerShell 7 local provisioner after resource creation; the CLI uses Flex's supported deployment path. An authenticated Azure CLI 2.60.0+ and PowerShell 7 must be available to the **machine running Terraform**, including CI runners. Python is not required. The caller needs network access and publishing permission. The deployment reruns when the package or publishing command changes. If deployment fails, the apply fails; correct the issue and reapply. Azure role propagation can delay startup, publishing, or collection.
 
@@ -153,4 +153,4 @@ terraform -chdir=terraform\azure providers lock -platform=linux_amd64 -platform=
 terraform -chdir=terraform\grafana providers lock -platform=linux_amd64 -platform=windows_amd64 -platform=darwin_amd64 -platform=darwin_arm64
 ```
 
-**Destruction is destructive:** removing resources from configuration or running `terraform destroy` can remove dashboards, alerts, Grafana, telemetry resources, and stored telemetry. Review every plan and your retention policies. If intentionally retiring the entire stack, handle the Grafana stage first while the endpoint remains reachable, then the Azure stage. Existing model deployments and target account resources are not Terraform-managed.
+**Removal can delete data:** removing resources from configuration or running `terraform destroy` can remove dashboards, alerts, Grafana, telemetry resources, and stored telemetry. Review every plan and your retention policies. If retiring the entire stack, handle the Grafana stage first while the endpoint remains reachable, then the Azure stage. Existing model deployments and target account resources are not Terraform-managed.

@@ -279,20 +279,13 @@ def build(config):
         "Counts of observed and recognized spans, not a coverage percentage. A completely silent "
         "workspace cannot establish telemetry health."
     )
-    inventory_target = {
-        "refId": "A", "datasource": DS, "queryType": "Azure Resource Graph",
-        "subscriptions": ["$subscription"],
-        "azureResourceGraph": {
-            "query": (ROOT / "queries" / "inventory.kql").read_text(encoding="utf-8"),
-            "resultFormat": "table", "scope": "subscription",
-        },
-    }
     foundry_variables = [subscription, workspace] + [
         textbox(name, config["foundry"][key])
         for name, key in (("resourceGroup", "resourceGroup"), ("account", "account"), ("region", "region"))
     ] + [textbox("deployment", "*", "OpenAI deployment (or *)")]
     foundry = dashboard("foundry-overview", "Foundry - Resource and model overview", foundry_variables, [
-        panel(1, "Accessible Foundry / OpenAI / ML resources", inventory_target, kind="table",
+        panel(1, "Accessible Foundry / OpenAI / ML resources",
+              resource_graph("inventory.kql", "$subscription"), kind="table",
               description="Inventory is RBAC-filtered and includes ML workspaces; not every row is a Foundry hub."),
         panel(2, "Observed agent telemetry", logs("telemetry-coverage.kql"),
               description="Counts of observed and recognized spans, not a coverage percentage. "

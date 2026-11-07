@@ -1,6 +1,6 @@
 # Agent telemetry contract
 
-The dashboards query workspace tables `AppRequests`, `AppDependencies`, and (optionally) `AppEvents`. They deliberately do not assume classic Application Insights `requests` / `dependencies` table names or undocumented Foundry-specific custom event schemas.
+The dashboards query workspace tables `AppRequests`, `AppDependencies`, and optionally `AppEvents`. They do not assume classic Application Insights `requests` / `dependencies` table names or undocumented Foundry-specific custom event schemas.
 
 ## Required attributes
 
@@ -19,7 +19,7 @@ These follow OpenTelemetry GenAI naming conventions, but **instrumentation and e
 
 Use properly nested spans to preserve the trace/OperationId and parent IDs. Mark failures with OpenTelemetry `StatusCode.ERROR`; do not catch and silently convert failures to success. Attach numeric usage only when returned by the provider. Do not estimate missing token counts as zero. The token panel exposes missing usage spans, and counts only model request spans to avoid parent/child double counting.
 
-The queries use `ItemCount` for sampled request totals. Trace percentile calculations reflect retained spans, not guaranteed population percentiles. Tail sampling, ingestion caps, missing spans, and duplicate instrumentation can change results. The sample uses 100% sampling for a small demonstration only; choose production settings deliberately.
+The queries use `ItemCount` for sampled request totals. Trace percentile calculations reflect retained spans, not guaranteed population percentiles. Tail sampling, ingestion caps, missing spans, and duplicate instrumentation can change results. The sample uses 100% sampling for demonstration; configure sampling for your production workload.
 
 ## Optional attribution
 

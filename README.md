@@ -2,7 +2,7 @@
 
 **Foundry agents · OpenAI PTUs · Cost visibility**
 
-Monitoring-only starter for **Microsoft Foundry** and **Azure OpenAI provisioned throughput (PTUs)**, with separate dashboards on shared **Azure Managed Grafana + Azure Monitor + Application Insights / Log Analytics** infrastructure.
+Monitor existing **Microsoft Foundry** and **Azure OpenAI provisioned throughput (PTUs)** with separate dashboards backed by Azure Managed Grafana, Azure Monitor, and Application Insights / Log Analytics.
 
 **Choose your deployment:** [Terraform](#deploy-with-terraform) · [Bicep](#deploy-with-bicep)
 
@@ -30,7 +30,7 @@ These are **actual Grafana screenshots with simulated data**, not results from a
 
 ## Deploy to Azure
 
-Choose **Terraform or Bicep**: both deploy Azure monitoring resources, roles, alerts, Grafana's data source, and dashboards. Either can also deploy the optional PowerShell Azure Function, cost dashboard, and business overview. The business overview is enabled with the cost dashboard and summarizes cost collection, observed agent activity, and PTU signals. Neither path requires Python to deploy. Use only one tool for a given deployment; they do not share state or ownership.
+Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, alerts, a Grafana data source, and dashboards. Both support an optional cost collector and the cost and business overview dashboards; the overview is provisioned with the cost dashboard. Neither path requires Python to deploy. Use one tool per deployment; the paths do not share state or ownership.
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
 
@@ -101,7 +101,7 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Cost visibility | Optional Function-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | Billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
-This is a foundation for broad Foundry observability, **not a claim that every Foundry feature emits telemetry automatically**. See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.
+**Foundry features do not all emit telemetry automatically.** See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.
 
 ## Existing alternatives
 
@@ -115,7 +115,7 @@ This repository combines deployable Terraform or Bicep monitoring infrastructure
 infra/       Bicep monitoring resources, access, alerts, and optional cost pipeline
 terraform/   Native Azure resources and Grafana data source/dashboard deployment
 dashboards/  Importable Foundry, agent, PTU, cost, and business overview dashboards
-demo/        Local-only Grafana preview using clearly labeled simulated data
+demo/        Local-only Grafana preview using simulated data
 docs/images/ Actual Grafana screenshots with simulated data (no live Azure connection)
 queries/     Workspace KQL and Azure Resource Graph inventory query
 function/    Optional scheduled Azure Functions cost collector

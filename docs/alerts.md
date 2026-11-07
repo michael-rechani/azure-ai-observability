@@ -12,7 +12,7 @@
 
 These are stateful Azure Monitor alerts with auto-mitigation and an email action group. The utilization threshold is configurable. Multiple named deployments are evaluated as separate time series, not an average that hides a saturated deployment. Deployment dimension values must be explicit provisioned deployment names.
 
-The default utilization rule averages other dimensions (including stream type); the dashboard's maximum panel complements it. Change aggregation/dimensions deliberately if your traffic mix requires a different saturation signal. Tune 429 thresholds for expected bursts and retry policy to reduce noise.
+The default utilization rule averages other dimensions (including stream type); the dashboard's maximum panel complements it. Adjust the aggregation or dimensions if your traffic mix requires a different saturation signal. Tune 429 thresholds for expected bursts and retry policy to reduce noise.
 
 ## Capacity runbook
 

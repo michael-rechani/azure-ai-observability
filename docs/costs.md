@@ -1,6 +1,6 @@
 # Azure AI cost collection
 
-Both deployment paths can opt into a daily PowerShell Azure Function, a detailed Grafana cost dashboard, and a business overview: `enable_cost_pipeline` plus `enable_cost_dashboard` in [Terraform](terraform.md#optional-cost-pipeline), or `enableCostPipeline` in [Bicep](bicep.md#optional-cost-collection-and-budget). The overview shows collection freshness, actual cost by currency, observed agent activity, and PTU signals without blending them into a health score. This feature has not been validated with live Azure billing data.
+You can deploy a daily PowerShell Azure Function, a detailed Grafana cost dashboard, and a business overview using `enable_cost_pipeline` plus `enable_cost_dashboard` in [Terraform](terraform.md#optional-cost-pipeline), or `enableCostPipeline` in [Bicep](bicep.md#optional-cost-collection-and-budget). The overview shows collection status, actual cost by currency, observed agent activity, and PTU signals without combining them into a health score. This feature has not been validated with live Azure billing data.
 
 ## What the numbers mean
 

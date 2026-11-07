@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Cloud operators deploy and maintain Azure AI monitoring. Customer business users and end users may view metrics through Grafana. A concise business overview for those viewers is an explicit assumption from this task; their exact roles and access boundaries remain deployment-specific.
+Cloud operators deploy and maintain Azure AI monitoring. Business users and end users can view metrics in Grafana; their roles and access boundaries depend on the deployment.
 
 ## Product Purpose
 
@@ -28,7 +28,7 @@ Customers deploy into their own Azure subscriptions. Grafana uses a managed iden
 - Cost collection is optional, daily, and based on Azure Cost Management data attributed to configured accounts. Billing can lag; actual and amortized costs are alternatives.
 - Screenshots and local demo dashboards use simulated data. Live Azure deployment and customer-specific telemetry must be validated in the target environment.
 - Private networking, sovereign-cloud endpoints, and strict customer data separation are not provided by the starter defaults.
-- The new business overview is assumed to summarize cost, usage, and service health; absent or unsupported telemetry must be shown as unavailable, not zero.
+- The business overview summarizes cost, observed activity, and PTU signals; absent or unsupported telemetry must be shown as unavailable, not zero.
 
 ## Evidence on Hand
 

@@ -17,12 +17,12 @@ Skip deployment entirely if you already have Grafana and telemetry storage. Gran
 
 ## Manual data-source and dashboard import
 
-The deployment guides provision these automatically. For an existing Grafana instance, or if you deliberately choose manual setup:
+The deployment guides provision these automatically. For an existing Grafana instance, or if you choose manual setup:
 
 1. Open the Grafana endpoint and sign in as the assigned administrator. RBAC propagation can take several minutes.
 2. Configure the built-in **Azure Monitor** data source for **Managed Identity** authentication. Run **Save & test**. No client secret is required.
-3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. If the cost pipeline is deployed, import `dashboards/azure-ai-costs.json` too. Select the Azure Monitor data source for each import.
-4. Set the top textbox controls to real values. `workspaceResourceId` is the **Log Analytics workspace ARM resource ID**, not its workspace GUID and not the Application Insights ID. Resource/region values must match the target account.
+3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. If the cost pipeline is deployed, also import `dashboards/azure-ai-costs.json` and `dashboards/business-overview.json`. Select the Azure Monitor data source for each import.
+4. Set the top textbox controls to real values. `workspaceResourceId` and the business overview's `monitoringWorkspaceResourceId` are **Log Analytics workspace ARM resource IDs**, not workspace GUIDs or Application Insights IDs. In the business overview, set the former to the agent-telemetry workspace and the latter to the cost collector's workspace. Resource/region values must match the target account.
 5. Optionally generate personalized files using `config.local.json` and the Python dashboard generator. This is not required: the shared subscription default can be changed independently in each dashboard, and the workspace ARM ID can point to another subscription.
 
 Managed Grafana APIs require their own Entra authentication and appropriate roles. This starter does not enable API keys or store a Grafana admin token.
@@ -47,7 +47,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 
 ## Acceptance checklist
 
-- The three core dashboards, plus the optional cost dashboard when enabled, query using the managed identity.
+- The three core dashboards and, when enabled, the cost dashboard and business overview query using the managed identity.
 - Resource inventory contains expected authorized accounts/projects; missing rows trigger an RBAC check.
 - A known agent execution produces correlated run, tool, and model spans with an OperationId.
 - Model usage totals match known calls and do not count parent agent summaries twice.
@@ -55,7 +55,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
 - A controlled failure appears in the trace table. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
-- If the cost pipeline is enabled, the scheduled Function produces a complete snapshot in the monitoring workspace and the cost dashboard reports the expected account/currency data. The first run is scheduled for 06:00 UTC and billing data can lag.
+- If the cost pipeline is enabled, the scheduled Function produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. The first run is scheduled for 06:00 UTC and billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.
 
 The repository's offline CI cannot verify live data, KQL execution, model/SKU support, or notification delivery without your Azure environment.

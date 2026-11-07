@@ -71,7 +71,7 @@ az bicep install
 az bicep version
 ```
 
-If a command reports an error, resolve it before proceeding. The examples below assume the same PowerShell session and do not require an Azure service-principal secret.
+Resolve any errors before proceeding. The examples below assume the same PowerShell session and do not require an Azure service-principal secret.
 
 ## 2. Sign in and collect your Azure details
 
@@ -427,7 +427,7 @@ if ($LASTEXITCODE -ne 0 -or -not $env:GRAFANA_AUTH) { throw 'Could not obtain a 
 terraform "-chdir=$grafanaStage" plan -var-file=local.tfvars
 ```
 
-After the plan succeeds and you have reviewed it, apply and inspect the dashboard URLs:
+After the plan succeeds, review it and apply:
 
 ```powershell
 terraform "-chdir=$grafanaStage" apply -var-file=local.tfvars
@@ -444,12 +444,12 @@ If a command fails or you stop before the last line, remove the token with `Remo
 
 ## 4. Open and verify the dashboards
 
-1. Open the Grafana URL from the successful deployment and sign in as the Grafana administrator. Find the Foundry overview, Foundry agents, and OpenAI PTU dashboards; the Azure AI costs dashboard appears only when the cost feature is enabled.
+1. Open the Grafana URL from the successful deployment and sign in as the Grafana administrator. Find the Foundry overview, Foundry agents, and OpenAI PTU dashboards. If you enabled cost collection and its dashboards, also find Azure AI costs and the business overview.
 2. Check each dashboard's subscription, account, region, deployment, workspace, and time-range controls. Use the **Log Analytics workspace ARM resource ID**, not a workspace GUID or Application Insights ID, where a workspace resource ID is requested.
 3. Generate or observe known traffic on an existing account. Confirm that supported request, token, and PTU utilization metrics appear for the intended resource and deployment. An empty graph can mean no traffic, an unsupported metric/dimension, a wrong filter, or missing access; it does not prove zero usage.
 4. Configure your Foundry agent or application to send real traces to Application Insights, then run a known agent request. Creating Application Insights alone does not instrument agents or create evaluation events. Follow the [telemetry guide](telemetry.md) and check the actual attributes and workspace.
 5. Before enabling PTU alerts, inspect the account's [metric definitions and dimensions](setup.md#metric-discovery). Then change `enablePtuAlerts` or `enable_ptu_alerts` to `true`, review the new deployment/plan, and deploy again. Enable agent alerts only after verifying the telemetry schema, sampling, and expected traffic.
-6. If costs are enabled, check the Function invocation and cost dashboard after the first scheduled run at **06:00 UTC**. Billing data can lag or be revised. The dashboard shows account-attributed pretax costs, not the invoice or per-deployment PTU pricing; actual and amortized costs are alternatives, not totals to add together.
+6. If costs are enabled, check the Function invocation, cost dashboard, and business overview after the first scheduled run at **06:00 UTC**. Billing data can lag or be revised. The cost dashboard shows actual and amortized account-attributed pretax costs; the business overview shows actual costs only. Neither reports invoice totals or per-deployment PTU prices, and actual and amortized costs are alternatives, not amounts to add together.
 7. Ask a member of the configured Viewer group to sign in and confirm access. Review what the Grafana identity can query before sharing dashboards. Test alert delivery in nonproduction.
 
 Use the full [acceptance checklist](setup.md#acceptance-checklist) before relying on the dashboards. Offline validation cannot prove live Azure permissions, metric availability, queries, costs, or notification delivery.
