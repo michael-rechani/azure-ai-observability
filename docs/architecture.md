@@ -4,9 +4,9 @@
 
 [View full size](images/azure-observability-architecture-dark.svg)
 
-The diagram is a logical view, not a live resource inventory. Dashed boxes identify optional features, not private networking. The data flows are:
+The diagram is a logical view, not a live resource inventory. Dashed boxes identify optional features, not private networking. Azure service icons are from the [Microsoft Azure Architecture Center](https://learn.microsoft.com/azure/architecture/icons/). The data flows are:
 
-1. Instrumented agents and applications send OpenTelemetry traces and events through Application Insights to an existing or new Log Analytics workspace. OpenTelemetry applies to this agent/application path; PTU metrics, resource inventory, and cost collection use Azure-native services. Grafana reads that workspace.
+1. Agents and applications configured with OpenTelemetry send traces through Application Insights to an existing or new Log Analytics workspace. Evaluation events require separate instrumentation. The starter deploys neither the application instrumentation nor an OpenTelemetry Collector. PTU metrics, resource inventory, and cost collection use Azure-native services. Grafana reads the telemetry workspace.
 2. Grafana queries native Azure Monitor metrics for the selected OpenAI account and deployments, independently of agent instrumentation.
 3. Grafana queries Azure Resource Graph for inventory and allocated PTU capacity, limited by its managed identity's access.
 4. If enabled, a daily Function queries Cost Management for selected account IDs and sends actual and amortized cost snapshots through a data collection endpoint and rule to the monitoring workspace. Grafana reads complete snapshots for the cost and business dashboards. The Function also uses storage, sends its telemetry to Application Insights, and sends storage read diagnostics to the monitoring workspace.

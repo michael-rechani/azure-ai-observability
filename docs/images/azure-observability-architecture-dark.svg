@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1640" viewBox="0 0 1800 1640" role="img" aria-labelledby="title description" style="max-width:100%;height:auto">
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1744" viewBox="0 0 1800 1744" role="img" aria-labelledby="title description" style="max-width:100%;height:auto">
   <title id="title">Azure AI Observatory architecture at a glance</title>
-  <desc id="description">A dark, logical architecture view with numbered flows and explicit Azure trust boundaries. Existing Foundry agents and applications send OpenTelemetry traces and events to Application Insights and Log Analytics. Azure OpenAI and PTU service metrics come directly from Azure Monitor; they do not use OpenTelemetry. Azure Resource Graph supplies RBAC-filtered inventory and allocated capacity. Azure Managed Grafana uses its managed identity to query these sources and presents Foundry, agent and PTU dashboards. An optional daily Azure Function reads account-attributed costs from Cost Management and writes actual and amortized snapshots through a data collection endpoint and rule to the monitoring workspace; Function logs go to Application Insights and storage read diagnostics go to Log Analytics. Azure Monitor alerts and an optional account-filtered budget notify an action group. Terraform or Bicep deploys the observability resources; existing AI accounts are not created or resized. The diagram is logical, not a network boundary or live resource inventory.</desc>
+  <desc id="description">A logical Azure architecture with five numbered flows. Existing Foundry agents and applications use app-configured OpenTelemetry instrumentation and an exporter to send traces to Application Insights and Log Analytics. Evaluation events are optional. No OpenTelemetry Collector is deployed. Azure OpenAI and PTU metrics come directly from Azure Monitor. Azure Resource Graph supplies RBAC-filtered inventory and allocated capacity. Azure Managed Grafana queries these sources using its managed identity. An optional daily Azure Function reads account-attributed costs from Cost Management and sends actual and amortized snapshots through a data collection endpoint and rule to the monitoring workspace. Azure Monitor alerts and an optional account-filtered budget notify an action group. Terraform or Bicep deploys the observability resources; existing AI accounts are not created or resized. The tenant outline is logical, not a network boundary or live resource inventory.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4aa8ff"/></marker>
     <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3cc3ae"/></marker>
@@ -25,12 +25,12 @@
       .divider { stroke: #344454; stroke-width: 1; }
     </style>
   </defs>
-  <rect width="1800" height="1640" fill="#0d1117"/>
+  <rect width="1800" height="1744" fill="#0d1117"/>
   <text x="42" y="52" class="title">Azure AI Observatory — architecture at a glance</text>
-  <text x="42" y="86" class="subtitle">Independent telemetry, native metrics, and optional cost signals converge in Grafana. Numbers follow the monitoring flows.</text>
-  <rect x="36" y="112" width="1728" height="1341" rx="16" fill="#0d1117" stroke="#6b7c8e" stroke-width="1.5" stroke-dasharray="9 6"/>
+  <text x="42" y="86" class="subtitle">Agent telemetry, native metrics and optional costs converge in Grafana.</text>
+  <rect x="36" y="112" width="1728" height="1445" rx="16" fill="#0d1117" stroke="#6b7c8e" stroke-width="1.5" stroke-dasharray="9 6"/>
   <text x="62" y="147" class="section-small">CUSTOMER AZURE TENANT • LOGICAL VIEW, NOT A NETWORK BOUNDARY</text>
-  <text x="62" y="173" class="small">Existing AI resources may span subscriptions; cost collection queries one configured subscription. Public endpoints are used by default.</text>
+  <text x="62" y="173" class="small">AI resources can span subscriptions; cost collection queries one. The starter uses public endpoints.</text>
   <rect x="54" y="194" width="310" height="570" rx="12" class="source-group"/>
   <rect x="386" y="194" width="696" height="570" rx="12" class="data-group"/>
   <text x="66" y="207" class="section-small">EXISTING AI RESOURCES</text>
@@ -41,17 +41,24 @@
   <circle cx="79" cy="225" r="15" fill="#1683d8"/><text x="79" y="231" class="num">1</text>
   <text x="105" y="232" class="section">Agent telemetry</text>
   <rect x="66" y="253" width="270" height="116" rx="10" class="box"/>
-  <text x="84" y="283" class="name">Foundry agents / apps</text>
-  <text x="84" y="309" class="body">Existing instrumented runtimes</text>
-  <text x="84" y="337" class="small">OTel spans and events</text>
+  <!-- Azure icon: foundry-agent -->
+  <svg id="azure-icon-1-uuid-f9dbb74c-bb65-44f5-a0f2-185541c8f2e3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="84" y="261" width="28" height="28" aria-hidden="true"><defs><linearGradient id="azure-icon-1-uuid-c41a1b5d-c3ee-4413-bef2-f5a072ba936e" x1="7.28" y1="272.84" x2=".39" y2="267.87" gradientTransform="translate(0 280) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4f42fd" /><stop offset=".8" stop-color="#7274ff" /></linearGradient><linearGradient id="azure-icon-1-uuid-7a8397bb-f82e-4b4e-8fb1-c49dc20eae52" x1="10.19" y1="268.41" x2="4.38" y2="265.16" gradientTransform="translate(0 280) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset=".25" stop-color="#4f42fd" /><stop offset="1" stop-color="#2c08ac" /></linearGradient><linearGradient id="azure-icon-1-uuid-364cb38b-25e6-4d45-a5f3-7f7567cf1947" x1="17.43" y1="267.02" x2="5.08" y2="264.98" gradientTransform="translate(0 280) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset=".2" stop-color="#7274ff" /><stop offset="1" stop-color="#4f42fd" /></linearGradient><linearGradient id="azure-icon-1-uuid-fb32e334-867d-4ede-bed1-56aecae762cb" x1="10.15" y1="273.41" x2="16.87" y2="269.71" gradientTransform="translate(0 280) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset=".25" stop-color="#4f42fd" /><stop offset="1" stop-color="#2c08ac" /></linearGradient><linearGradient id="azure-icon-1-uuid-257bedeb-cb4e-48ec-978d-667d943d4887" x1="17.68" y1="270.57" x2="8.68" y2="279.43" gradientTransform="translate(0 280) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#4f42fd" /><stop offset=".8" stop-color="#7274ff" /></linearGradient><linearGradient id="azure-icon-1-uuid-d24b3f2b-55bd-4731-8d82-2ccb3a949da7" x1="6.64" y1="271.02" x2="6.64" y2="278.12" gradientTransform="translate(0 280) scale(1 -1)" gradientUnits="userSpaceOnUse"><stop offset=".25" stop-color="#4f42fd" /><stop offset="1" stop-color="#2c08ac" /></linearGradient></defs><path d="M5.02,15.31l-2.82-1.63c-.66-.38-1.06-1.08-1.06-1.83v-5.69c0-.76.4-1.46,1.06-1.83l1.53-.88c.1-.06.24.01.24.14v9.91c0,.37.1.73.28,1.04.18.32.45.59.78.78h0Z" fill="url(#azure-icon-1-uuid-c41a1b5d-c3ee-4413-bef2-f5a072ba936e)" /><path d="M10.14,10.59v1.76c0,.76-.4,1.46-1.06,1.83l-1.94,1.12c-.65.38-1.46.38-2.12,0-.33-.19-.59-.46-.78-.78-.18-.31-.28-.67-.28-1.04v-.42c0,.36.39.59.71.4l5.23-3.02c.1-.06.24.01.24.14Z" fill="url(#azure-icon-1-uuid-7a8397bb-f82e-4b4e-8fb1-c49dc20eae52)" /><path d="M16.86,9.53v3.26c0,.76-.4,1.46-1.06,1.83l-4.93,2.84c-.65.38-1.46.38-2.12,0l-1.53-.88c-.1-.06-.1-.21,0-.27l8.59-4.96c.32-.19.58-.45.76-.77.18-.32.28-.68.28-1.06Z" fill="url(#azure-icon-1-uuid-364cb38b-25e6-4d45-a5f3-7f7567cf1947)" /><path d="M10.22,7.46l1.53-.88c.65-.38,1.46-.38,2.12,0l1.94,1.12c.65.38,1.06,1.08,1.06,1.83,0,.38-.1.74-.28,1.06-.18.31-.44.58-.76.77l-.36.21c.31-.18.31-.63,0-.81l-5.23-3.02c-.1-.06-.1-.21,0-.27Z" fill="url(#azure-icon-1-uuid-fb32e334-867d-4ede-bed1-56aecae762cb)" /><path d="M5.94,2.16l2.82-1.63c.66-.38,1.46-.38,2.12,0l4.93,2.84c.65.38,1.06,1.08,1.06,1.83v1.76c0,.12-.13.2-.24.14L8.04,2.16c-.32-.18-.68-.28-1.05-.28-.37,0-.73.09-1.06.28h0Z" fill="url(#azure-icon-1-uuid-257bedeb-cb4e-48ec-978d-667d943d4887)" /><path d="M7.47,8.95l-1.53-.88c-.66-.38-1.06-1.08-1.06-1.83v-2.24c0-.76.4-1.46,1.06-1.83.33-.19.69-.28,1.06-.28s.72.09,1.04.28l.36.21c-.31-.18-.7.05-.7.41v6.04c0,.12-.13.2-.24.14h0Z" fill="url(#azure-icon-1-uuid-d24b3f2b-55bd-4731-8d82-2ccb3a949da7)" /></svg>
+  <text x="122" y="283" class="name" style="font-size:18px">Foundry agents / apps</text>
+  <rect x="83" y="299" width="236" height="54" rx="7" fill="#122d42" stroke="#377ba8"/>
+  <text x="95" y="321" class="body" style="font-weight:600;fill:#d7edff">OpenTelemetry</text>
+  <text x="95" y="342" class="small">App SDK + exporter</text>
   <rect x="402" y="253" width="270" height="116" rx="10" class="box"/>
-  <text x="420" y="283" class="name">Application Insights</text>
+  <!-- Azure icon: app-insights -->
+  <svg id="azure-icon-2-b6f6d99e-f330-481d-836f-ea58cc42217f" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="420" y="261" width="28" height="28" aria-hidden="true"><defs><radialGradient id="azure-icon-2-a7a1c431-6c6d-4a8f-9a69-8da437e5b0c5" cx="9" cy="7.35" r="6.42" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#b77af4" /><stop offset="0.21" stop-color="#b378f2" /><stop offset="0.43" stop-color="#a672ed" /><stop offset="0.65" stop-color="#9267e4" /><stop offset="0.88" stop-color="#7559d8" /><stop offset="1" stop-color="#624fd0" /></radialGradient><linearGradient id="azure-icon-2-ec0c4f0d-5c8e-4882-96a1-89d61808eb49" x1="9.02" y1="3.91" x2="9.08" y2="11.49" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f2f2f2" /><stop offset="0.23" stop-color="#f1f1f2" stop-opacity="0.99" /><stop offset="0.37" stop-color="#ededf1" stop-opacity="0.95" /><stop offset="0.48" stop-color="#e7e5f0" stop-opacity="0.89" /><stop offset="0.58" stop-color="#dedbee" stop-opacity="0.81" /><stop offset="0.67" stop-color="#d3ceeb" stop-opacity="0.7" /><stop offset="0.76" stop-color="#c4bee8" stop-opacity="0.57" /><stop offset="0.84" stop-color="#b4abe5" stop-opacity="0.41" /><stop offset="0.92" stop-color="#a095e1" stop-opacity="0.22" /><stop offset="0.99" stop-color="#8b7ddc" stop-opacity="0.02" /><stop offset="1" stop-color="#897bdc" stop-opacity="0" /></linearGradient></defs><path d="M10.23,17.39l.81-.87V14.2H7v2.32l.81.87A.32.32,0,0,0,8,17.5h2A.32.32,0,0,0,10.23,17.39Z" fill="#cecece" /><path d="M9,.5A5.89,5.89,0,0,0,3.09,7.07c.27,2.47,2.62,3.62,3.29,6.75a.49.49,0,0,0,.47.38h4.3a.49.49,0,0,0,.47-.38c.67-3.13,3-4.28,3.29-6.75A5.89,5.89,0,0,0,9,.5ZM7,14.2" fill="url(#azure-icon-2-a7a1c431-6c6d-4a8f-9a69-8da437e5b0c5)" /><path d="M11.46,3.79a1.4,1.4,0,0,0-1.35,1.44V6H8V5.23A1.41,1.41,0,0,0,6.59,3.79,1.4,1.4,0,0,0,5.24,5.23,1.41,1.41,0,0,0,6.59,6.68h.64v6a.36.36,0,0,0,.72,0v-6h2.16v6a.36.36,0,1,0,.72,0v-6h.63a1.4,1.4,0,0,0,1.35-1.45A1.4,1.4,0,0,0,11.46,3.79ZM7.23,6H6.55a.74.74,0,0,1-.68-.77.74.74,0,0,1,.68-.77.74.74,0,0,1,.68.77Zm4.28,0h-.68V5.19a.68.68,0,1,1,1.35,0A.73.73,0,0,1,11.51,6Z" fill="url(#azure-icon-2-ec0c4f0d-5c8e-4882-96a1-89d61808eb49)" /><polygon points="6.96 15.8 11.04 15.01 11.04 14.56 6.96 15.36 6.96 15.8" fill="#999" /><polygon points="11.04 16.11 11.04 15.67 6.96 16.48 6.96 16.52 7.27 16.86 11.04 16.11" fill="#999" /></svg>
+  <text x="458" y="283" class="name">Application Insights</text>
   <text x="420" y="309" class="body">Workspace-based telemetry</text>
   <text x="420" y="337" class="small">Entra-authenticated ingestion</text>
   <rect x="738" y="253" width="300" height="116" rx="10" class="box"/>
-  <text x="756" y="283" class="name">Telemetry workspace</text>
-  <text x="756" y="309" class="body">Log Analytics: requests,</text>
-  <text x="756" y="333" class="body">dependencies and events</text>
+  <!-- Azure icon: log-analytics -->
+  <svg id="azure-icon-3-b388e944-5509-49c9-84d7-f38bffa995b2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="756" y="261" width="28" height="28" aria-hidden="true"><defs><linearGradient id="azure-icon-3-a997e203-1d7d-4cb9-b131-5dc44e029b46" x1="5.23" y1="17.45" x2="5.23" y2="8.09" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1988d9" /><stop offset="0.9" stop-color="#54aef0" /></linearGradient><linearGradient id="azure-icon-3-e122e9d8-aee5-4f1a-a60e-b1eae355daa5" x1="11.5" y1="12.45" x2="11.5" y2="0.55" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#198ab3" /><stop offset="0.01" stop-color="#198bb4" /><stop offset="0.44" stop-color="#27b2d7" /><stop offset="0.79" stop-color="#2fcbed" /><stop offset="1" stop-color="#32d4f5" /></linearGradient></defs><path d="M5.59,13.13H9.91v4.32H5.59ZM1.15,17.45H4.87V13.13H.55v3.72A.6.6,0,0,0,1.15,17.45Zm-.6-5H4.87V8.09H.55Z" fill="url(#azure-icon-3-a997e203-1d7d-4cb9-b131-5dc44e029b46)" /><path d="M11.5.55a5.89,5.89,0,0,1,5.95,6,5.89,5.89,0,0,1-5.95,5.95H5.55V6.5A5.89,5.89,0,0,1,11.5.55Z" fill-rule="evenodd" fill="url(#azure-icon-3-e122e9d8-aee5-4f1a-a60e-b1eae355daa5)" /><rect x="7.59" y="5.65" width="1.36" height="4.08" fill="#fff" /><rect x="10.31" y="7.01" width="1.36" height="2.72" fill="#fff" /><rect x="13.03" y="4.29" width="1.36" height="5.44" fill="#fff" /></svg>
+  <text x="794" y="283" class="name">Log Analytics</text>
+  <text x="756" y="309" class="body">Agent telemetry workspace</text>
+  <text x="756" y="333" class="body">Traces + optional events</text>
   <text x="756" y="355" class="small">Existing or monitoring workspace</text>
   <path d="M336 311H399" class="flow"/><path d="M672 311H735" class="flow"/>
   <path d="M1038 311H1118" class="data"/>
@@ -65,7 +72,9 @@
   <text x="84" y="502" class="body">OpenAI / Foundry deployments</text>
   <text x="84" y="530" class="small">PTU utilization, requests, tokens</text>
   <rect x="402" y="446" width="270" height="112" rx="10" class="box"/>
-  <text x="420" y="476" class="name">Azure Monitor metrics</text>
+  <!-- Azure icon: monitor -->
+  <svg id="azure-icon-4-e4e764cd-2e73-472f-b88a-bf8bfc2c2994" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="420" y="454" width="28" height="28" aria-hidden="true"><defs><radialGradient id="azure-icon-4-ac8b32da-30ca-4b92-8d0f-8d2d5ef278a0" cx="5.72" cy="7.45" r="8.42" gradientTransform="translate(3.23 1.51) scale(1.01 1.01)" gradientUnits="userSpaceOnUse"><stop offset="0.18" stop-color="#5ea0ef" /><stop offset="0.56" stop-color="#5c9fee" /><stop offset="0.69" stop-color="#559ced" /><stop offset="0.78" stop-color="#4a97e9" /><stop offset="0.86" stop-color="#3990e4" /><stop offset="0.93" stop-color="#2387de" /><stop offset="0.99" stop-color="#087bd6" /><stop offset="1" stop-color="#0078d4" /></radialGradient><radialGradient id="azure-icon-4-a9954820-cb38-4943-9842-f0a568d2b015" cx="28.18" cy="202.29" r="2.7" gradientTransform="translate(-17.77 -185.01) scale(0.95)" gradientUnits="userSpaceOnUse"><stop offset="0.19" stop-color="#8c8e90" /><stop offset="0.35" stop-color="#848688" /><stop offset="0.6" stop-color="#6e7071" /><stop offset="0.91" stop-color="#4a4b4c" /><stop offset="1" stop-color="#3e3f3f" /></radialGradient></defs><ellipse cx="9" cy="9" rx="8.5" ry="8.47" fill="url(#azure-icon-4-ac8b32da-30ca-4b92-8d0f-8d2d5ef278a0)" /><ellipse cx="9" cy="9" rx="7.4" ry="7.37" fill="#fff" /><path d="M2.72,9.44a6.24,6.24,0,0,0,1.82,4l2-2a3.53,3.53,0,0,1-1-2Z" fill="#9cebff" /><path d="M13.13,4.27A6.25,6.25,0,0,0,9.44,2.74V5.53a3.41,3.41,0,0,1,1.71.7Z" fill="#32bedd" /><path d="M4.87,4.27l2,2a3.41,3.41,0,0,1,1.71-.7V2.74A6.25,6.25,0,0,0,4.87,4.27Z" fill="#32bedd" /><path d="M11.78,6.85a3.6,3.6,0,0,1,.71,1.71h2.79a6.16,6.16,0,0,0-1.53-3.67Z" fill="#32bedd" /><path d="M6.22,6.85l-2-2A6.16,6.16,0,0,0,2.72,8.56H5.51A3.6,3.6,0,0,1,6.22,6.85Z" fill="#50e6ff" /><path d="M14.14,7a.45.45,0,0,0-.57-.25L9.45,8.41l.32.81,4.12-1.63A.44.44,0,0,0,14.14,7Z" fill="#f04049" /><ellipse cx="9" cy="9" rx="1.2" ry="1.2" fill="url(#azure-icon-4-a9954820-cb38-4943-9842-f0a568d2b015)" /></svg>
+  <text x="458" y="476" class="name">Azure Monitor metrics</text>
   <text x="420" y="502" class="body">Native platform metrics</text>
   <text x="420" y="530" class="small">Filtered by deployment</text>
   <rect x="738" y="446" width="300" height="112" rx="10" class="box"/>
@@ -77,13 +86,15 @@
 
   <!-- Inventory -->
   <circle cx="79" cy="607" r="15" fill="#1683d8"/><text x="79" y="613" class="num">3</text>
-  <text x="105" y="614" class="section">Resource inventory and deployed capacity</text>
+  <text x="105" y="614" class="section">Inventory + PTU capacity</text>
   <rect x="66" y="635" width="270" height="106" rx="10" class="box"/>
   <text x="84" y="665" class="name">Azure resources</text>
   <text x="84" y="691" class="body">Accounts, ML workspaces</text>
   <text x="84" y="716" class="body">and model deployments</text>
   <rect x="402" y="635" width="270" height="106" rx="10" class="box"/>
-  <text x="420" y="665" class="name">Azure Resource Graph</text>
+  <!-- Azure icon: resource-graph -->
+  <svg id="azure-icon-5-a5043521-e54b-4e71-96d7-f0f67d7a7413" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="420" y="643" width="28" height="28" aria-hidden="true"><defs><linearGradient id="azure-icon-5-aaf70b12-8383-43d3-8674-d08878f903d1" x1="2.63" y1="5.99" x2="2.63" y2="1.75" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#773adc" /><stop offset="1" stop-color="#b77af4" /></linearGradient><linearGradient id="azure-icon-5-ac810344-4e2d-4dad-99ba-9567b44e7523" x1="14.76" y1="6.31" x2="14.76" y2="0.85" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#773adc" /><stop offset="1" stop-color="#b77af4" /></linearGradient><linearGradient id="azure-icon-5-b4b36432-ae36-466e-9abd-a30eb14585d3" x1="11.92" y1="17.27" x2="11.92" y2="7.71" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#773adc" /><stop offset="1" stop-color="#b77af4" /></linearGradient></defs><path d="M11.56,14.24,1.79,4.35A.77.77,0,0,1,2.34,3H14.76V4.58H4.19l8.47,8.58Z" fill="#b796f9" /><ellipse cx="2.63" cy="3.87" rx="2.13" ry="2.12" fill="url(#azure-icon-5-aaf70b12-8383-43d3-8674-d08878f903d1)" /><ellipse cx="14.76" cy="3.58" rx="2.74" ry="2.73" fill="url(#azure-icon-5-ac810344-4e2d-4dad-99ba-9567b44e7523)" /><ellipse cx="11.92" cy="13.69" rx="3.47" ry="3.46" fill="url(#azure-icon-5-b4b36432-ae36-466e-9abd-a30eb14585d3)" /></svg>
+  <text x="458" y="665" class="name">Azure Resource Graph</text>
   <text x="420" y="691" class="body">RBAC-filtered inventory</text>
   <text x="420" y="716" class="body">and allocated PTU capacity</text>
   <path d="M336 688H399" class="data"/><path d="M672 688H1118" class="data"/>
@@ -92,14 +103,16 @@
   <path d="M1120 311V1012" class="bus"/>
   <path d="M1120 502H1192" class="data"/>
   <rect x="1195" y="235" width="530" height="612" rx="14" fill="#10263a" stroke="#377ba8" stroke-width="1.5"/>
-  <text x="1220" y="270" class="section">Azure Managed Grafana</text>
+  <!-- Azure icon: grafana -->
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="1220" y="242" width="32" height="32" aria-hidden="true"><defs><linearGradient id="azure-icon-6-a4ccd0c3-fde6-4875-800b-333de0a25cb9" x1="9" y1="2" x2="9" y2="16" gradientUnits="userSpaceOnUse"><stop offset="0.18" stop-color="#5ea0ef" /><stop offset="1" stop-color="#0078d4" /></linearGradient></defs><g id="azure-icon-6-e0962381-da5c-47a2-ae4c-adf850116f2b"><g><rect y="2" width="18" height="14" rx="0.76" fill="url(#azure-icon-6-a4ccd0c3-fde6-4875-800b-333de0a25cb9)" /><path d="M8.3178,4.81s-.0039.0158-.0088.0425a3.9705,3.9705,0,0,0-1.213.573A2.8294,2.8294,0,0,0,4.9338,5.5a3.0919,3.0919,0,0,0,.5588,2.0973A5.2491,5.2491,0,0,0,5.2178,8.789a2.7967,2.7967,0,0,0-1.3537,1.5729,2.9791,2.9791,0,0,0,1.888,1.0647l.0027-.0021a4.4086,4.4086,0,0,0,.6684.9033,2.3478,2.3478,0,0,0,.0447,1.665,2.7075,2.7075,0,0,0,1.7419-.531,4.3848,4.3848,0,0,0,1.5871.2225,1.9523,1.9523,0,0,0,1.2621.7458,2.0114,2.0114,0,0,0,.6046-1.33h0l-.0006-.0267h0l-.0016-.0278a3.5138,3.5138,0,0,0,.9835-1.0413,1.6,1.6,0,0,0,1.1035-.4007,1.6822,1.6822,0,0,0-.5719-1.0653h0l-.0158-.0115h0l-.0142-.0092a2.8079,2.8079,0,0,0-2.8519-3.1529c-2.8346-.103-2.5312,4.8885.2838,3.5118.1731-.4159-.4839.0239-.6621-.0694A1.1684,1.1684,0,0,1,8.8341,9.58a1.47,1.47,0,0,1,2.2554-1.1c1.8829,1.0529.5374,3.9916-1.4289,3.8272.0136,0-.0022,0-.0017-.0006a3.0673,3.0673,0,0,1-2.99-3.0487A3.3064,3.3064,0,0,1,9.8666,5.8439C11.7835,5.6625,13.24,7.22,13.7853,8.8311a3.4406,3.4406,0,0,0-1.1344-2.95,1.581,1.581,0,0,0-.1859-1.134,1.68,1.68,0,0,0-1.0942.2813,4.253,4.253,0,0,0-1.0947-.3036A2.0325,2.0325,0,0,0,9.29,3.57a2.1574,2.1574,0,0,0-.972,1.24" fill="#f2f2f2" /></g></g></svg>
+  <text x="1264" y="270" class="section">Azure Managed Grafana</text>
   <text x="1220" y="296" class="body">Managed identity queries permitted data sources</text>
   <rect x="1218" y="320" width="484" height="280" rx="10" fill="#111c28" stroke="#526476" stroke-width="1.5"/>
   <text x="1238" y="351" class="name">Dashboards</text>
-  <text x="1238" y="384" class="body">• Foundry resource and model overview</text>
-  <text x="1238" y="416" class="body">• Foundry agent operations</text>
-  <text x="1238" y="448" class="body">• Azure OpenAI PTU performance</text>
-  <text x="1238" y="487" class="body">• Azure AI costs <tspan class="small">(optional)</tspan></text>
+  <text x="1238" y="384" class="body">• Foundry resources and models</text>
+  <text x="1238" y="416" class="body">• Agent operations</text>
+  <text x="1238" y="448" class="body">• OpenAI PTU performance</text>
+  <text x="1238" y="487" class="body">• AI costs <tspan class="small">(optional)</tspan></text>
   <text x="1238" y="519" class="body">• Business overview <tspan class="small">(optional)</tspan></text>
   <text x="1238" y="562" class="small">Cost and business views require cost collection.</text>
   <rect x="1218" y="624" width="484" height="96" rx="10" fill="#111c28" stroke="#526476" stroke-width="1.5"/>
@@ -107,38 +120,45 @@
   <text x="1238" y="655" class="name">Operators and business viewers</text>
   <text x="1238" y="681" class="body">Entra authentication; Grafana Admin / Viewer roles</text>
   <text x="1220" y="756" class="small">Viewer access is not a data-isolation boundary.</text>
-  <text x="1220" y="781" class="small">Scope Grafana identity access and workspace data.</text>
-  <text x="1220" y="817" class="small">Blue: telemetry writes / notifications</text>
-  <text x="1220" y="837" class="small">Teal dashed: queries and data returned</text>
+  <text x="1220" y="781" class="small">Scope identity access and workspace data.</text>
 
   <!-- Cost collection -->
   <rect x="54" y="779" width="1028" height="393" rx="12" fill="#191812" stroke="#b79532" stroke-width="1.5" stroke-dasharray="7 5"/>
   <circle cx="79" cy="812" r="15" fill="#1683d8"/><text x="79" y="818" class="num">4</text>
   <text x="105" y="819" class="section">Optional cost collection</text>
-  <text x="106" y="845" class="small">Daily at 06:00 UTC • actual and amortized pretax costs for selected account IDs</text>
+  <text x="106" y="845" class="small">Daily at 06:00 UTC • pretax actual and amortized costs for selected accounts</text>
   <rect x="72" y="873" width="218" height="126" rx="10" class="box"/>
-  <text x="88" y="902" class="name">Cost Management</text>
+  <!-- Azure icon: cost-management -->
+  <svg id="azure-icon-7-e00fef30-156c-4930-8b65-3a593543aa1d" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="88" y="880" width="26" height="26" aria-hidden="true"><defs><linearGradient id="azure-icon-7-a45ba9b5-2e08-4c39-8916-0bab184f06e9" x1="9" y1="1.48" x2="9" y2="17.07" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#76bc2d" /><stop offset="0.32" stop-color="#73b82c" /><stop offset="0.65" stop-color="#6cab29" /><stop offset="0.99" stop-color="#5e9724" /><stop offset="1" stop-color="#5e9624" /></linearGradient><linearGradient id="azure-icon-7-e74e2f36-f70f-4351-9609-a084522a8ba7" x1="6.13" y1="9.28" x2="11.87" y2="9.28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" /><stop offset="1" stop-color="#fff" /></linearGradient></defs><path d="M12.35,1.48H5.65a2,2,0,0,0-1.73,1L.58,8.28a2,2,0,0,0,0,2l3.34,5.79a2,2,0,0,0,1.73,1h6.7a2,2,0,0,0,1.73-1l3.34-5.79a2,2,0,0,0,0-2l-3.34-5.8A2,2,0,0,0,12.35,1.48Z" fill="url(#azure-icon-7-a45ba9b5-2e08-4c39-8916-0bab184f06e9)" /><path d="M9.07,4.81A.82.82,0,0,1,8.25,4,.82.82,0,0,1,9.89,4,.82.82,0,0,1,9.07,4.81Zm-.82,9.75a.82.82,0,1,0,1.64,0,.82.82,0,0,0-1.64,0Zm.84-2.7A1.5,1.5,0,0,1,7.58,11l-1.45.28A2.68,2.68,0,0,0,9,13c1.69,0,2.91-.89,2.91-2.13a2.07,2.07,0,0,0-1.12-2A13,13,0,0,0,9,8.33c-.67-.16-1.1-.53-1.1-1A1,1,0,0,1,9,6.46a1.4,1.4,0,0,1,1.29.69l1.25-.4A2.56,2.56,0,0,0,9,5.45c-1.18,0-2.55.52-2.55,2,0,1.81,1.11,2.17,2.69,2.48.37.07,1.23.32,1.23,1C10.33,11.31,10,11.86,9.09,11.86Z" opacity="0.9" fill="url(#azure-icon-7-e74e2f36-f70f-4351-9609-a084522a8ba7)" /></svg>
+  <text x="122" y="902" class="name" style="font-size:18px">Cost Management</text>
   <text x="88" y="927" class="body">Subscription query</text>
   <text x="88" y="951" class="body">filtered to AI accounts</text>
   <rect x="316" y="873" width="218" height="126" rx="10" class="box"/>
-  <text x="332" y="902" class="name">Azure Function</text>
+  <!-- Azure icon: function -->
+  <svg id="azure-icon-8-a2c88306-fa03-4e5b-b192-401f0b77808b" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="332" y="880" width="26" height="26" aria-hidden="true"><defs><linearGradient id="azure-icon-8-b403aca7-f387-4434-96b4-ae157edc835f" x1="-175.993" y1="-343.723" x2="-175.993" y2="-359.232" gradientTransform="translate(212.573 370.548) scale(1.156 1.029)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fea11b" /><stop offset="0.284" stop-color="#fea51a" /><stop offset="0.547" stop-color="#feb018" /><stop offset="0.8" stop-color="#ffc314" /><stop offset="1" stop-color="#ffd70f" /></linearGradient></defs><g><path d="M2.37,7.475H3.2a.267.267,0,0,1,.267.267v6.148a.533.533,0,0,1-.533.533H2.1a0,0,0,0,1,0,0V7.741a.267.267,0,0,1,.267-.267Z" transform="translate(12.507 16.705) rotate(134.919)" fill="#50e6ff" /><path d="M2.325,3.6h.833a.267.267,0,0,1,.267.267v6.583a0,0,0,0,1,0,0H2.591a.533.533,0,0,1-.533-.533V3.865A.267.267,0,0,1,2.325,3.6Z" transform="translate(5.759 0.114) rotate(44.919)" fill="#1490df" /></g><g><path d="M14.53,7.475h.833a.533.533,0,0,1,.533.533v6.148a.267.267,0,0,1-.267.267H14.8a.267.267,0,0,1-.267-.267V7.475a0,0,0,0,1,0,0Z" transform="translate(12.223 -7.555) rotate(45.081)" fill="#50e6ff" /><path d="M15.108,3.6h.833a0,0,0,0,1,0,0v6.583a.267.267,0,0,1-.267.267h-.833a.267.267,0,0,1-.267-.267V4.131a.533.533,0,0,1,.533-.533Z" transform="translate(31.022 1.222) rotate(135.081)" fill="#1490df" /></g><path d="M8.459,9.9H4.87a.193.193,0,0,1-.2-.181.166.166,0,0,1,.018-.075L8.991,1.13a.206.206,0,0,1,.186-.106h4.245a.193.193,0,0,1,.2.181.165.165,0,0,1-.035.1L8.534,7.966h4.928a.193.193,0,0,1,.2.181.176.176,0,0,1-.052.122L5.421,16.788c-.077.046-.624.5-.356-.189h0Z" fill="url(#azure-icon-8-b403aca7-f387-4434-96b4-ae157edc835f)" /></svg>
+  <text x="366" y="902" class="name">Azure Function</text>
   <text x="332" y="927" class="body">PowerShell collector</text>
   <text x="332" y="951" class="body">Flex Consumption</text>
   <rect x="560" y="873" width="218" height="126" rx="10" class="box"/>
-  <text x="576" y="902" class="name">Logs ingestion</text>
-  <text x="576" y="927" class="body">Data collection</text>
-  <text x="576" y="951" class="body">endpoint + rule</text>
+  <!-- Azure icon: data-rule -->
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 18 18" x="576" y="880" width="26" height="26" aria-hidden="true"><defs><linearGradient id="azure-icon-9-bbff16ce-7aad-4b86-8bb2-89788b5b99a6" x1="10.463" y1="15.888" x2="10.463" y2="-2.112" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#0078d4" /><stop offset="1" stop-color="#5ea0ef" /></linearGradient><linearGradient id="azure-icon-9-b0f3e3a3-1263-4ba0-98ae-dae6e73e6321" x1="7.179" y1="0.537" x2="7.179" y2="12.51" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#50e6ff" /><stop offset="1" stop-color="#32bedd" /></linearGradient></defs><rect x="3.113" width="14.7" height="18" rx="0.6" fill="url(#azure-icon-9-bbff16ce-7aad-4b86-8bb2-89788b5b99a6)" /><rect x="0.187" y="1.867" width="13.985" height="7.291" rx="0.541" fill="url(#azure-icon-9-b0f3e3a3-1263-4ba0-98ae-dae6e73e6321)" /><path d="M11.887,4.423H5.069a.122.122,0,0,1-.124-.12V3.9a.123.123,0,0,1,.123-.123h6.818a.124.124,0,0,1,.124.123v.4a.122.122,0,0,1-.122.123Zm-7.9.291V3.488a.212.212,0,0,0-.212-.212H2.547a.212.212,0,0,0-.212.211h0V4.714a.211.211,0,0,0,.211.211H3.773a.211.211,0,0,0,.212-.211Z" fill="#fff" /><path d="M11.886,7.023H5.069A.124.124,0,0,1,4.945,6.9h0V6.494a.124.124,0,0,1,.124-.124h6.816a.125.125,0,0,1,.124.124v.4a.125.125,0,0,1-.123.125ZM3.68,6.194H2.657v1.02H3.68V6.194m.107-.321A.216.216,0,0,1,4,6.087V7.32a.214.214,0,0,1-.214.213H2.55a.213.213,0,0,1-.213-.213V6.083A.213.213,0,0,1,2.55,5.87Z" fill="#fff" opacity="0.8" /><path d="M13.382,11.108a.121.121,0,0,0-.084-.035.118.118,0,0,0-.117.119v1.365h0v.122H3.113v1.773H13.181v1.385a.118.118,0,0,0,.2.084L15.705,13.6l0,0a.117.117,0,0,0,0-.166Z" fill="#83b9f9" />​
+</svg>
+  <text x="610" y="902" class="name">Data collection</text>
+  <text x="576" y="927" class="body">Endpoint + rule</text>
+  <text x="576" y="951" class="body">Logs ingestion</text>
   <rect x="804" y="873" width="250" height="126" rx="10" class="box"/>
-  <text x="820" y="902" class="name">Monitoring workspace</text>
-  <text x="820" y="927" class="body">AICostSnapshot_CL</text>
-  <text x="820" y="951" class="body">Cost rows + run marker</text>
-  <text x="820" y="975" class="small">Grafana selects complete runs</text>
+  <!-- Azure icon: log-analytics -->
+  <svg id="azure-icon-10-b388e944-5509-49c9-84d7-f38bffa995b2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="820" y="880" width="26" height="26" aria-hidden="true"><defs><linearGradient id="azure-icon-10-a997e203-1d7d-4cb9-b131-5dc44e029b46" x1="5.23" y1="17.45" x2="5.23" y2="8.09" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1988d9" /><stop offset="0.9" stop-color="#54aef0" /></linearGradient><linearGradient id="azure-icon-10-e122e9d8-aee5-4f1a-a60e-b1eae355daa5" x1="11.5" y1="12.45" x2="11.5" y2="0.55" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#198ab3" /><stop offset="0.01" stop-color="#198bb4" /><stop offset="0.44" stop-color="#27b2d7" /><stop offset="0.79" stop-color="#2fcbed" /><stop offset="1" stop-color="#32d4f5" /></linearGradient></defs><path d="M5.59,13.13H9.91v4.32H5.59ZM1.15,17.45H4.87V13.13H.55v3.72A.6.6,0,0,0,1.15,17.45Zm-.6-5H4.87V8.09H.55Z" fill="url(#azure-icon-10-a997e203-1d7d-4cb9-b131-5dc44e029b46)" /><path d="M11.5.55a5.89,5.89,0,0,1,5.95,6,5.89,5.89,0,0,1-5.95,5.95H5.55V6.5A5.89,5.89,0,0,1,11.5.55Z" fill-rule="evenodd" fill="url(#azure-icon-10-e122e9d8-aee5-4f1a-a60e-b1eae355daa5)" /><rect x="7.59" y="5.65" width="1.36" height="4.08" fill="#fff" /><rect x="10.31" y="7.01" width="1.36" height="2.72" fill="#fff" /><rect x="13.03" y="4.29" width="1.36" height="5.44" fill="#fff" /></svg>
+  <text x="854" y="902" class="name">Log Analytics</text>
+  <text x="820" y="927" class="body">Monitoring workspace</text>
+  <text x="820" y="951" class="body">AICostSnapshot_CL</text>
+  <text x="820" y="975" class="small">Cost rows + run marker</text>
   <path d="M290 936H313" class="data"/><path d="M534 936H557" class="flow"/><path d="M778 936H801" class="flow"/>
   <path d="M1054 936H1120" class="data"/>
   <rect x="72" y="1024" width="462" height="116" rx="10" fill="#211e16" stroke="#725f2e" stroke-width="1.5"/>
   <text x="88" y="1054" class="name">Function identity and storage</text>
-  <text x="88" y="1080" class="body">Separate managed identity; subscription-wide</text>
-  <text x="88" y="1104" class="body">Cost Management Reader; storage for the Function</text>
+  <text x="88" y="1080" class="body">Separate identity: subscription-wide cost reader</text>
+  <text x="88" y="1104" class="body">Storage supports the Function runtime</text>
   <text x="88" y="1128" class="small">Function logs → App Insights; storage reads → workspace</text>
   <rect x="560" y="1024" width="494" height="116" rx="10" fill="#211e16" stroke="#725f2e" stroke-width="1.5"/>
   <text x="576" y="1054" class="name">Interpretation</text>
@@ -146,38 +166,45 @@
   <text x="576" y="1104" class="body">Actual and amortized amounts are alternatives.</text>
 
   <!-- Alerts -->
-  <rect x="36" y="1227" width="1728" height="226" rx="14" fill="#111923" stroke="#526476" stroke-width="1.5"/>
+  <rect x="36" y="1227" width="1728" height="330" rx="14" fill="#111923" stroke="#526476" stroke-width="1.5"/>
   <circle cx="79" cy="1261" r="15" fill="#1683d8"/><text x="79" y="1267" class="num">5</text>
   <text x="105" y="1268" class="section">Alerting and notifications</text>
-  <rect x="66" y="1294" width="400" height="124" rx="10" class="box"/>
-  <text x="83" y="1324" class="name">Azure Monitor alert rules</text>
+  <rect x="66" y="1294" width="565" height="124" rx="10" class="box"/>
+  <!-- Azure icon: monitor -->
+  <svg id="azure-icon-11-e4e764cd-2e73-472f-b88a-bf8bfc2c2994" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="83" y="1302" width="28" height="28" aria-hidden="true"><defs><radialGradient id="azure-icon-11-ac8b32da-30ca-4b92-8d0f-8d2d5ef278a0" cx="5.72" cy="7.45" r="8.42" gradientTransform="translate(3.23 1.51) scale(1.01 1.01)" gradientUnits="userSpaceOnUse"><stop offset="0.18" stop-color="#5ea0ef" /><stop offset="0.56" stop-color="#5c9fee" /><stop offset="0.69" stop-color="#559ced" /><stop offset="0.78" stop-color="#4a97e9" /><stop offset="0.86" stop-color="#3990e4" /><stop offset="0.93" stop-color="#2387de" /><stop offset="0.99" stop-color="#087bd6" /><stop offset="1" stop-color="#0078d4" /></radialGradient><radialGradient id="azure-icon-11-a9954820-cb38-4943-9842-f0a568d2b015" cx="28.18" cy="202.29" r="2.7" gradientTransform="translate(-17.77 -185.01) scale(0.95)" gradientUnits="userSpaceOnUse"><stop offset="0.19" stop-color="#8c8e90" /><stop offset="0.35" stop-color="#848688" /><stop offset="0.6" stop-color="#6e7071" /><stop offset="0.91" stop-color="#4a4b4c" /><stop offset="1" stop-color="#3e3f3f" /></radialGradient></defs><ellipse cx="9" cy="9" rx="8.5" ry="8.47" fill="url(#azure-icon-11-ac8b32da-30ca-4b92-8d0f-8d2d5ef278a0)" /><ellipse cx="9" cy="9" rx="7.4" ry="7.37" fill="#fff" /><path d="M2.72,9.44a6.24,6.24,0,0,0,1.82,4l2-2a3.53,3.53,0,0,1-1-2Z" fill="#9cebff" /><path d="M13.13,4.27A6.25,6.25,0,0,0,9.44,2.74V5.53a3.41,3.41,0,0,1,1.71.7Z" fill="#32bedd" /><path d="M4.87,4.27l2,2a3.41,3.41,0,0,1,1.71-.7V2.74A6.25,6.25,0,0,0,4.87,4.27Z" fill="#32bedd" /><path d="M11.78,6.85a3.6,3.6,0,0,1,.71,1.71h2.79a6.16,6.16,0,0,0-1.53-3.67Z" fill="#32bedd" /><path d="M6.22,6.85l-2-2A6.16,6.16,0,0,0,2.72,8.56H5.51A3.6,3.6,0,0,1,6.22,6.85Z" fill="#50e6ff" /><path d="M14.14,7a.45.45,0,0,0-.57-.25L9.45,8.41l.32.81,4.12-1.63A.44.44,0,0,0,14.14,7Z" fill="#f04049" /><ellipse cx="9" cy="9" rx="1.2" ry="1.2" fill="url(#azure-icon-11-a9954820-cb38-4943-9842-f0a568d2b015)" /></svg>
+  <text x="121" y="1324" class="name">Azure Monitor alert rules</text>
   <text x="83" y="1349" class="body">PTU utilization / 429 metrics</text>
   <text x="83" y="1374" class="body">Agent failure, latency, heartbeat: optional</text>
   <text x="83" y="1398" class="small">Agent rules query the monitoring workspace.</text>
-  <rect x="510" y="1294" width="367" height="124" rx="10" class="optional"/>
-  <text x="528" y="1324" class="name">Cost Management budget</text>
-  <text x="528" y="1349" class="body">Optional, filtered to selected accounts</text>
-  <text x="528" y="1374" class="body">Threshold notification, not a spending cap</text>
-  <rect x="945" y="1294" width="280" height="124" rx="10" class="box"/>
-  <text x="963" y="1324" class="name">Action group</text>
-  <text x="963" y="1349" class="body">Receives alert / budget</text>
-  <text x="963" y="1374" class="body">notifications</text>
-  <rect x="1300" y="1294" width="425" height="124" rx="10" class="box"/>
-  <text x="1318" y="1324" class="name">Email recipients</text>
-  <text x="1318" y="1349" class="body">Operators investigate and tune thresholds</text>
-  <text x="1318" y="1374" class="small">No automatic PTU resizing or collector-failure alert.</text>
-  <path d="M466 1356H490V1278H925V1356H942" class="flow"/>
-  <path d="M877 1356H942" class="flow"/><path d="M1225 1356H1297" class="flow"/>
+  <rect x="66" y="1430" width="565" height="96" rx="10" class="optional"/>
+  <!-- Azure icon: cost-management -->
+  <g transform="translate(-445 136)">
+  <svg id="azure-icon-12-e00fef30-156c-4930-8b65-3a593543aa1d" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="528" y="1302" width="28" height="28" aria-hidden="true"><defs><linearGradient id="azure-icon-12-a45ba9b5-2e08-4c39-8916-0bab184f06e9" x1="9" y1="1.48" x2="9" y2="17.07" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#76bc2d" /><stop offset="0.32" stop-color="#73b82c" /><stop offset="0.65" stop-color="#6cab29" /><stop offset="0.99" stop-color="#5e9724" /><stop offset="1" stop-color="#5e9624" /></linearGradient><linearGradient id="azure-icon-12-e74e2f36-f70f-4351-9609-a084522a8ba7" x1="6.13" y1="9.28" x2="11.87" y2="9.28" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" /><stop offset="1" stop-color="#fff" /></linearGradient></defs><path d="M12.35,1.48H5.65a2,2,0,0,0-1.73,1L.58,8.28a2,2,0,0,0,0,2l3.34,5.79a2,2,0,0,0,1.73,1h6.7a2,2,0,0,0,1.73-1l3.34-5.79a2,2,0,0,0,0-2l-3.34-5.8A2,2,0,0,0,12.35,1.48Z" fill="url(#azure-icon-12-a45ba9b5-2e08-4c39-8916-0bab184f06e9)" /><path d="M9.07,4.81A.82.82,0,0,1,8.25,4,.82.82,0,0,1,9.89,4,.82.82,0,0,1,9.07,4.81Zm-.82,9.75a.82.82,0,1,0,1.64,0,.82.82,0,0,0-1.64,0Zm.84-2.7A1.5,1.5,0,0,1,7.58,11l-1.45.28A2.68,2.68,0,0,0,9,13c1.69,0,2.91-.89,2.91-2.13a2.07,2.07,0,0,0-1.12-2A13,13,0,0,0,9,8.33c-.67-.16-1.1-.53-1.1-1A1,1,0,0,1,9,6.46a1.4,1.4,0,0,1,1.29.69l1.25-.4A2.56,2.56,0,0,0,9,5.45c-1.18,0-2.55.52-2.55,2,0,1.81,1.11,2.17,2.69,2.48.37.07,1.23.32,1.23,1C10.33,11.31,10,11.86,9.09,11.86Z" opacity="0.9" fill="url(#azure-icon-12-e74e2f36-f70f-4351-9609-a084522a8ba7)" /></svg>
+  </g>
+  <text x="121" y="1460" class="name">Cost Management budget</text>
+  <text x="83" y="1485" class="body">Optional, filtered to selected accounts</text>
+  <text x="83" y="1510" class="body">Threshold notification, not a spending cap</text>
+  <rect x="860" y="1354" width="310" height="124" rx="10" class="box"/>
+  <text x="878" y="1384" class="name">Action group</text>
+  <text x="878" y="1409" class="body">Receives alert / budget</text>
+  <text x="878" y="1434" class="body">notifications</text>
+  <rect x="1275" y="1354" width="450" height="124" rx="10" class="box"/>
+  <text x="1293" y="1384" class="name">Email recipients</text>
+  <text x="1293" y="1409" class="body">Operators investigate and tune thresholds</text>
+  <text x="1293" y="1434" class="small">No automatic PTU resizing or collector-failure alert.</text>
+  <path d="M631 1356H754V1478H631" fill="none" stroke="#4aa8ff" stroke-width="2.5"/>
+  <circle cx="754" cy="1417" r="4" fill="#4aa8ff"/>
+  <path d="M754 1417H857" class="flow"/><path d="M1170 1417H1272" class="flow"/>
 
-  <path d="M50 1490H170" class="flow"/>
-  <text x="188" y="1496" class="small">Telemetry writes / notifications</text>
-  <path d="M480 1490H600" class="data"/>
-  <text x="618" y="1496" class="small">Queries / data reads</text>
-  <rect x="852" y="1477" width="34" height="24" rx="5" class="optional"/>
-  <text x="900" y="1496" class="small">Optional</text>
-  <text x="1100" y="1496" class="small">Dashed outer line: customer tenant</text>
-  <rect x="36" y="1520" width="1728" height="106" rx="12" fill="#111923" stroke="#526476" stroke-width="1.5"/>
-  <text x="60" y="1554" class="name">Deployment and security</text>
-  <text x="60" y="1583" class="body">Deploy with Terraform or Bicep; existing AI accounts and deployments are monitored, not created or resized.</text>
-  <text x="60" y="1610" class="body">Managed identities use scoped roles. Viewer is not data isolation; the starter uses public endpoints, not private networking.</text>
+  <path d="M50 1594H170" class="flow"/>
+  <text x="188" y="1600" class="small">Telemetry writes / notifications</text>
+  <path d="M480 1594H600" class="data"/>
+  <text x="618" y="1600" class="small">Queries / data reads</text>
+  <rect x="852" y="1581" width="34" height="24" rx="5" class="optional"/>
+  <text x="900" y="1600" class="small">Optional</text>
+  <text x="1100" y="1600" class="small">Dashed outer line: customer tenant</text>
+  <rect x="36" y="1624" width="1728" height="106" rx="12" fill="#111923" stroke="#526476" stroke-width="1.5"/>
+  <text x="60" y="1658" class="name">Deployment and security</text>
+  <text x="60" y="1687" class="body">Deploy with Terraform or Bicep; existing AI accounts and deployments are monitored, not created or resized.</text>
+  <text x="60" y="1714" class="body">Managed identities use scoped roles. Viewer is not data isolation; the starter uses public endpoints, not private networking.</text>
 </svg>
