@@ -462,7 +462,7 @@
           },
           "refId": "A",
           "scenarioId": "csv_content",
-          "csvContent": "OperationId,Name,ResultCode,DurationMs,Agent,Operation\nexample-trace-001,model-request,429,1200,sample-agent,chat\nexample-trace-002,search-tool,503,2100,sample-agent,execute_tool\n"
+          "csvContent": "OperationId,Name,ResultCode,DurationMs,Agent,Operation\n0af7651916cd43dd8448eb211c80319c,model-request,429,1200,sample-agent,chat\n4bf92f3577b34da6a3ce929d0e0e4736,search-tool,503,2100,sample-agent,execute_tool\n"
         }
       ],
       "gridPos": {
@@ -477,6 +477,24 @@
           "noValue": "No data"
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^OperationId$/"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open this operation in Azure Logs",
+                    "url": "https://portal.azure.com/#blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/resourceId/${workspaceResourceId:percentencode}/source/LogsBlade.AnalyticsShareLinkToQuery/q/AppRequests%20%7C%20where%20OperationId%20%3D%3D%20%27${__value.raw}%27%20%7C%20union%20%28AppDependencies%20%7C%20where%20OperationId%20%3D%3D%20%27${__value.raw}%27%29%20%7C%20project%20TimeGenerated%2C%20OperationId%2C%20ParentId%2C%20Name%2C%20ResultCode%2C%20Success%2C%20DurationMs%20%7C%20order%20by%20TimeGenerated%20asc/isQueryBase64Compressed/false",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byRegexp",
@@ -603,13 +621,50 @@
           },
           "refId": "A",
           "scenarioId": "csv_content",
-          "csvContent": "Evaluator,EvaluatedSamples,AverageScore,FailedSamples,InvalidSamples\nexample-evaluator,80,0.84,8,0\n"
+          "csvContent": "Evaluator,EvaluatedSamples,PassRatePercent,AverageScore,PassedSamples,FailedSamples,InvalidSamples\nexample-evaluator,80,90,0.84,72,8,0\n"
         }
       ],
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
+        "y": 27
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "title": "Dependency performance",
+      "type": "table",
+      "description": "Client-observed calls and latency to external dependencies. Hostnames in Target are telemetry metadata; do not emit secrets or customer data there.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "DependencyType,Dependency,ObservedCalls,FailedCalls,P95_ms\nHTTP,search.example.invalid,120,2,340\nHTTP,storage.example.invalid,86,1,210\n"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
         "y": 27
       },
       "fieldConfig": {

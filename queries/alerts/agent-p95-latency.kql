@@ -1,0 +1,7 @@
+AppRequests
+| where TimeGenerated > ago(10m)
+| where tostring(Properties["gen_ai.operation.name"]) == "invoke_agent"
+| extend Agent = iff(isempty(tostring(Properties["gen_ai.agent.name"])),
+    "unnamed", tostring(Properties["gen_ai.agent.name"]))
+| summarize P95Ms = percentile(DurationMs, 95) by Agent
+| project Agent, P95Ms

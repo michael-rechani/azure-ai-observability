@@ -1,49 +1,31 @@
-# Setup
+# Connect, validate, and troubleshoot
+
+Use the [Terraform guide](terraform.md) or [Bicep guide](bicep.md) to deploy the monitoring resources and dashboards. Do not apply both tools to the same resources.
 
 ## Prerequisites
 
 - Existing Foundry and/or Azure OpenAI accounts. PTU alerts need existing provisioned deployments.
-- Azure CLI with Bicep and Python 3.12+. No `azd`, Prometheus, or AKS is required.
+- Azure CLI and PowerShell 7 for the Bicep helper, or Terraform for the Terraform path. Python 3.12+ is optional for the dashboard generators and offline tests.
 - An Azure Managed Grafana-supported region and permission to deploy resources and assign roles.
 - An Entra object ID for the intended Grafana administrator and an alert email recipient.
 
 Do not commit connection strings, tokens, personal addresses, or your local configuration.
 
-## Deploy new monitoring infrastructure
-
-Copy and edit `infra/main.example.bicepparam` as `infra/main.local.bicepparam`. Replace all examples, including subscription IDs, region, target account names, admin object ID, and notification email. Leave an account's `ptuDeployments` empty if it has no PTUs. List deployment names, not model names. Add existing telemetry workspaces to `existingTelemetryWorkspaces` if you already collect agent telemetry there. Do not list the same account/workspace twice.
-
-The template creates Grafana Standard, Log Analytics, Application Insights, an action group, scoped RBAC, and PTU alerts. It never creates/modifies a model deployment. Check currently supported Grafana versions and region availability before deployment; `grafanaMajorVersion` is configurable.
-
-Run in PowerShell after reviewing estimated Azure costs:
-
-```powershell
-az login
-az account set --subscription "<monitoring-subscription-id>"
-az group create --name "<monitoring-rg>" --location "<region>"
-az deployment group what-if --resource-group "<monitoring-rg>" --parameters .\infra\main.local.bicepparam
-# Only run after reviewing the what-if output:
-az deployment group create --resource-group "<monitoring-rg>" --parameters .\infra\main.local.bicepparam
-az deployment group show --resource-group "<monitoring-rg>" --name main --query properties.outputs
-```
-
-`az group create` creates a resource group before what-if; omit it if the group already exists. Deployments can fail if the caller lacks role-assignment permissions in any target scope. The deployment name defaults to the template filename (`main`); pass `--name` explicitly if desired.
-
-Application Insights is configured for Entra-only ingestion. Grant your application identity **Monitoring Metrics Publisher** on the emitted Application Insights resource ID and configure the authenticated exporter before sending telemetry. The template intentionally does not grant publishing privileges to Grafana.
-
 ## Use existing monitoring infrastructure instead
 
 Skip deployment entirely if you already have Grafana and telemetry storage. Grant the Grafana identity Monitoring Reader on target AI accounts and Log Analytics Reader on existing telemetry workspaces. Do not create a second telemetry pipeline unless you need a separate security/retention boundary.
 
-## Configure the data source and dashboards
+## Manual data-source and dashboard import
+
+The deployment guides provision these automatically. For an existing Grafana instance, or if you deliberately choose manual setup:
 
 1. Open the Grafana endpoint and sign in as the assigned administrator. RBAC propagation can take several minutes.
 2. Configure the built-in **Azure Monitor** data source for **Managed Identity** authentication. Run **Save & test**. No client secret is required.
-3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. Select the Azure Monitor data source for each import.
+3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. If the cost pipeline is deployed, import `dashboards/azure-ai-costs.json` too. Select the Azure Monitor data source for each import.
 4. Set the top textbox controls to real values. `workspaceResourceId` is the **Log Analytics workspace ARM resource ID**, not its workspace GUID and not the Application Insights ID. Resource/region values must match the target account.
-5. Optionally generate personalized files using `config.local.json`. The shared subscription default can be overridden independently in each dashboard; the workspace ARM ID can point to another subscription.
+5. Optionally generate personalized files using `config.local.json` and the Python dashboard generator. This is not required: the shared subscription default can be changed independently in each dashboard, and the workspace ARM ID can point to another subscription.
 
-Import via the UI is intentional: managed Grafana APIs require their own Entra authentication and appropriate roles. This starter does not enable API keys or store a Grafana admin token.
+Managed Grafana APIs require their own Entra authentication and appropriate roles. This starter does not enable API keys or store a Grafana admin token.
 
 ## Connect Foundry agents
 
@@ -65,7 +47,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 
 ## Acceptance checklist
 
-- All three dashboards import and query using the managed identity.
+- The three core dashboards, plus the optional cost dashboard when enabled, query using the managed identity.
 - Resource inventory contains expected authorized accounts/projects; missing rows trigger an RBAC check.
 - A known agent execution produces correlated run, tool, and model spans with an OperationId.
 - Model usage totals match known calls and do not count parent agent summaries twice.
@@ -73,6 +55,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
 - A controlled failure appears in the trace table. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
+- If the cost pipeline is enabled, the scheduled Function produces a complete snapshot in the monitoring workspace and the cost dashboard reports the expected account/currency data. The first run is scheduled for 06:00 UTC and billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.
 
 The repository's offline CI cannot verify live data, KQL execution, model/SKU support, or notification delivery without your Azure environment.

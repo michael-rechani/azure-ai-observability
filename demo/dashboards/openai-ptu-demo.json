@@ -703,6 +703,68 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "id": 11,
+      "title": "Provisioned deployment capacity (current)",
+      "type": "table",
+      "description": "Current deployed PTUs from Azure Resource Graph; this is allocated deployment capacity, not regional quota or available capacity.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "Deployment,Model,ModelVersion,ScaleType,AllocatedPTUs,Region\ngpt-4o-prod,gpt-4o,2024-11-20,ProvisionedManaged,100,eastus\ngpt-4o-mini-prod,gpt-4o-mini,2024-07-18,ProvisionedManaged,50,eastus\n"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "Cost and quota",
+      "description": "Use Azure Cost Management for actual billed and amortized reservation costs.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [],
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "PTU utilization describes consumed versus deployed throughput; it is **not a cost estimate**. For actual charges and reservation coverage, open [Azure Cost Management](https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/overview). Use Azure Quotas to review regional deployment availability. Optional Terraform budgets can alert on actual month-to-date costs for the selected AI accounts."
+      }
     }
   ],
   "templating": {

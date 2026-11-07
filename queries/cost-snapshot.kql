@@ -1,0 +1,24 @@
+// Shared prefix: choose only the newest fully ingested snapshot.
+let SnapshotRecords = materialize(
+    AICostSnapshot_CL
+    | where TimeGenerated >= ago(14d)
+    | where RecordType in ("Cost", "Complete")
+);
+let CostRows = materialize(
+    SnapshotRecords
+    | where RecordType == "Cost" and isnotempty(RunId) and isnotempty(RowKey)
+    | summarize arg_max(TimeGenerated, *) by RunId, RowKey
+);
+let RowCounts = CostRows | summarize IngestedRows = count() by RunId;
+let LatestCompleteSnapshot = materialize(
+    SnapshotRecords
+    | where RecordType == "Complete" and isnotempty(RunId)
+    | summarize arg_max(TimeGenerated, *) by RunId
+    | join kind=leftouter RowCounts on RunId
+    | extend IngestedRows = coalesce(IngestedRows, long(0))
+    | where ExpectedRows == IngestedRows
+    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd
+    | top 1 by SnapshotTime desc
+);
+let LatestCostRows = CostRows
+    | where RunId in (LatestCompleteSnapshot | project RunId);

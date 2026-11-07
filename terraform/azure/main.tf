@@ -15,6 +15,7 @@ locals {
   suffix              = substr(sha256(lower(var.create_resource_group ? "/subscriptions/${var.subscription_id}/resourceGroups/${var.resource_group_name}" : data.azurerm_resource_group.monitoring[0].id)), 0, 8)
   grafana_name        = "${var.name_prefix}-${local.suffix}"
   alert_accounts      = { for key, account in var.monitored_accounts : key => account if var.enable_ptu_alerts && length(account.ptu_deployments) > 0 }
+  agent_alert_suffix  = "${var.name_prefix}-${local.suffix}-agent"
 }
 
 resource "azurerm_log_analytics_workspace" "monitoring" {
@@ -59,6 +60,15 @@ resource "azurerm_role_assignment" "grafana_admin" {
   role_definition_name = "Grafana Admin"
   principal_id         = var.grafana_admin_object_id
   principal_type       = var.grafana_admin_principal_type
+}
+
+resource "azurerm_role_assignment" "grafana_viewer" {
+  for_each                         = var.grafana_viewer_principals
+  scope                            = azurerm_dashboard_grafana.monitoring.id
+  role_definition_name             = "Grafana Viewer"
+  principal_id                     = each.value.principal_id
+  principal_type                   = each.value.principal_type
+  skip_service_principal_aad_check = each.value.principal_type == "ServicePrincipal"
 }
 
 resource "azurerm_role_assignment" "workspace_reader" {
@@ -174,7 +184,136 @@ resource "azurerm_monitor_metric_alert" "throttling" {
       values   = ["429"]
     }
   }
+
   action {
     action_group_id = azurerm_monitor_action_group.notifications.id
+  }
+}
+
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "agent_failure_rate" {
+  count                   = var.enable_agent_alerts ? 1 : 0
+  name                    = "${local.agent_alert_suffix}-failure-rate"
+  resource_group_name     = local.resource_group_name
+  location                = var.location
+  description             = "Agent failure rate exceeded its threshold after the minimum run count was observed."
+  enabled                 = true
+  evaluation_frequency    = "PT5M"
+  window_duration         = "PT10M"
+  scopes                  = [azurerm_log_analytics_workspace.monitoring.id]
+  severity                = 2
+  auto_mitigation_enabled = true
+  criteria {
+    query = templatefile("${path.module}/../../queries/alerts/agent-failure-rate.kql", {
+      minimum_agent_runs = var.agent_minimum_runs_for_failure_rate
+    })
+    time_aggregation_method = "Average"
+    metric_measure_column   = "FailureRatePercent"
+    operator                = "GreaterThan"
+    threshold               = var.agent_failure_rate_threshold_percent
+    dimension {
+      name     = "Agent"
+      operator = "Include"
+      values   = ["*"]
+    }
+  }
+  action {
+    action_groups = [azurerm_monitor_action_group.notifications.id]
+  }
+}
+
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "agent_p95_latency" {
+  count                   = var.enable_agent_alerts ? 1 : 0
+  name                    = "${local.agent_alert_suffix}-p95-latency"
+  resource_group_name     = local.resource_group_name
+  location                = var.location
+  description             = "Retained-span p95 agent run latency exceeded its threshold."
+  enabled                 = true
+  evaluation_frequency    = "PT5M"
+  window_duration         = "PT10M"
+  scopes                  = [azurerm_log_analytics_workspace.monitoring.id]
+  severity                = 2
+  auto_mitigation_enabled = true
+  criteria {
+    query                   = file("${path.module}/../../queries/alerts/agent-p95-latency.kql")
+    time_aggregation_method = "Average"
+    metric_measure_column   = "P95Ms"
+    operator                = "GreaterThan"
+    threshold               = var.agent_p95_latency_threshold_ms
+    dimension {
+      name     = "Agent"
+      operator = "Include"
+      values   = ["*"]
+    }
+  }
+  action {
+    action_groups = [azurerm_monitor_action_group.notifications.id]
+  }
+}
+
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "agent_heartbeat" {
+  count                   = var.enable_agent_alerts ? 1 : 0
+  name                    = "${local.agent_alert_suffix}-heartbeat"
+  resource_group_name     = local.resource_group_name
+  location                = var.location
+  description             = "Expected agent telemetry was not observed in the last fifteen minutes."
+  enabled                 = true
+  evaluation_frequency    = "PT5M"
+  window_duration         = "PT15M"
+  scopes                  = [azurerm_log_analytics_workspace.monitoring.id]
+  severity                = 2
+  auto_mitigation_enabled = true
+  criteria {
+    query                   = file("${path.module}/../../queries/alerts/agent-heartbeat.kql")
+    time_aggregation_method = "Average"
+    metric_measure_column   = "ObservedRuns"
+    operator                = "LessThan"
+    threshold               = var.agent_expected_runs_per_15m
+  }
+  action {
+    action_groups = [azurerm_monitor_action_group.notifications.id]
+  }
+}
+
+resource "azurerm_consumption_budget_subscription" "ai_accounts" {
+  count           = var.monthly_ai_cost_budget_amount > 0 ? 1 : 0
+  name            = "${var.name_prefix}-ai-accounts-monthly"
+  subscription_id = "/subscriptions/${var.subscription_id}"
+  amount          = var.monthly_ai_cost_budget_amount
+  time_grain      = "Monthly"
+
+  lifecycle {
+    precondition {
+      condition     = length(var.monitored_accounts) > 0
+      error_message = "Configure at least one monitored account before enabling the AI cost budget."
+    }
+    precondition {
+      condition = (
+        var.cost_budget_start_date != null &&
+        var.cost_budget_end_date != null &&
+        timecmp(var.cost_budget_start_date, var.cost_budget_end_date) < 0
+      )
+      error_message = "Set a start and end date, with the end after the start, before enabling the AI cost budget."
+    }
+  }
+
+  time_period {
+    start_date = var.cost_budget_start_date
+    end_date   = var.cost_budget_end_date
+  }
+
+  filter {
+    dimension {
+      name   = "ResourceId"
+      values = [for account in values(var.monitored_accounts) : account.resource_id]
+    }
+  }
+
+  notification {
+    enabled        = true
+    threshold      = var.cost_budget_threshold_percent
+    operator       = "GreaterThan"
+    threshold_type = "Actual"
+    contact_emails = [var.notification_email]
+    contact_groups = [azurerm_monitor_action_group.notifications.id]
   }
 }

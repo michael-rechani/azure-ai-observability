@@ -1,0 +1,8 @@
+AppDependencies
+| where $__timeFilter(TimeGenerated)
+| extend Dependency = tostring(Target), DependencyType = tostring(Type)
+| summarize ObservedCalls = sum(ItemCount),
+    FailedCalls = sumif(ItemCount, Success == false),
+    P95_ms = percentile(DurationMs, 95)
+    by DependencyType, Dependency
+| order by FailedCalls desc, P95_ms desc

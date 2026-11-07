@@ -451,6 +451,24 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/^OperationId$/"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open this operation in Azure Logs",
+                    "url": "https://portal.azure.com/#blade/Microsoft_Azure_Monitoring_Logs/LogsBlade/resourceId/${workspaceResourceId:percentencode}/source/LogsBlade.AnalyticsShareLinkToQuery/q/AppRequests%20%7C%20where%20OperationId%20%3D%3D%20%27${__value.raw}%27%20%7C%20union%20%28AppDependencies%20%7C%20where%20OperationId%20%3D%3D%20%27${__value.raw}%27%29%20%7C%20project%20TimeGenerated%2C%20OperationId%2C%20ParentId%2C%20Name%2C%20ResultCode%2C%20Success%2C%20DurationMs%20%7C%20order%20by%20TimeGenerated%20asc/isQueryBase64Compressed/false",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/^DurationMs$/"
             },
             "properties": [
@@ -555,7 +573,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "AppEvents\n| where $__timeFilter(TimeGenerated)\n| where Name == \"obs.evaluation\"\n| extend Evaluator = tostring(Properties[\"obs.evaluator.name\"]),\n    Score = todouble(Properties[\"obs.evaluation.score\"]),\n    Passed = tobool(Properties[\"obs.evaluation.passed\"])\n| summarize EvaluatedSamples = count(), AverageScore = avg(Score),\n    FailedSamples = countif(Passed == false),\n    InvalidSamples = countif(isnull(Score) or isnull(Passed)) by Evaluator\n| order by Evaluator asc\n",
+            "query": "AppEvents\n| where $__timeFilter(TimeGenerated)\n| where Name == \"obs.evaluation\"\n| extend Evaluator = tostring(Properties[\"obs.evaluator.name\"]),\n    Score = todouble(Properties[\"obs.evaluation.score\"]),\n    Passed = tobool(Properties[\"obs.evaluation.passed\"])\n| summarize EvaluatedSamples = count(), AverageScore = avg(Score),\n    PassedSamples = countif(Passed == true),\n    FailedSamples = countif(Passed == false),\n    InvalidSamples = countif(isnull(Score) or isnull(Passed)) by Evaluator\n| extend ValidSamples = PassedSamples + FailedSamples\n| extend PassRatePercent = iff(ValidSamples > 0,\n    100.0 * todouble(PassedSamples) / todouble(ValidSamples), real(null))\n| project Evaluator, EvaluatedSamples, PassRatePercent, AverageScore,\n    PassedSamples, FailedSamples, InvalidSamples\n| order by Evaluator asc\n",
             "resultFormat": "table",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -566,6 +584,51 @@
         "h": 8,
         "w": 12,
         "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 8,
+      "title": "Dependency performance",
+      "type": "table",
+      "description": "Client-observed calls and latency to external dependencies. Hostnames in Target are telemetry metadata; do not emit secrets or customer data there.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "AppDependencies\n| where $__timeFilter(TimeGenerated)\n| extend Dependency = tostring(Target), DependencyType = tostring(Type)\n| summarize ObservedCalls = sum(ItemCount),\n    FailedCalls = sumif(ItemCount, Success == false),\n    P95_ms = percentile(DurationMs, 95)\n    by DependencyType, Dependency\n| order by FailedCalls desc, P95_ms desc\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
         "y": 24
       },
       "fieldConfig": {

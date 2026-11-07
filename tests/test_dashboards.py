@@ -28,10 +28,12 @@ class DashboardTests(unittest.TestCase):
             variables |= {"DS_AZURE_MONITOR", "__interval"}
             self.assertEqual(len({p["id"] for p in dashboard["panels"]}), len(dashboard["panels"]))
             for panel in dashboard["panels"]:
+                if panel["type"] == "text":
+                    continue
                 references = re.findall(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))", json.dumps(panel))
                 for braced, plain in references:
                     name = braced or plain
-                    if name != "__timeFilter":
+                    if not name.startswith("__"):
                         self.assertIn(name, variables)
                 self.assertEqual(panel["targets"][0]["datasource"], builder.DS)
 
@@ -41,7 +43,11 @@ class DashboardTests(unittest.TestCase):
                          "AzureOpenAIProvisionedManagedUtilizationV2")
         self.assertEqual(panels[0]["fieldConfig"]["defaults"]["unit"], "percent")
         self.assertEqual(panels[6]["fieldConfig"]["defaults"]["unit"], "ms")
-        names = {p["targets"][0]["azureMonitor"]["metricName"] for p in panels}
+        names = {
+            p["targets"][0]["azureMonitor"]["metricName"]
+            for p in panels
+            if p["targets"] and "azureMonitor" in p["targets"][0]
+        }
         self.assertNotIn("Latency", names)
         self.assertNotIn("AzureOpenAIProvisionedManagedUtilization", names)
 
@@ -56,12 +62,52 @@ class DashboardTests(unittest.TestCase):
     def test_log_queries_are_time_bounded_and_workspace_scoped(self):
         for dashboard in self.dashboards.values():
             for panel in dashboard["panels"]:
+                if panel["type"] == "text":
+                    continue
                 target = panel["targets"][0]
                 if target["queryType"] == "Azure Log Analytics":
                     query = target["azureLogAnalytics"]
-                    self.assertIn("$__timeFilter(TimeGenerated)", query["query"])
                     self.assertEqual(query["resources"], ["$workspaceResourceId"])
-                    self.assertTrue(query["dashboardTime"])
+                    if dashboard["uid"] == "azure-ai-costs":
+                        self.assertIn("TimeGenerated >= ago(14d)", query["query"])
+                        self.assertFalse(query["dashboardTime"])
+                    else:
+                        self.assertIn("$__timeFilter(TimeGenerated)", query["query"])
+                        self.assertTrue(query["dashboardTime"])
+
+    def test_cost_queries_select_only_the_latest_complete_deduplicated_snapshot(self):
+        prefix = (ROOT / "queries" / "cost-snapshot.kql").read_text()
+        self.assertIn("summarize arg_max(TimeGenerated, *) by RunId, RowKey", prefix)
+        self.assertIn("summarize IngestedRows = count() by RunId", prefix)
+        self.assertIn("ExpectedRows == IngestedRows", prefix)
+        self.assertIn("top 1 by SnapshotTime desc", prefix)
+        self.assertNotIn("dcount(", prefix)
+        panels = self.dashboards["azure-ai-costs.json"]["panels"]
+        for item in panels:
+            if item["type"] != "text":
+                query = item["targets"][0]["azureLogAnalytics"]["query"]
+                self.assertTrue(query.startswith(prefix))
+        status = panels[1]["targets"][0]["azureLogAnalytics"]["query"]
+        for state in ("Missing snapshot", "Stale - check logs", "No cost data",
+                      "Before history", "After history"):
+            self.assertIn(state, status)
+        self.assertIn("ago(48h)", status)
+
+    def test_cost_totals_and_trends_keep_types_currencies_and_usage_dates_separate(self):
+        panels = self.dashboards["azure-ai-costs.json"]["panels"]
+        for index, cost_type in ((2, "ActualCost"), (3, "AmortizedCost"),
+                                 (4, "ActualCost"), (5, "AmortizedCost")):
+            query = panels[index]["targets"][0]["azureLogAnalytics"]["query"].split("let LatestCostRows", 1)[1]
+            self.assertIn(f'CostType == "{cost_type}"', query)
+            self.assertIn("Currency", query.split("summarize Amount = sum(Cost) by ", 1)[1])
+            self.assertIn("UsageDate >= startofday($__timeFrom())", query)
+            self.assertIn("UsageDate < $__timeTo()", query)
+            self.assertNotIn("coalesce(sum(Cost)", query)
+            self.assertEqual(panels[index]["fieldConfig"]["defaults"]["unit"], "none")
+        account_query = panels[6]["targets"][0]["azureLogAnalytics"]["query"]
+        self.assertIn("by ResourceId, CostType, Currency", account_query)
+        self.assertEqual(self.dashboards["azure-ai-costs.json"]["timezone"], "utc")
+        self.assertIn("do not add them together", panels[0]["options"]["content"])
 
     def test_invalid_configuration_is_rejected(self):
         cases = [
@@ -98,7 +144,7 @@ class DashboardTests(unittest.TestCase):
         }
         for dashboard in self.dashboards.values():
             for panel in dashboard["panels"]:
-                query = panel["targets"][0].get("azureMonitor")
+                query = panel["targets"][0].get("azureMonitor") if panel["targets"] else None
                 if query:
                     self.assertIn(query["metricName"], totals | averages)
                     expected = {"Total"} if query["metricName"] in totals else {"Average", "Maximum"}
@@ -131,6 +177,53 @@ class DashboardTests(unittest.TestCase):
             with self.subTest(title=panel["title"]):
                 self.assertIn("Observed", panel["title"])
                 self.assertIn("not a coverage percentage", panel["description"])
+
+    def test_failed_operation_links_to_workspace_trace_query(self):
+        panel = self.dashboards["foundry-agents.json"]["panels"][4]
+        operation_id = next(
+            item for item in panel["fieldConfig"]["overrides"]
+            if item["matcher"]["options"] == "/^OperationId$/"
+        )
+        link = operation_id["properties"][0]["value"][0]["url"]
+        self.assertIn("${workspaceResourceId:percentencode}", link)
+        self.assertIn("${__value.raw}", link)
+        self.assertIn("AppDependencies", link)
+        self.assertIn("isQueryBase64Compressed/false", link)
+
+    def test_ptu_capacity_inventory_is_scoped_to_account(self):
+        panel = self.dashboards["openai-ptu.json"]["panels"][10]
+        query = panel["targets"][0]["azureResourceGraph"]["query"]
+        self.assertIn('type =~ "microsoft.cognitiveservices/accounts/deployments"', query)
+        self.assertIn('resourceGroup =~ "$resourceGroup"', query)
+        self.assertIn('name startswith strcat("$account", "/")', query)
+        self.assertIn('sku.name =~ "ProvisionedManaged"', query)
+        self.assertIn("not regional quota", panel["description"])
+
+    def test_agent_alert_queries_are_bounded_and_gated(self):
+        failure = (ROOT / "queries" / "alerts" / "agent-failure-rate.kql").read_text()
+        latency = (ROOT / "queries" / "alerts" / "agent-p95-latency.kql").read_text()
+        heartbeat = (ROOT / "queries" / "alerts" / "agent-heartbeat.kql").read_text()
+        for query in (failure, latency, heartbeat):
+            with self.subTest(query=query[:40]):
+                self.assertIn("AppRequests", query)
+                self.assertIn("ago(", query)
+                self.assertNotIn("$__timeFilter", query)
+        self.assertIn("${minimum_agent_runs}", failure)
+        self.assertIn("FailureRatePercent", failure)
+        self.assertIn("P95Ms", latency)
+        self.assertIn("ObservedRuns", heartbeat)
+
+    def test_dependency_query_is_scoped_and_aggregated(self):
+        query = (ROOT / "queries" / "agent-dependencies.kql").read_text()
+        self.assertIn("$__timeFilter(TimeGenerated)", query)
+        self.assertIn("AppDependencies", query)
+        self.assertIn("P95_ms", query)
+
+    def test_evaluations_report_sample_pass_rate_without_empty_division(self):
+        query = (ROOT / "queries" / "evaluations.kql").read_text()
+        self.assertIn("PassRatePercent", query)
+        self.assertIn("ValidSamples > 0", query)
+        self.assertIn("InvalidSamples", query)
 
 
 if __name__ == "__main__":

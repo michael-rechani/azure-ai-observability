@@ -11,6 +11,12 @@ flowchart LR
     LA --> Grafana
     ARG --> Grafana
     AM --> Alerts[PTU metric alerts and action group]
+    LA --> Alerts
+    CM[Azure Cost Management] --> Budget[Optional account-scope budget]
+    Budget --> Alerts
+    CM --> Function[Optional daily cost Function]
+    Function --> DCR[Logs ingestion endpoint and rule]
+    DCR --> LA
 ```
 
 ## Two independent monitoring tracks
@@ -33,7 +39,7 @@ No custom exporter is needed for PTU utilization. In particular, **utilization V
 | Agent memory, Cosmos DB, Storage | Add resource-specific dashboards and scoped read permissions for the dependencies you actually use |
 | Hosted-agent containers / infrastructure | Add runtime telemetry; platform metrics are not automatically a substitute for application instrumentation |
 | Quota, PTU allocation, capacity availability | Azure management-plane inventory/capacity queries; utilization alone does not measure available regional capacity |
-| Billing, reservations, budgets | Azure Cost Management / reservation reporting; token counts and utilization are not invoices |
+| Billing, reservations, budgets | Optional account-attributed actual/amortized cost dashboard and account-scope budget; invoice and reservation reporting remain separate |
 | Multi-project attribution | Retain project/resource identity attributes and add filters or separate workspaces |
 
 Do not treat missing spans, missing metric definitions, or missing evaluation events as zero errors. The observed-instrumentation panel distinguishes generic application spans from recognized agent spans, but does not calculate a coverage percentage. An entirely silent workspace still needs an independent telemetry-heartbeat alert.
@@ -51,6 +57,8 @@ Do not treat missing spans, missing metric definitions, or missing evaluation ev
 ## Permissions and boundaries
 
 The Grafana managed identity gets Monitoring Reader on each configured AI account and Log Analytics Reader on each configured telemetry workspace. It does not get subscription-wide Owner/Contributor or data-plane model invocation privileges. Resource Graph inventory remains restricted by its actual resource access; grant scoped Reader separately for additional projects/hubs/dependencies you want inventoried.
+
+The optional cost collector uses a separate identity with subscription-wide Cost Management Reader. It queries only explicitly configured account resource IDs, but the role is broader than those filters. The dashboard reads completed snapshots from the monitoring workspace; actual and amortized values are separate, pretax, currency-specific, and may omit reservation purchases, shared charges, tax, and child-resource costs. They are not invoice totals. Billing delay, rolling-history limits, ingestion caps, storage, and Function costs are described in [cost collection](costs.md).
 
 Infrastructure deployment requires resource creation and role-assignment permissions in the monitoring resource group and all target resource groups, potentially in multiple subscriptions within one Entra tenant. Dashboard access is a separate Grafana role assigned to users/groups. Data-source permissions are not inherited from a dashboard viewer's Azure resource access: use workspace isolation and Grafana access policies deliberately.
 

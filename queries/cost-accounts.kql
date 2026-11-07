@@ -1,0 +1,6 @@
+LatestCostRows
+| where UsageDate >= startofday($__timeFrom()) and UsageDate < $__timeTo()
+| summarize Amount = sum(Cost) by ResourceId, CostType, Currency
+| extend Account = extract("([^/]+)$", 1, ResourceId)
+| project Account, CostType, Currency, Amount, ResourceId
+| order by Account asc, CostType asc, Currency asc

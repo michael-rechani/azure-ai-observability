@@ -931,6 +931,75 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "id": 11,
+      "title": "Provisioned deployment capacity (current)",
+      "type": "table",
+      "description": "Current deployed PTUs from Azure Resource Graph; this is allocated deployment capacity, not regional quota or available capacity.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Resource Graph",
+          "subscriptions": [
+            "$subscription"
+          ],
+          "azureResourceGraph": {
+            "query": "Resources\n| where type =~ \"microsoft.cognitiveservices/accounts/deployments\"\n| where subscriptionId =~ \"$subscription\"\n| where resourceGroup =~ \"$resourceGroup\"\n| where name startswith strcat(\"$account\", \"/\")\n| extend Segments = split(name, \"/\")\n| extend Deployment = tostring(Segments[array_length(Segments) - 1])\n| extend Model = tostring(properties.model.name),\n    ModelVersion = tostring(properties.model.version),\n    ScaleType = tostring(properties.scaleSettings.scaleType),\n    AllocatedPTUs = tolong(sku.capacity)\n| where sku.name =~ \"ProvisionedManaged\" or ScaleType =~ \"ProvisionedManaged\"\n| project Deployment, Model, ModelVersion, ScaleType,\n    AllocatedPTUs, Region = location\n| order by Deployment asc\n",
+            "resultFormat": "table",
+            "scope": "subscription"
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "id": 12,
+      "type": "text",
+      "title": "Cost and quota",
+      "description": "Use Azure Cost Management for actual billed and amortized reservation costs.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [],
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "PTU utilization describes consumed versus deployed throughput; it is **not a cost estimate**. For actual charges and reservation coverage, open [Azure Cost Management](https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/overview). Use Azure Quotas to review regional deployment availability. Optional Terraform budgets can alert on actual month-to-date costs for the selected AI accounts."
+      }
     }
   ],
   "templating": {

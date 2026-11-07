@@ -1,2 +1,20 @@
-grafana_endpoint = "https://replace-with-grafana-endpoint.example.invalid"
-subscription_id  = "00000000-0000-0000-0000-000000000000"
+grafana_endpoint      = "https://replace-with-grafana-endpoint.example.invalid"
+subscription_id       = "00000000-0000-0000-0000-000000000000"
+enable_cost_dashboard = false
+
+dashboard_defaults = {
+  # Use workspace_resource_id from the Azure Terraform stage.
+  monitoring_workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+  # If agent telemetry is elsewhere, set telemetry_workspace_resource_id to that workspace's ARM ID.
+  foundry_account = {
+    resource_group = "foundry-rg"
+    name           = "foundry-account"
+    region         = "eastus"
+  }
+  ptu_account = {
+    resource_group = "openai-rg"
+    name           = "openai-account"
+    region         = "eastus"
+    deployment     = "replace-with-ptu-deployment"
+  }
+}

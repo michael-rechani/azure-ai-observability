@@ -1,5 +1,7 @@
 import copy
+import csv
 import importlib.util
+import io
 import json
 from pathlib import Path
 import sys
@@ -32,7 +34,8 @@ class DemoDashboardTests(unittest.TestCase):
         introduction = readme.split("## What is included", 1)[0]
         self.assertIn("## Dashboards", introduction)
         self.assertIn("simulated data", introduction.lower())
-        for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png"):
+        for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png",
+                     "cost-grafana-preview.png"):
             path = f"docs/images/{name}"
             with self.subTest(image=name):
                 self.assertIn(f"]({path})", introduction)
@@ -48,6 +51,9 @@ class DemoDashboardTests(unittest.TestCase):
             self.assertIn("do not change the sample data", dashboard["panels"][0]["options"]["content"])
             for panel in dashboard["panels"][1:]:
                 self.assertEqual(panel["datasource"], demo_builder.DEMO_DS)
+                if panel["type"] == "text":
+                    self.assertEqual(panel.get("targets", []), [])
+                    continue
                 for target in panel["targets"]:
                     self.assertEqual(target["datasource"], demo_builder.DEMO_DS)
                     self.assertIn(target["scenarioId"], {"csv_metric_values", "csv_content"})
@@ -58,6 +64,7 @@ class DemoDashboardTests(unittest.TestCase):
         pairs = (
             ("foundry-agents.json", "foundry-agents-demo.json"),
             ("openai-ptu.json", "openai-ptu-demo.json"),
+            ("azure-ai-costs.json", "azure-ai-costs-demo.json"),
         )
         for real_name, demo_name in pairs:
             real_panels = {panel["id"]: panel for panel in self.real[real_name]["panels"]}
@@ -87,6 +94,19 @@ class DemoDashboardTests(unittest.TestCase):
         self.assertEqual(observed[1], agent_runs)
         self.assertTrue(all(0 <= missing <= runs <= ai <= total for total, ai, runs, missing in zip(
             spans, genai, agent_runs, unnamed, strict=True)))
+        self.assertIn("AllocatedPTUs", demo_builder.PTU_DATA[11])
+        self.assertIn("PassRatePercent", demo_builder.AGENT_DATA[7])
+        for panel_id, values in ((3, demo_builder.COST_ACTUAL), (4, demo_builder.COST_AMORTIZED)):
+            total = next(csv.DictReader(io.StringIO(demo_builder.COST_DATA[panel_id])))
+            self.assertEqual(total["Currency"], "USD")
+            self.assertAlmostEqual(float(total["Amount"]), sum(values), places=2)
+        accounts = list(csv.DictReader(io.StringIO(demo_builder.COST_DATA[7])))
+        for kind, values in (("ActualCost", demo_builder.COST_ACTUAL),
+                             ("AmortizedCost", demo_builder.COST_AMORTIZED)):
+            self.assertAlmostEqual(
+                sum(float(row["Amount"]) for row in accounts if row["CostType"] == kind),
+                sum(values), places=2,
+            )
 
     def test_dedicated_axes_distinguish_small_counts(self):
         agents = self.real["foundry-agents.json"]["panels"]

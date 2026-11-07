@@ -2,18 +2,19 @@
 
 The two Terraform roots use **native AzureRM and Grafana provider resources**:
 
-1. `terraform/azure` creates Managed Grafana, Log Analytics, Application Insights, scoped RBAC, an action group, and per-account PTU metric alerts. It can also create the monitoring resource group and assign telemetry-publisher access to specified existing identities.
-2. `terraform/grafana` creates the Azure Monitor managed-identity data source and the three dashboards through the Grafana data-plane API.
+1. `terraform/azure` creates Managed Grafana, Log Analytics, Application Insights, scoped RBAC, an action group, and per-account PTU metric alerts. It can also create the monitoring resource group, assign Grafana Viewer or telemetry-publisher access, and provision a cost-collection Function.
+2. `terraform/grafana` creates the Azure Monitor managed-identity data source and the dashboards through the Grafana data-plane API, with the cost dashboard opt-in.
 
-The deployment is intentionally two-stage: the Grafana endpoint and caller's Grafana Admin role need to exist and propagate before Terraform can connect to the data plane. These configurations do **not** create Foundry agents or model deployments, set up instrumentation in existing applications, deploy an evaluator, or resize PTUs. Run the [live acceptance checklist](setup.md#acceptance-checklist) afterward.
+The deployment is intentionally two-stage: the Grafana endpoint and caller's Grafana Admin role need to exist and propagate before Terraform can connect to the data plane. **No separate Python installation or local simulated preview is required to deploy.** These configurations do **not** create Foundry agents or model deployments, set up instrumentation in existing applications, deploy an evaluator, or resize PTUs. The Terraform path has not yet been validated in a live Azure subscription; start in nonproduction and run the [live acceptance checklist](setup.md#acceptance-checklist) afterward.
 
 ## Before you start
 
-- Terraform 1.7+ (mock tests require 1.7+), Azure CLI, and Python 3.12+.
+- Terraform 1.7+ and Azure CLI. These examples use PowerShell; deploying the optional Flex Consumption cost collector requires **PowerShell 7** and **Azure CLI 2.60.0+** on the Terraform machine. Python 3.12+ is optional for the repository's offline tests and dashboard generators; Terraform mock tests require Terraform 1.11+.
 - A monitoring resource group in a supported region, either created by Terraform or already existing. The caller needs creation and role-assignment permissions at the monitoring resource group and the specified account/workspace scopes; creating a resource group also requires subscription-level permission.
 - Existing Foundry/OpenAI accounts. All monitored accounts must be in the **same subscription** as this Terraform Azure stage. Deploy separate stacks for other subscriptions. Existing telemetry workspace IDs can be specified separately; permissions must exist at those scopes.
 - The identity that runs the Grafana stage needs the Grafana Admin role; use its Entra **object ID** as `grafana_admin_object_id`, or assign it separately. The Azure subscription role alone is not Grafana data-plane access.
 - The environment must reach both Azure APIs and the Grafana endpoint. Public endpoints are enabled by this starter; private networking requires a separate design.
+- For the cost pipeline, the deployer must also assign **Cost Management Reader at subscription scope**, reach the Function's SCM deployment endpoint, and have permission to publish the app. Check Flex Consumption and PowerShell 7.6 availability in the chosen region.
 
 **State contains sensitive information.** AzureRM stores Application Insights connection strings and workspace keys in state even though they are not output here, and email addresses/resource metadata may also appear. Configure separate encrypted remote backends with access control and locking for both roots before real use. Local state is for evaluation only; never commit state, plans, credentials, or real `.tfvars`. Treat Terraform debug logs and plan files as sensitive.
 
@@ -21,7 +22,7 @@ The deployment is intentionally two-stage: the Grafana endpoint and caller's Gra
 
 ## 1. Azure resources
 
-Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars`; replace all placeholder values. The example sets `create_resource_group = true` for a new group. Set it to `false` to use an existing group; the variable defaults to `false` for compatibility with existing deployments. Account IDs are full ARM resource IDs; `ptu_deployments` are actual provisioned deployment names, not model names. Use an empty set for an account without PTUs. The example creates an alert email action group; the address is stored in Terraform state and Azure.
+Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars`; replace all placeholder values. The example sets `create_resource_group = true` for a new group. Set it to `false` to use an existing group; the variable defaults to `false` for compatibility with existing deployments. Account IDs are full ARM resource IDs; `ptu_deployments` are actual provisioned deployment names, not model names. Use an empty set for an account without PTUs. The example creates an alert email action group; the address is stored in Terraform state and Azure. Set `enable_cost_pipeline = true` if you want the optional cost dashboard.
 
 Optionally list existing application identities to grant **Monitoring Metrics Publisher** on the new Application Insights resource. Use Entra **object IDs**, not application/client IDs; omit the map if another process manages these permissions:
 
@@ -36,9 +37,45 @@ telemetry_publisher_principals = {
 
 The role enables authenticated ingestion; it does not instrument the application or connect a Foundry project. Configure the supported tracing/exporter for your agent separately as described in [telemetry](telemetry.md). Use stable map keys and import any pre-existing identical role assignment rather than creating a duplicate.
 
+### Business-user access
+
+Each customer can deploy this stack in its own Azure environment and optionally give an existing Microsoft Entra group read-only **Grafana Viewer** access. Set the group's **object ID** in `local.tfvars`; the map is empty by default:
+
+```hcl
+grafana_viewer_principals = {
+  business_readers = {
+    principal_id   = "00000000-0000-0000-0000-000000000000"
+    principal_type = "Group"
+  }
+}
+```
+
+Individual Entra `User` and `ServicePrincipal` identities are supported too; `Group` is the default type. Use stable map keys and import an existing identical assignment rather than duplicating it. Share the Azure stage's `grafana_endpoint` output after dashboards are deployed. Viewers sign in through Entra and can see the existing dashboards without Azure portal access; Azure Logs trace links may require separate permissions.
+
+**Viewer means read-only, not data isolation.** The Azure Monitor data source queries with Grafana's managed identity, so a viewer can potentially query data beyond the panels they see. Do not rely on dashboard filters or folder visibility to protect sensitive traces or separate customers. Scope the managed identity's access to appropriate data, and use separate deployments/data boundaries where needed. A user who also has a stronger Grafana role retains that access. See [Grafana data-source security](https://grafana.com/docs/grafana/latest/administration/data-source-management/).
+
 **Resource group ownership is a lifecycle decision.** Do not toggle `create_resource_group` on an existing stack without a deliberate state migration and reviewed plan. Changing it from `true` to `false` without removing the resource from Terraform state can plan deletion of the entire resource group and its contents; changing from `false` to `true` for an existing group requires import. A Terraform-managed resource group may also be deleted on destroy.
 
 Discover metric definitions and confirm dimensions before enabling alerts as described in [metric discovery](setup.md#metric-discovery). To provision access first, set `enable_ptu_alerts = false`, then enable after verification. Account map keys must be stable; renaming one changes its Terraform addresses.
+
+Agent failure-rate, retained-span p95 latency, and heartbeat rules are opt-in (`enable_agent_alerts = true`) and always target the **new monitoring workspace**, not an existing dashboard telemetry workspace. Confirm the `AppRequests` schema, operation name, agent property, run success semantics, sampling, ingestion cap, and traffic expectations there before turning them on. Defaults are a minimum of 20 sampled runs per 10 minutes, a 10% failure-rate threshold, 5-second p95 threshold, and at least one run per 15-minute heartbeat window. Tune these thresholds to your own SLO and traffic profile; the heartbeat can be noisy for intermittent workloads.
+
+An optional monthly Azure Cost Management budget is disabled by default (`monthly_ai_cost_budget_amount = 0`). To enable it, enter a positive amount in subscription billing currency and set `cost_budget_start_date` and `cost_budget_end_date` as UTC `YYYY-MM-DDT00:00:00Z` values. It includes only the configured monitored AI account resource IDs and sends the existing action-group email at `cost_budget_threshold_percent` (80% by default). This is an alert, not a hard cap; billing data can lag, and account-scope budgets are not PTU-deployment- or reservation-specific.
+
+### Optional cost pipeline
+
+To collect costs, configure at least one `monitored_accounts` entry and add to the Azure stage's `local.tfvars`:
+
+```hcl
+enable_cost_pipeline = true
+cost_lookback_days   = 90 # UTC days, including today; allowed range: 31-366
+```
+
+Terraform creates a Linux Flex Consumption Function, user-assigned managed identity, private keyless storage, a custom Log Analytics table, a data collection endpoint/rule, and their role assignments. The Function is scheduled daily at **06:00 UTC**, uses no always-ready instances, and queries Cost Management sequentially for each selected account and cost type. The storage account and Function endpoint are public-network resources protected by Entra authorization; sovereign clouds and private networking are not implemented.
+
+Terraform packages the PowerShell Function and invokes `az functionapp deployment source config-zip` through a PowerShell 7 local provisioner after resource creation; the CLI uses Flex's supported deployment path. An authenticated Azure CLI 2.60.0+ and PowerShell 7 must be available to the **machine running Terraform**, including CI runners. Python is not required. The caller needs network access and publishing permission. The deployment reruns when the package or publishing command changes. If deployment fails, the apply fails; correct the issue and reapply. Azure role propagation can delay startup, publishing, or collection.
+
+The identity receives **Cost Management Reader for the entire subscription**, not just the selected accounts. Review this permission, the pacing limits, snapshot behavior, and financial interpretation in [cost collection](costs.md) before enabling it.
 
 From the repository root in PowerShell:
 
@@ -54,25 +91,28 @@ terraform -chdir=terraform\azure output
 
 Deployment may fail for lack of resource/role assignment permissions, unsupported Grafana version, unavailable metric dimensions, or restricted network access; correct the issue rather than bypassing metric validation.
 
-## 2. Configure dashboard defaults
+## 2. Configure the Grafana stage
 
-Copy `config.example.json` to `config.local.json`, replace the account/subscription/region and workspace ARM ID placeholders with your real values, and generate local dashboards:
+Copy `terraform/grafana/example.tfvars.example` to `terraform/grafana/local.tfvars` and replace its examples. Get the endpoint and monitoring workspace ARM resource ID from the first stage:
 
 ```powershell
-python .\scripts\build_dashboards.py --config .\config.local.json --output .\local-dashboards
+terraform -chdir=terraform\azure output -raw grafana_endpoint
+terraform -chdir=terraform\azure output -raw workspace_resource_id
 ```
 
-This generator has one subscription default; each dashboard can be changed independently after deployment. The workspace ID is the Log Analytics workspace ARM ID from `terraform -chdir=terraform\azure output -raw workspace_resource_id`, not the Application Insights ID. If you skip this step, the dashboards deploy with placeholder defaults until you edit their controls.
+In the Grafana `local.tfvars`, set `grafana_endpoint`, `subscription_id`, and `dashboard_defaults.monitoring_workspace_resource_id` to those real values. Set `foundry_account` and `ptu_account` to the actual account resource-group names, account names, and **account regions**, which can differ from the monitoring region. Set `ptu_account.deployment` to a real provisioned deployment name. The example file has all of these fields.
 
-## 3. Grafana data source and dashboards
+Terraform sets the checked-in dashboards' initial controls from `dashboard_defaults` when it provisions them; no generated local JSON or Python is needed. Its subscription comes from the Grafana stage's `subscription_id`. Dashboard controls can still be changed after deployment. If an account block is omitted, that dashboard retains the source JSON's existing values, which are placeholders in the checked-in files.
 
-Copy `terraform/grafana/example.tfvars.example` to `terraform/grafana/local.tfvars`, set `grafana_endpoint` to the Azure stage's `grafana_endpoint` output, and set `subscription_id`. To use the generated dashboards, add:
+By default, agent dashboards use the monitoring workspace. To use an **existing telemetry workspace** instead, add its full ARM ID as `dashboard_defaults.telemetry_workspace_resource_id` and add it to `existing_telemetry_workspace_ids` in the Azure stage so Grafana gets Log Analytics Reader access. The cost dashboard always uses `monitoring_workspace_resource_id`, because the Function writes its snapshots there. The workspace ARM ID is not a workspace GUID or Application Insights ID.
 
-```hcl
-dashboard_directory = "../../local-dashboards"
-```
+If you enabled `enable_cost_pipeline` in the Azure stage, set `enable_cost_dashboard = true` in the Grafana stage. The monitoring workspace ID is required for this dashboard. Both settings are off by default. The separate [Bicep path](bicep.md) can provision the same cost collector and dashboard without Terraform.
 
-Terraform's Grafana provider receives an **Entra access token** in its `GRAFANA_AUTH` environment variable. Grafana's separate Azure Monitor data source uses the Grafana managed identity to query Azure; no API key or client secret is enabled. The token must be issued for `https://dashboard.azure.com` and the caller must have Grafana Admin:
+For advanced customization, `dashboard_directory` can point at other dashboard JSON files. Explicit `dashboard_defaults` override matching textbox values in those files; Terraform rejects a configured default if its target textbox is missing. The optional Python generator is for maintaining or customizing JSON outside this deployment flow.
+
+## 3. Deploy the Grafana data source and dashboards
+
+Terraform's Grafana provider receives an **Entra access token** in its `GRAFANA_AUTH` environment variable. To avoid sending this token to an unrelated host, the stage accepts only public `*.grafana.azure.com` HTTPS endpoints. Grafana's separate Azure Monitor data source uses the Grafana managed identity to query Azure; no API key or client secret is enabled. The token must be issued for `https://dashboard.azure.com` and the caller must have Grafana Admin:
 
 ```powershell
 $env:GRAFANA_AUTH = az account get-access-token --resource https://dashboard.azure.com --query accessToken -o tsv
@@ -104,6 +144,6 @@ terraform -chdir=terraform\grafana validate
 terraform -chdir=terraform\grafana test
 ```
 
-Mock tests do not contact Azure/Grafana and cannot prove that provider authentication, region/SKU availability, metric dimensions, dashboards, KQL, or alert delivery work in your environment. Keep the provider lock files committed and use the same locked versions in automation.
+Mock tests do not contact Azure/Grafana and cannot prove that provider authentication, Flex deployment, region/SKU availability, metric dimensions, dashboards, KQL, billing permissions, or alert delivery work in your environment. Keep the provider lock files committed and use the same locked versions in automation.
 
 **Destruction is destructive:** removing resources from configuration or running `terraform destroy` can remove dashboards, alerts, Grafana, telemetry resources, and stored telemetry. Review every plan and your retention policies. If intentionally retiring the entire stack, handle the Grafana stage first while the endpoint remains reachable, then the Azure stage. Existing model deployments and target account resources are not Terraform-managed.

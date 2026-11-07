@@ -1,9 +1,10 @@
-subscription_id         = "00000000-0000-0000-0000-000000000000"
-resource_group_name     = "monitoring-rg"
-create_resource_group   = true
-location                = "eastus"
-grafana_admin_object_id = "00000000-0000-0000-0000-000000000000"
-notification_email      = "replace-me@example.invalid"
+subscription_id           = "00000000-0000-0000-0000-000000000000"
+resource_group_name       = "monitoring-rg"
+create_resource_group     = true
+location                  = "eastus"
+grafana_admin_object_id   = "00000000-0000-0000-0000-000000000000"
+grafana_viewer_principals = {}
+notification_email        = "replace-me@example.invalid"
 monitored_accounts = {
   foundry = {
     resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/foundry-account"
@@ -16,3 +17,7 @@ monitored_accounts = {
 }
 existing_telemetry_workspace_ids = []
 telemetry_publisher_principals   = {}
+enable_agent_alerts              = false
+monthly_ai_cost_budget_amount    = 0
+enable_cost_pipeline             = false
+cost_lookback_days               = 90

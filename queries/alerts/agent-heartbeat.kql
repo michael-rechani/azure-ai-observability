@@ -1,0 +1,4 @@
+AppRequests
+| where TimeGenerated > ago(15m)
+| where tostring(Properties["gen_ai.operation.name"]) == "invoke_agent"
+| summarize ObservedRuns = sum(ItemCount)

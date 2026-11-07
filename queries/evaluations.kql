@@ -5,6 +5,12 @@ AppEvents
     Score = todouble(Properties["obs.evaluation.score"]),
     Passed = tobool(Properties["obs.evaluation.passed"])
 | summarize EvaluatedSamples = count(), AverageScore = avg(Score),
+    PassedSamples = countif(Passed == true),
     FailedSamples = countif(Passed == false),
     InvalidSamples = countif(isnull(Score) or isnull(Passed)) by Evaluator
+| extend ValidSamples = PassedSamples + FailedSamples
+| extend PassRatePercent = iff(ValidSamples > 0,
+    100.0 * todouble(PassedSamples) / todouble(ValidSamples), real(null))
+| project Evaluator, EvaluatedSamples, PassRatePercent, AverageScore,
+    PassedSamples, FailedSamples, InvalidSamples
 | order by Evaluator asc

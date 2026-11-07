@@ -1,0 +1,5 @@
+LatestCostRows
+| where CostType == "AmortizedCost"
+| where UsageDate >= startofday($__timeFrom()) and UsageDate < $__timeTo()
+| summarize Amount = sum(Cost) by Currency
+| order by Currency asc

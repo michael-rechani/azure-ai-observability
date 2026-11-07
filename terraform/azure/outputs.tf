@@ -25,3 +25,8 @@ output "application_insights_resource_id" {
 output "action_group_resource_id" {
   value = azurerm_monitor_action_group.notifications.id
 }
+
+output "cost_function_name" {
+  description = "Scheduled cost collector Function App, or null when the pipeline is disabled."
+  value       = try(azurerm_function_app_flex_consumption.cost[0].name, null)
+}
