@@ -10,8 +10,6 @@ New to Azure or this repository? Start with the [step-by-step deployment guide](
 
 ## Dashboards
 
-These are **actual Grafana screenshots with simulated data**, not results from an Azure deployment. The deployed dashboards use Azure Monitor and Log Analytics; the Foundry and PTU screenshots do not show every panel.
-
 ### Foundry agent operations
 
 ![Grafana preview of Foundry agent operations with simulated data](docs/images/foundry-grafana-preview.png)
