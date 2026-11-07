@@ -26,6 +26,12 @@ New to Azure or this repository? Start with the [step-by-step deployment guide](
 
 ![Grafana preview of the Azure AI business overview with simulated data](docs/images/business-overview-preview.png)
 
+## Architecture
+
+![Dark Azure AI Observatory architecture diagram showing the monitoring, dashboard, cost, and alerting flows](docs/images/azure-observability-architecture-dark.svg)
+
+[View full size](docs/images/azure-observability-architecture-dark.svg) · [Architecture and data flows](docs/architecture.md)
+
 ## Deploy to Azure
 
 Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, alerts, a Grafana data source, and dashboards. Both support an optional cost collector and the cost and business overview dashboards; the overview is provisioned with the cost dashboard. Neither path requires Python to deploy. Use one tool per deployment; the paths do not share state or ownership.

@@ -1,23 +1,18 @@
 # Coverage and architecture
 
-```mermaid
-flowchart LR
-    PTU[Azure OpenAI / Foundry OpenAI deployments] --> AM[Azure Monitor platform metrics]
-    Agents[Foundry agents and application runtimes] --> OTel[OpenTelemetry instrumentation]
-    OTel --> AI[Application Insights]
-    AI --> LA[Log Analytics workspace]
-    Inventory[Azure resource inventory] --> ARG[Azure Resource Graph]
-    AM --> Grafana[Azure Managed Grafana]
-    LA --> Grafana
-    ARG --> Grafana
-    AM --> Alerts[PTU metric alerts and action group]
-    LA --> Alerts
-    CM[Azure Cost Management] --> Budget[Optional account-scope budget]
-    Budget --> Alerts
-    CM --> Function[Optional daily cost Function]
-    Function --> DCR[Logs ingestion endpoint and rule]
-    DCR --> LA
-```
+![Dark Azure AI Observatory architecture showing telemetry, PTU metrics, resource inventory, optional cost collection, Grafana dashboards, and alert notifications](images/azure-observability-architecture-dark.svg)
+
+[View full size](images/azure-observability-architecture-dark.svg)
+
+The diagram is a logical view, not a live resource inventory. Dashed boxes identify optional features, not private networking. The data flows are:
+
+1. Instrumented agents and applications send OpenTelemetry traces and events through Application Insights to an existing or new Log Analytics workspace. OpenTelemetry applies to this agent/application path; PTU metrics, resource inventory, and cost collection use Azure-native services. Grafana reads that workspace.
+2. Grafana queries native Azure Monitor metrics for the selected OpenAI account and deployments, independently of agent instrumentation.
+3. Grafana queries Azure Resource Graph for inventory and allocated PTU capacity, limited by its managed identity's access.
+4. If enabled, a daily Function queries Cost Management for selected account IDs and sends actual and amortized cost snapshots through a data collection endpoint and rule to the monitoring workspace. Grafana reads complete snapshots for the cost and business dashboards. The Function also uses storage, sends its telemetry to Application Insights, and sends storage read diagnostics to the monitoring workspace.
+5. PTU metric alerts and optional agent log alerts use an action group for email. An independently enabled, account-filtered budget can use the same action group. Agent alerts query the **new monitoring workspace**, even when Grafana reads agent telemetry from an existing workspace.
+
+Grafana and the cost Function use separate managed identities. The Function's Cost Management Reader role is subscription-wide despite its account filters. Viewer access is not a data-isolation boundary. For the public endpoint, cost, and operational limitations, see [permissions and boundaries](#permissions-and-boundaries) and [cost collection](costs.md).
 
 ## Two independent monitoring tracks
 
