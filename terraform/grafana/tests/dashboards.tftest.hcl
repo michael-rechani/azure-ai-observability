@@ -38,12 +38,20 @@ run "cost_dashboard_is_opt_in" {
     }
   }
   assert {
-    condition     = length(grafana_dashboard.monitoring) == 4 && contains(keys(grafana_dashboard.monitoring), "azure_ai_costs")
-    error_message = "Enabling the cost dashboard must add it without replacing the other dashboards."
+    condition = (
+      length(grafana_dashboard.monitoring) == 5 &&
+      contains(keys(grafana_dashboard.monitoring), "azure_ai_costs") &&
+      contains(keys(grafana_dashboard.monitoring), "business_overview")
+    )
+    error_message = "Enabling cost dashboards must add both cost and business overviews without replacing other dashboards."
   }
   assert {
     condition     = !strcontains(grafana_dashboard.monitoring["azure_ai_costs"].config_json, "$${DS_AZURE_MONITOR}")
     error_message = "The cost dashboard must use the provisioned Azure Monitor data source."
+  }
+  assert {
+    condition     = !strcontains(grafana_dashboard.monitoring["business_overview"].config_json, "$${DS_AZURE_MONITOR}")
+    error_message = "The business overview must use the provisioned Azure Monitor data source."
   }
   assert {
     condition = (
@@ -102,7 +110,11 @@ run "dashboard_defaults_target_real_resources" {
   assert {
     condition = (
       one(jsondecode(grafana_dashboard.monitoring["foundry_agents"].config_json).templating.list).current.value == var.dashboard_defaults.telemetry_workspace_resource_id &&
-      one(jsondecode(grafana_dashboard.monitoring["azure_ai_costs"].config_json).templating.list).current.value == var.dashboard_defaults.monitoring_workspace_resource_id
+      one(jsondecode(grafana_dashboard.monitoring["azure_ai_costs"].config_json).templating.list).current.value == var.dashboard_defaults.monitoring_workspace_resource_id &&
+      one([
+        for v in jsondecode(grafana_dashboard.monitoring["business_overview"].config_json).templating.list :
+        v.current.value if v.name == "monitoringWorkspaceResourceId"
+      ]) == var.dashboard_defaults.monitoring_workspace_resource_id
     )
     error_message = "Agent telemetry and cost snapshots must use their independently selected workspaces."
   }
@@ -122,7 +134,10 @@ run "cost_dashboard_requires_monitoring_workspace" {
   variables {
     enable_cost_dashboard = true
   }
-  expect_failures = [grafana_dashboard.monitoring["azure_ai_costs"]]
+  expect_failures = [
+    grafana_dashboard.monitoring["azure_ai_costs"],
+    grafana_dashboard.monitoring["business_overview"],
+  ]
 }
 
 run "reject_invalid_dashboard_workspace" {
