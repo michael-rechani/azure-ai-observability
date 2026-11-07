@@ -2,8 +2,6 @@ union AppRequests, AppDependencies
 | where $__timeFilter(TimeGenerated)
 | where Success == false
 | where isnotempty(tostring(Properties["gen_ai.operation.name"]))
-| project TimeGenerated, OperationId, Name, ResultCode, DurationMs,
-    Agent = tostring(Properties["gen_ai.agent.name"]),
-    Operation = tostring(Properties["gen_ai.operation.name"])
+| project TimeGenerated, OperationId, Name, ResultCode, DurationMs
 | order by TimeGenerated desc
 | take 100

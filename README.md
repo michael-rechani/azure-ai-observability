@@ -101,7 +101,7 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Evaluations | Optional evaluator score / pass-fail dashboard | Publish evaluation events explicitly; this repo does not run evaluations |
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
 | Alerting | Per-deployment PTU utilization and 429 metric alerts; opt-in agent failure-rate, p95 latency, and heartbeat alerts | Agent rules require matching telemetry; heartbeat also requires guaranteed expected traffic |
-| Business overview | Optional summary of cost collection, actual cost by currency, observed agent activity, and PTU signals | Cost dashboard toggle required; missing telemetry is not zero or proof of health |
+| Business overview | Collection status, actual cost, agent runs per interval and failure rate over known outcomes, PTU utilization, requests, throttles, and tokens | Cost dashboard toggle required; missing telemetry is not zero or proof of health |
 | Cost visibility | Optional Function-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | Billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 

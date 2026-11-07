@@ -383,5 +383,34 @@
       "pluginId": "grafana-azure-monitor-datasource",
       "pluginName": "Azure Monitor"
     }
+  ],
+  "links": [
+    {
+      "type": "link",
+      "title": "Agent operations",
+      "url": "/d/foundry-agent-operations/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "PTU performance",
+      "url": "/d/azure-openai-ptu/_?var-subscription=${subscription:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Business overview",
+      "url": "/d/azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}&var-ptuSubscription=${subscription:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    }
   ]
 }

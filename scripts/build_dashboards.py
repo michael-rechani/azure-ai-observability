@@ -138,8 +138,8 @@ def resource_graph(filename, subscription):
     }
 
 
-def dashboard(uid, title, variables, panels):
-    return {
+def dashboard(uid, title, variables, panels, related=()):
+    result = {
         "uid": uid, "title": title, "schemaVersion": 39, "version": 1,
         "editable": True, "tags": ["azure", "ai-observability"],
         "timezone": "browser", "refresh": "1m",
@@ -151,6 +151,22 @@ def dashboard(uid, title, variables, panels):
             "pluginName": "Azure Monitor",
         }],
     }
+    if related:
+        result["links"] = [
+            {
+                "type": "link", "title": link_title,
+                "url": f"/d/{link_uid}/_" + (
+                    "?" + "&".join(
+                        f"var-{target}=${{{source}:percentencode}}"
+                        for target, source in variable_map
+                    ) if variable_map else ""
+                ),
+                "icon": "external link alt", "keepTime": True,
+                "includeVars": False, "targetBlank": False,
+            }
+            for link_title, link_uid, variable_map in related
+        ]
+    return result
 
 
 def build(config):
@@ -185,7 +201,17 @@ def build(config):
         panel(i, title, metric(name, agg, dimensions), unit,
               description="Azure platform metric. Availability varies by model/SKU. Counts are per time bucket, not per second.")
         for i, (title, name, agg, unit, dimensions) in enumerate(specifications, 1)
-    ])
+    ], related=(
+        ("Foundry agent operations", "foundry-agent-operations", ()),
+        ("Business overview", "azure-ai-business-overview", (
+            ("ptuSubscription", "subscription"),
+            ("ptuResourceGroup", "resourceGroup"),
+            ("ptuAccount", "account"),
+            ("ptuRegion", "region"),
+            ("ptuDeployment", "deployment"),
+        )),
+        ("Cost details", "azure-ai-costs", ()),
+    ))
     ptu["panels"].append(panel(
         11, "Provisioned deployment capacity (current)",
         resource_graph("ptu-deployments.kql", "$subscription"), kind="table",
@@ -219,7 +245,7 @@ def build(config):
     }
     agent_specs = [
         ("Agent run latency", "agent-latency.kql", "ms", False),
-        ("Agent runs and failures", "agent-runs.kql", "short", False),
+        ("Agent runs per interval and failures", "agent-runs.kql", "short", False),
         ("Tool performance", "tool-performance.kql", "short", True),
         ("Model token usage and missing usage spans", "model-tokens.kql", "short", False),
         ("Failed operations - trace IDs", "failed-operations.kql", "short", True),
@@ -230,7 +256,11 @@ def build(config):
         panel(i, title, logs(filename, table), unit, "table" if table else "timeseries",
               "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.")
         for i, (title, filename, unit, table) in enumerate(agent_specs, 1)
-    ])
+    ], related=(
+        ("Foundry overview", "foundry-overview", (("workspaceResourceId", "workspaceResourceId"),)),
+        ("PTU performance", "azure-openai-ptu", ()),
+        ("Business overview", "azure-ai-business-overview", (("workspaceResourceId", "workspaceResourceId"),)),
+    ))
     agents["panels"].append(panel(
         8, "Dependency performance",
         logs("agent-dependencies.kql", table=True), kind="table",
@@ -266,10 +296,23 @@ def build(config):
         "color": {"mode": "fixed", "fixedColor": "orange"},
         "custom.axisPlacement": "right",
     })
-    override(agents["panels"][4], "/^DurationMs$/", {"unit": "ms"})
+    for field, label, width in (
+        ("TimeGenerated", "Time", 145),
+        ("OperationId", "Trace ID", 220),
+        ("Name", "Operation name", 145),
+        ("ResultCode", "Result", 85),
+        ("DurationMs", "Duration", 90),
+    ):
+        properties = {
+            "displayName": label,
+            "custom.width": width,
+        }
+        if field == "DurationMs":
+            properties["unit"] = "ms"
+        override(agents["panels"][4], f"/^{field}$/", properties)
     agents["panels"][1]["description"] = (
-        "Observed runs and failed runs are shown on separate axes. Counts are weighted by ItemCount "
-        "when sampling is present; missing spans are not counted."
+        "Each point is a time-bucket count, not the total for the selected range. Observed and failed runs "
+        "use separate axes; counts retain ItemCount sampling weights."
     )
     agents["panels"][3]["description"] = (
         "Input/output token totals are derived from retained model spans. Missing usage spans use "
@@ -292,7 +335,14 @@ def build(config):
               "A completely silent workspace cannot establish telemetry health."),
         panel(3, "OpenAI requests by deployment and status", metric("AzureOpenAIRequests", "Total", request_dimensions)),
         panel(4, "OpenAI inference tokens per interval", metric("TokenTransaction", "Total")),
-    ])
+    ], related=(
+        ("Agent operations", "foundry-agent-operations", (("workspaceResourceId", "workspaceResourceId"),)),
+        ("PTU performance", "azure-openai-ptu", (("subscription", "subscription"),)),
+        ("Business overview", "azure-ai-business-overview", (
+            ("workspaceResourceId", "workspaceResourceId"),
+            ("ptuSubscription", "subscription"),
+        )),
+    ))
     for item in foundry["panels"][2:]:
         item["description"] = "OpenAI-specific metric on the selected account; not a universal metric for every Foundry model."
     cost_panels = [{
@@ -345,6 +395,12 @@ def build(config):
         "azure-ai-costs", "Azure AI - Cost visibility",
         [textbox("workspaceResourceId", config["workspaceResourceId"], "Cost data workspace ARM ID")],
         cost_panels,
+        related=(
+            ("Business overview", "azure-ai-business-overview", (
+                ("monitoringWorkspaceResourceId", "workspaceResourceId"),
+            )),
+            ("PTU performance", "azure-openai-ptu", ()),
+        ),
     )
     costs["timezone"] = "utc"
     costs["refresh"] = "1h"
@@ -375,10 +431,10 @@ def build(config):
             "Currencies remain separate; use the cost dashboard for amortized cost.",
         ),
         panel(
-            3, "Observed agent runs and failures",
-            logs("agent-runs.kql"),
-            description="Application Insights counts, weighted for sampling when present. "
-            "No telemetry is not evidence of zero activity or healthy service.",
+            3, "Observed agent runs per interval",
+            logs("agent-run-volume.kql"),
+            description="Each point is a time-bucket count, not the total for the selected range. "
+            "Counts are weighted for sampling when present. No data is not evidence of zero activity or healthy service.",
         ),
         panel(
             4, "PTU utilization - average",
@@ -415,23 +471,45 @@ def build(config):
             "Counts are per time bucket, not per second.",
         ),
         panel(
-            8, "PTU input and output tokens",
+            8, "Throttled requests (429)",
+            metric(
+                "AzureOpenAIRequests", "Total",
+                [
+                    {"dimension": "ModelDeploymentName", "operator": "eq", "filters": ["$ptuDeployment"]},
+                    {"dimension": "StatusCode", "operator": "eq", "filters": ["429"]},
+                ],
+                variable_prefix="ptu",
+            ),
+            description="Azure platform 429 request counts per time bucket, not a rate. "
+            "No data can mean no matching traffic or unavailable metrics.",
+        ),
+        panel(
+            9, "Agent run failure rate",
+            logs("agent-failure-rate.kql"),
+            unit="percent",
+            description="Failed runs divided by runs with a known success/failure outcome, weighted by ItemCount "
+            "where sampling is present. No data is not a zero failure rate; retained spans may be sampled.",
+        ),
+        panel(
+            10, "PTU input and output tokens",
             metric("ProcessedPromptTokens", "Total", variable_prefix="ptu"),
             description="Azure platform token counts per time bucket for the configured deployment.",
         ),
     ]
     output_tokens = metric("GeneratedTokens", "Total", variable_prefix="ptu")
     output_tokens["refId"] = "B"
-    business_panels[7]["targets"].append(output_tokens)
+    business_panels[9]["targets"].append(output_tokens)
     business_positions = [
-        {"h": 5, "w": 8, "x": 0, "y": 0},
-        {"h": 5, "w": 8, "x": 8, "y": 0},
-        {"h": 5, "w": 8, "x": 16, "y": 0},
-        {"h": 9, "w": 8, "x": 0, "y": 5},
-        {"h": 9, "w": 8, "x": 8, "y": 5},
-        {"h": 9, "w": 8, "x": 16, "y": 5},
-        {"h": 8, "w": 12, "x": 0, "y": 14},
-        {"h": 8, "w": 12, "x": 12, "y": 14},
+        {"h": 5, "w": 6, "x": 0, "y": 0},
+        {"h": 5, "w": 6, "x": 6, "y": 0},
+        {"h": 5, "w": 6, "x": 12, "y": 0},
+        {"h": 5, "w": 6, "x": 18, "y": 0},
+        {"h": 9, "w": 12, "x": 0, "y": 5},
+        {"h": 9, "w": 12, "x": 12, "y": 5},
+        {"h": 8, "w": 8, "x": 0, "y": 14},
+        {"h": 8, "w": 8, "x": 8, "y": 14},
+        {"h": 8, "w": 8, "x": 16, "y": 14},
+        {"h": 8, "w": 24, "x": 0, "y": 22},
     ]
     for item, position in zip(business_panels, business_positions, strict=True):
         item["gridPos"] = position
@@ -449,21 +527,33 @@ def build(config):
     }]
     for index, field, color in (
         (2, "ObservedRuns", "blue"),
-        (2, "FailedRuns", "red"),
-        (6, "429", "orange"),
+        (7, "429", "orange"),
+        (8, "FailureRatePercent", "red"),
     ):
         override(business_panels[index], f"/.*{field}.*/", {
             "color": {"mode": "fixed", "fixedColor": color},
         })
-    business_panels[2]["description"] += " Counts are not a coverage percentage."
+    business_panels[8]["fieldConfig"]["defaults"]["min"] = 0
     business = dashboard(
         "azure-ai-business-overview", "Azure AI - Business overview",
         business_variables, business_panels,
+        related=(
+            ("Agent operations", "foundry-agent-operations", (("workspaceResourceId", "workspaceResourceId"),)),
+            ("PTU performance", "azure-openai-ptu", (
+                ("subscription", "ptuSubscription"),
+                ("resourceGroup", "ptuResourceGroup"),
+                ("account", "ptuAccount"),
+                ("region", "ptuRegion"),
+                ("deployment", "ptuDeployment"),
+            )),
+            ("Cost details", "azure-ai-costs", (("workspaceResourceId", "monitoringWorkspaceResourceId"),)),
+        ),
     )
     business["description"] = (
         "A concise view of cost, observed agent activity, and Azure OpenAI PTU signals. "
         "It does not calculate a blended health score. Cost is optional; missing or stale data "
-        "must not be interpreted as zero. Agent telemetry requires application instrumentation."
+        "must not be interpreted as zero. No data can indicate no traffic, missing permissions, "
+        "unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
     )
     business["timezone"] = "utc"
     business["refresh"] = "1h"

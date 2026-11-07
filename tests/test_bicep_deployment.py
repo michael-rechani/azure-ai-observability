@@ -58,7 +58,7 @@ class BicepDeploymentTests(unittest.TestCase):
             diagnostics["properties"]["logs"],
         )
 
-    def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False):
+    def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             parameter_data = parameters() if values is None else values
@@ -82,6 +82,7 @@ class BicepDeploymentTests(unittest.TestCase):
                 "TEST_BUNDLE": str(bundle),
                 "TEST_LOG": str(log),
                 "TEST_WHAT_IF": str(what_if).lower(),
+                "TEST_COST_DASHBOARD": str(cost_dashboard).lower(),
             })
             result = subprocess.run(
                 [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "tests" / "bicep_harness.ps1")],
@@ -150,6 +151,10 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertEqual(source["jsonData"]["subscriptionId"], SUBSCRIPTION)
         dashboards = {call["body"]["dashboard"]["uid"]: call["body"] for call in posts[1:]}
         self.assertEqual(len(dashboards), 5)
+        available_uids = set(dashboards)
+        for body in dashboards.values():
+            for link in body["dashboard"].get("links", []):
+                self.assertIn(link["url"].split("/")[2], available_uids)
         for body in dashboards.values():
             self.assertFalse(body["overwrite"])
             self.assertIn("managed-by-azure-ai-observability-bicep", body["dashboard"]["tags"])
@@ -163,6 +168,20 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertIn("/resourceGroups/monitoring/", business_defaults["monitoringWorkspaceResourceId"])
         self.assertEqual(business_defaults["ptuAccount"], "foundry-account")
         self.assertEqual(business_defaults["ptuDeployment"], "ptu-one")
+
+    def test_grafana_omits_links_to_optional_cost_dashboards_when_disabled(self):
+        result, calls = self.run_harness("grafana", cost_dashboard=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        posts = [call for call in calls["http"] if call["method"] == "Post"]
+        dashboards = {call["body"]["dashboard"]["uid"]: call["body"]["dashboard"] for call in posts[1:]}
+        self.assertEqual(
+            set(dashboards),
+            {"foundry-overview", "foundry-agent-operations", "azure-openai-ptu"},
+        )
+        available_uids = set(dashboards)
+        for dashboard in dashboards.values():
+            for link in dashboard.get("links", []):
+                self.assertIn(link["url"].split("/")[2], available_uids)
 
     def test_grafana_updates_owned_resources_with_versions(self):
         result, calls = self.run_harness("grafana", mode="existing")

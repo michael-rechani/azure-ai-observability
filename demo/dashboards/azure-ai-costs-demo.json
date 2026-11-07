@@ -479,5 +479,25 @@
       }
     ]
   },
+  "links": [
+    {
+      "type": "link",
+      "title": "Business overview",
+      "url": "/d/demo-azure-ai-business-overview/_?var-monitoringWorkspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "PTU performance",
+      "url": "/d/demo-azure-openai-ptu/_",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    }
+  ],
   "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
 }

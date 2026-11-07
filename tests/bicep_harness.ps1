@@ -23,7 +23,7 @@ $configuration = @{
         region = 'eastus'
         deployment = 'ptu-one'
     }
-    enableCostDashboard = $true
+    enableCostDashboard = $env:TEST_COST_DASHBOARD -ne 'false'
 }
 
 function global:az {

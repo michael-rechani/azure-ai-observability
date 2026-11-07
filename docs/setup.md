@@ -53,7 +53,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 - Model usage totals match known calls and do not count parent agent summaries twice.
 - PTU utilization appears under the correct deployment; the legacy utilization metric is not used.
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
-- A controlled failure appears in the trace table. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
+- A controlled failure appears in the trace table and the business overview failure-rate panel. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
 - If the cost pipeline is enabled, the scheduled Function produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. The first run is scheduled for 06:00 UTC and billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.

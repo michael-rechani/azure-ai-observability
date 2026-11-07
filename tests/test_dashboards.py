@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,7 +111,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(len({item["id"] for item in panels}), len(panels))
         self.assertEqual(panels[0]["title"], "Cost collection status")
         self.assertIn("not zero cost", panels[0]["description"])
-        self.assertEqual([item["gridPos"]["w"] for item in panels], [8, 8, 8, 8, 8, 8, 12, 12])
+        self.assertEqual(
+            [item["gridPos"]["w"] for item in panels],
+            [6, 6, 6, 6, 12, 12, 8, 8, 8, 24],
+        )
         collection_fields = panels[0]["transformations"][0]["options"]
         self.assertEqual(
             collection_fields["indexByName"],
@@ -127,7 +131,12 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertIn("ActualCost", panels[1]["targets"][0]["azureLogAnalytics"]["query"])
         self.assertIn("Currency", panels[1]["targets"][0]["azureLogAnalytics"]["query"])
-        self.assertIn("not a coverage percentage", panels[2]["description"])
+        self.assertEqual(panels[2]["title"], "Observed agent runs per interval")
+        self.assertIn("not the total for the selected range", panels[2]["description"])
+        self.assertEqual(
+            panels[2]["targets"][0]["azureLogAnalytics"]["query"],
+            (ROOT / "queries" / "agent-run-volume.kql").read_text(),
+        )
         self.assertEqual(
             panels[3]["targets"][0]["azureMonitor"]["metricName"],
             "AzureOpenAIProvisionedManagedUtilizationV2",
@@ -136,6 +145,27 @@ class DashboardTests(unittest.TestCase):
             panels[6]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
             ["*"],
         )
+        self.assertEqual(panels[7]["title"], "Throttled requests (429)")
+        self.assertEqual(
+            panels[7]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
+            ["429"],
+        )
+        self.assertEqual(panels[8]["title"], "Agent run failure rate")
+        self.assertIn("known success/failure outcome", panels[8]["description"])
+        self.assertEqual(panels[8]["fieldConfig"]["defaults"]["unit"], "percent")
+        self.assertEqual(panels[8]["fieldConfig"]["defaults"]["min"], 0)
+        self.assertNotIn("max", panels[8]["fieldConfig"]["defaults"])
+        failure_query = panels[8]["targets"][0]["azureLogAnalytics"]["query"]
+        self.assertIn("FailureRatePercent", failure_query)
+        self.assertIn("| where isnotnull(Success)", failure_query)
+        self.assertIn("KnownOutcomeRuns = sum(ItemCount)", failure_query)
+        self.assertIn("sumif(ItemCount, Success == false)", failure_query)
+        self.assertEqual(panels[9]["title"], "PTU input and output tokens")
+        self.assertEqual(
+            {link["title"] for link in dashboard["links"]},
+            {"Agent operations", "PTU performance", "Cost details"},
+        )
+        self.assertTrue(all(link["keepTime"] for link in dashboard["links"]))
         self.assertEqual(
             [item["name"] for item in dashboard["templating"]["list"]],
             [
@@ -244,6 +274,75 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("${__value.raw}", link)
         self.assertIn("AppDependencies", link)
         self.assertIn("isQueryBase64Compressed/false", link)
+        labels = {
+            entry["matcher"]["options"]: {
+                item["id"]: item["value"] for item in entry["properties"]
+            }
+            for entry in panel["fieldConfig"]["overrides"]
+            if entry["matcher"]["options"] in {"/^OperationId$/", "/^DurationMs$/", "/^ResultCode$/"}
+        }
+        self.assertEqual(labels["/^OperationId$/"]["displayName"], "Trace ID")
+        self.assertEqual(labels["/^DurationMs$/"]["displayName"], "Duration")
+        self.assertEqual(labels["/^ResultCode$/"]["displayName"], "Result")
+
+    def test_agent_failure_rate_is_sampling_weighted_and_time_bounded(self):
+        query = (ROOT / "queries" / "agent-failure-rate.kql").read_text()
+        self.assertIn("$__timeFilter(TimeGenerated)", query)
+        self.assertIn("| where isnotnull(Success)", query)
+        self.assertIn("KnownOutcomeRuns = sum(ItemCount)", query)
+        self.assertIn("FailedRuns = sumif(ItemCount, Success == false)", query)
+        self.assertIn("100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns)", query)
+        self.assertIn("real(null)", query)
+
+    def test_failed_operations_table_fits_its_half_width_panel(self):
+        panel = self.dashboards["foundry-agents.json"]["panels"][4]
+        widths = [
+            item["value"]
+            for entry in panel["fieldConfig"]["overrides"]
+            for item in entry["properties"]
+            if item["id"] == "custom.width"
+        ]
+        self.assertEqual(len(widths), 5)
+        self.assertLessEqual(sum(widths), 700)
+        query = (ROOT / "queries" / "failed-operations.kql").read_text()
+        self.assertIn("project TimeGenerated, OperationId, Name, ResultCode, DurationMs", query)
+        self.assertNotIn("Agent =", query)
+        self.assertNotIn("Operation =", query)
+
+    def test_agent_run_panels_disclose_per_interval_counts(self):
+        panels = (
+            self.dashboards["foundry-agents.json"]["panels"][1],
+            self.dashboards["business-overview.json"]["panels"][2],
+        )
+        for panel in panels:
+            with self.subTest(title=panel["title"]):
+                self.assertIn("per interval", panel["title"])
+                self.assertIn("time-bucket count", panel["description"])
+
+    def test_dashboard_links_preserve_time_and_only_map_compatible_filters(self):
+        dashboards_by_uid = {item["uid"]: item for item in self.dashboards.values()}
+
+        def variable_names(item):
+            return {variable["name"] for variable in item["templating"]["list"]}
+
+        for dashboard in self.dashboards.values():
+            for link in dashboard.get("links", []):
+                with self.subTest(dashboard=dashboard["uid"], link=link["title"]):
+                    self.assertTrue(link["url"].startswith("/d/"))
+                    target = dashboards_by_uid[link["url"].split("/")[2]]
+                    self.assertTrue(link["keepTime"])
+                    self.assertFalse(link["includeVars"])
+                    for target_variable, source_variable in re.findall(
+                        r"var-([A-Za-z0-9_]+)=\$\{([A-Za-z0-9_]+):percentencode\}",
+                        link["url"],
+                    ):
+                        self.assertIn(target_variable, variable_names(target))
+                        self.assertIn(source_variable, variable_names(dashboard))
+        business_ptu_link = next(
+            link for link in self.dashboards["business-overview.json"]["links"]
+            if link["title"] == "PTU performance"
+        )
+        self.assertIn("var-subscription=${ptuSubscription:percentencode}", business_ptu_link["url"])
 
     def test_ptu_capacity_inventory_is_scoped_to_account(self):
         panel = self.dashboards["openai-ptu.json"]["panels"][10]

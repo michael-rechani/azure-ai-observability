@@ -45,7 +45,7 @@
       ],
       "gridPos": {
         "h": 5,
-        "w": 8,
+        "w": 6,
         "x": 0,
         "y": 0
       },
@@ -107,8 +107,8 @@
       ],
       "gridPos": {
         "h": 5,
-        "w": 8,
-        "x": 8,
+        "w": 6,
+        "x": 6,
         "y": 0
       },
       "fieldConfig": {
@@ -124,9 +124,9 @@
     },
     {
       "id": 3,
-      "title": "Observed agent runs and failures",
+      "title": "Observed agent runs per interval",
       "type": "timeseries",
-      "description": "Application Insights counts, weighted for sampling when present. No telemetry is not evidence of zero activity or healthy service. Counts are not a coverage percentage.",
+      "description": "Each point is a time-bucket count, not the total for the selected range. Counts are weighted for sampling when present. No data is not evidence of zero activity or healthy service.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -143,7 +143,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedRuns = sum(ItemCount)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
             "resultFormat": "time_series",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -152,8 +152,8 @@
       ],
       "gridPos": {
         "h": 5,
-        "w": 8,
-        "x": 16,
+        "w": 6,
+        "x": 12,
         "y": 0
       },
       "fieldConfig": {
@@ -186,21 +186,6 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "blue"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": "/.*FailedRuns.*/"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "red"
                 }
               }
             ]
@@ -267,10 +252,10 @@
         }
       ],
       "gridPos": {
-        "h": 9,
-        "w": 8,
-        "x": 0,
-        "y": 5
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -336,8 +321,8 @@
       ],
       "gridPos": {
         "h": 9,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 0,
         "y": 5
       },
       "fieldConfig": {
@@ -404,8 +389,8 @@
       ],
       "gridPos": {
         "h": 9,
-        "w": 8,
-        "x": 16,
+        "w": 12,
+        "x": 12,
         "y": 5
       },
       "fieldConfig": {
@@ -496,8 +481,100 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Throttled requests (429)",
+      "type": "timeseries",
+      "description": "Azure platform 429 request counts per time bucket, not a rate. No data can mean no matching traffic or unavailable metrics.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIRequests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              },
+              {
+                "dimension": "StatusCode",
+                "operator": "eq",
+                "filters": [
+                  "429"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
         "y": 14
       },
       "fieldConfig": {
@@ -551,7 +628,92 @@
       }
     },
     {
-      "id": 8,
+      "id": 9,
+      "title": "Agent run failure rate",
+      "type": "timeseries",
+      "description": "Failed runs divided by runs with a known success/failure outcome, weighted by ItemCount where sampling is present. No data is not a zero failure rate; retained spans may be sampled.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| where isnotnull(Success)\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize KnownOutcomeRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| extend FailureRatePercent = iff(\n    KnownOutcomeRuns > 0,\n    100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),\n    real(null)\n)\n| project TimeGenerated, FailureRatePercent, Agent\n| order by TimeGenerated asc\n",
+            "resultFormat": "time_series",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 14
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto"
+          },
+          "min": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/.*FailureRatePercent.*/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 10,
       "title": "PTU input and output tokens",
       "type": "timeseries",
       "description": "Azure platform token counts per time bucket for the configured deployment.",
@@ -631,9 +793,9 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 14
+        "w": 24,
+        "x": 0,
+        "y": 22
       },
       "fieldConfig": {
         "defaults": {
@@ -760,5 +922,34 @@
       "pluginName": "Azure Monitor"
     }
   ],
-  "description": "A concise view of cost, observed agent activity, and Azure OpenAI PTU signals. It does not calculate a blended health score. Cost is optional; missing or stale data must not be interpreted as zero. Agent telemetry requires application instrumentation."
+  "links": [
+    {
+      "type": "link",
+      "title": "Agent operations",
+      "url": "/d/foundry-agent-operations/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "PTU performance",
+      "url": "/d/azure-openai-ptu/_?var-subscription=${ptuSubscription:percentencode}&var-resourceGroup=${ptuResourceGroup:percentencode}&var-account=${ptuAccount:percentencode}&var-region=${ptuRegion:percentencode}&var-deployment=${ptuDeployment:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Cost details",
+      "url": "/d/azure-ai-costs/_?var-workspaceResourceId=${monitoringWorkspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    }
+  ],
+  "description": "A concise view of cost, observed agent activity, and Azure OpenAI PTU signals. It does not calculate a blended health score. Cost is optional; missing or stale data must not be interpreted as zero. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
 }

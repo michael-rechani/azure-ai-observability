@@ -1,0 +1,15 @@
+union AppRequests, AppDependencies
+| where $__timeFilter(TimeGenerated)
+| where tostring(Properties["gen_ai.operation.name"]) == "invoke_agent"
+| where isnotnull(Success)
+| extend Agent = tostring(Properties["gen_ai.agent.name"])
+| summarize KnownOutcomeRuns = sum(ItemCount),
+    FailedRuns = sumif(ItemCount, Success == false)
+    by bin(TimeGenerated, $__interval), Agent
+| extend FailureRatePercent = iff(
+    KnownOutcomeRuns > 0,
+    100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),
+    real(null)
+)
+| project TimeGenerated, FailureRatePercent, Agent
+| order by TimeGenerated asc

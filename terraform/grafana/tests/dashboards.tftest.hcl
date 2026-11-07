@@ -21,6 +21,15 @@ run "dashboard_bindings" {
     error_message = "Dashboard data source placeholder must be replaced."
   }
   assert {
+    condition = alltrue(flatten([
+      for dashboard in values(grafana_dashboard.monitoring) : [
+        for link in try(jsondecode(dashboard.config_json).links, []) :
+        contains(local.dashboard_uids, split("/", link.url)[2])
+      ]
+    ]))
+    error_message = "Dashboard links must only target dashboards included in this deployment."
+  }
+  assert {
     condition = (
       [for v in jsondecode(grafana_dashboard.monitoring["openai_ptu"].config_json).templating.list : v.current.value] ==
       [for v in jsondecode(file("${var.dashboard_directory}/openai-ptu.json")).templating.list : v.current.value]

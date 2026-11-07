@@ -160,9 +160,9 @@
     },
     {
       "id": 2,
-      "title": "Agent runs and failures",
+      "title": "Agent runs per interval and failures",
       "type": "timeseries",
-      "description": "Observed runs and failed runs are shown on separate axes. Counts are weighted by ItemCount when sampling is present; missing spans are not counted.",
+      "description": "Each point is a time-bucket count, not the total for the selected range. Observed and failed runs use separate axes; counts retain ItemCount sampling weights.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -462,7 +462,7 @@
           },
           "refId": "A",
           "scenarioId": "csv_content",
-          "csvContent": "OperationId,Name,ResultCode,DurationMs,Agent,Operation\n0af7651916cd43dd8448eb211c80319c,model-request,429,1200,sample-agent,chat\n4bf92f3577b34da6a3ce929d0e0e4736,search-tool,503,2100,sample-agent,execute_tool\n"
+          "csvContent": "OperationId,Name,ResultCode,DurationMs\n0af7651916cd43dd8448eb211c80319c,model-request,429,1200\n4bf92f3577b34da6a3ce929d0e0e4736,search-tool,503,2100\n"
         }
       ],
       "gridPos": {
@@ -498,9 +498,81 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/^TimeGenerated$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Time"
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^OperationId$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Trace ID"
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^Name$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Operation name"
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ResultCode$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Result"
+              },
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/^DurationMs$/"
             },
             "properties": [
+              {
+                "id": "displayName",
+                "value": "Duration"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
               {
                 "id": "unit",
                 "value": "ms"
@@ -694,5 +766,25 @@
       }
     ]
   },
+  "links": [
+    {
+      "type": "link",
+      "title": "PTU performance",
+      "url": "/d/demo-azure-openai-ptu/_",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Business overview",
+      "url": "/d/demo-azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    }
+  ],
   "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
 }
