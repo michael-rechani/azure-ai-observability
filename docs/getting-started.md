@@ -2,6 +2,8 @@
 
 This walkthrough takes you from an existing Azure AI account to dashboards in Azure Managed Grafana. It uses **PowerShell 7** commands on Windows, macOS, or Linux. Read the common preparation, then follow **either** the Bicep or Terraform section.
 
+**Jump to:** [Preparation](#1-install-the-tools-and-get-the-repository) · [Bicep](#3a-deploy-with-bicep) · [Terraform](#3b-deploy-with-terraform) · [Verify](#4-open-and-verify-the-dashboards) · [Troubleshooting](#troubleshooting-and-cleanup)
+
 > **Before you start:** This repository has not yet been validated in a live Azure subscription. Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
 
 ## What you need and what will be created
@@ -242,6 +244,8 @@ Neither Terraform stage has a backend configured by default. State can contain A
 
 The following is a starting point for a **new** deployment using Azure Blob Storage and your Azure CLI sign-in. Ask your administrator for an approved existing storage account/container instead if your organization already manages Terraform state. You need **Storage Blob Data Contributor** on the container, access to its network endpoint, and a standard storage endpoint for these commands. Adapt networking, retention, redundancy, and access to your organization's requirements.
 
+Already have an approved container? Skip the creation commands and [use the existing container](#use-an-existing-state-container).
+
 To create a separate state account yourself, choose a **new** resource group and a globally unique storage account name of 3-24 lowercase letters and numbers. This creates billable Azure resources. Keep the state group separate from the monitoring group so destroying the monitoring stack does not destroy its own state.
 
 ```powershell
@@ -275,16 +279,20 @@ az storage container create --account-name $stateStorage `
   --name $stateContainer --auth-mode login
 ```
 
-The example storage account has a public network endpoint; anonymous blob access and shared-key authentication are disabled, but this is not a private-network design. Follow your security team's requirements before production use.
+The example storage account has a public network endpoint; anonymous blob access and shared-key authentication are disabled, but this is not a private-network design. Follow your security team's requirements before production use. Continue to [configure the backends](#configure-both-terraform-backends).
 
-For an **existing approved container**, set these values to its names instead; do not recreate or alter it:
+#### Use an existing state container
+
+For an **existing approved container**, set these values to its names; do not recreate or alter it:
 
 ```powershell
 $stateStorage = '<existing-state-storage-account>'
 $stateContainer = '<existing-state-container>'
 ```
 
-Then, for either case, copy the provided backend declaration into **both** Terraform stages:
+#### Configure both Terraform backends
+
+For either option, copy the provided backend declaration into **both** Terraform stages:
 
 ```powershell
 $azureStage = Join-Path $repo 'terraform' 'azure'
