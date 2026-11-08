@@ -51,7 +51,9 @@ function global:Invoke-RestMethod {
         if ($null -eq $MaximumRedirection -or $MaximumRedirection -ne 0) {
             throw 'Azure requests must not automatically follow redirects.'
         }
-        $status = if ($Scenario -eq 'empty' -and $Uri -like 'https://management.azure.com/*') {
+        $status = if (($Scenario -eq 'empty' -or
+                ($Scenario -eq 'empty-continuation' -and $Uri.Contains('$skiptoken='))) -and
+            $Uri -like 'https://management.azure.com/*') {
             204
         }
         elseif ($Scenario -eq 'unexpected-status' -and $Uri -like 'https://management.azure.com/*') {
@@ -111,7 +113,8 @@ function global:Invoke-RestMethod {
             $null = $response.Headers.TryAddWithoutValidation('x-ms-ratelimit-microsoft.costmanagement-entity-retry-after', '19')
             throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock throttling', $response)
         }
-        if ($Scenario -eq 'empty' -or $Scenario -eq 'empty-200') {
+        if ($Scenario -eq 'empty' -or $Scenario -eq 'empty-200' -or
+            ($Scenario -eq 'empty-continuation' -and $Uri.Contains('$skiptoken='))) {
             return ''
         }
         if ($Scenario -eq 'json-null') {
@@ -195,7 +198,7 @@ function global:Invoke-RestMethod {
         }
 
         $next = $null
-        if ($Scenario -in @('pagination', 'null-rows-after-page', 'duplicate-column-after-page',
+        if ($Scenario -in @('pagination', 'empty-continuation', 'null-rows-after-page', 'duplicate-column-after-page',
                 'invalid-next-array-after-page') -and
             -not $global:Paged -and $query.type -eq 'ActualCost') {
             $global:Paged = $true

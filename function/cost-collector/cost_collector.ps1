@@ -191,6 +191,9 @@ function Get-CostRows {
         $result = Invoke-AzurePost -Uri $next -Audience 'https://management.azure.com/' `
             -Body $body -CostRequest
         if ($null -eq $result) {
+            if ($seen.Count -gt 1) {
+                throw 'Cost Management returned HTTP 204 for a continuation; the query may be incomplete.'
+            }
             break
         }
         if ($null -eq $result.PSObject.Properties['properties'] -or $null -eq $result.properties) {

@@ -165,6 +165,15 @@ class CostCollectorTests(unittest.TestCase):
                 self.assertEqual(records[0]["RecordType"], "Complete")
                 self.assertEqual(records[0]["ExpectedRows"], 0)
 
+    def test_no_content_after_continuation_does_not_publish_a_partial_snapshot(self):
+        for scope in ("subscription", "resourceGroup"):
+            with self.subTest(scope=scope):
+                result = self.run_collector("empty-continuation", query_scope=scope)
+                self.assertFalse(result["Success"])
+                self.assertIn("continuation", result["Error"])
+                self.assertEqual(len(result["CostRequests"]), 2)
+                self.assertEqual(result["Ingestions"], [])
+
     def test_invalid_successful_cost_responses_do_not_publish_a_snapshot(self):
         for scenario in (
             "empty-200", "json-null", "unexpected-status",
