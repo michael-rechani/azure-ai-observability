@@ -104,7 +104,7 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
 | Alerting | Per-deployment PTU utilization and 429 metric alerts; opt-in agent failure-rate, p95 latency, and heartbeat alerts | Agent rules require matching telemetry; heartbeat also requires guaranteed expected traffic |
 | Business overview | Collection status, actual cost, agent runs per interval and failure rate over known outcomes, PTU utilization, requests, throttles, and tokens | Cost dashboard toggle required; missing telemetry is not zero or proof of health |
-| Cost visibility | Optional Function- or GitHub OIDC-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | GitHub mode is not live-validated; billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
+| Cost visibility | Optional Function- or GitHub OIDC-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | GitHub mode has isolated lab evidence, not a validated production schedule; billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
 **Foundry features do not all emit telemetry automatically.** See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.
