@@ -9,7 +9,7 @@ The Grafana stage needs an existing endpoint and a propagated Grafana Admin role
 
 ## Before you start
 
-- Terraform 1.7+ and Azure CLI. These examples use PowerShell; deploying the optional Flex Consumption cost collector requires **PowerShell 7** and **Azure CLI 2.60.0+** on the Terraform machine. Python 3.12+ is optional for the repository's offline tests and dashboard generators; Terraform mock tests require Terraform 1.11+.
+- Terraform 1.7+ and Azure CLI. These examples use PowerShell; deploying the optional Flex Consumption cost Function (`cost_collector_mode = "function"`; not needed in the default Function-free mode) requires **PowerShell 7** and **Azure CLI 2.60.0+** on the Terraform machine. Python 3.12+ is optional for the repository's offline tests and dashboard generators; Terraform mock tests require Terraform 1.11+.
 - A monitoring resource group in a supported region, either created by Terraform or already existing. The caller needs creation and role-assignment permissions at the monitoring resource group and the specified account/workspace scopes; creating a resource group also requires subscription-level permission.
 - Existing Foundry/OpenAI accounts. All monitored accounts must be in the **same subscription** as this Terraform Azure stage. Deploy separate stacks for other subscriptions. Existing telemetry workspace IDs can be specified separately; permissions must exist at those scopes.
 - The identity that runs the Grafana stage needs the Grafana Admin role; use its Entra **object ID** as `grafana_admin_object_id`, or assign it separately. The Azure subscription role alone is not Grafana data-plane access.
