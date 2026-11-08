@@ -107,6 +107,15 @@ function Test-BicepDeploymentParameters {
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
     $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)
     $costScope = [string](Get-BicepParameter $Parameters 'costQueryScope' 'subscription')
+    $collectorMode = [string](Get-BicepParameter $Parameters 'costCollectorMode' 'function')
+    $githubSubject = [string](Get-BicepParameter $Parameters 'costGithubOidcSubject' '')
+    if ($collectorMode -cnotin @('function', 'githubOidc')) {
+        throw 'costCollectorMode must be function or githubOidc.'
+    }
+    if ($enableCost -and $collectorMode -eq 'githubOidc' -and
+        $githubSubject -cnotmatch '^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+:ref:refs/heads/main$') {
+        throw 'costGithubOidcSubject must be the exact GitHub repository main-branch subject.'
+    }
     if ($costScope -cnotin @('subscription', 'resourceGroup', 'resourceGroupManaged')) {
         throw 'costQueryScope must be subscription, resourceGroup, or resourceGroupManaged.'
     }

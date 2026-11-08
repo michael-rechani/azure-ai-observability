@@ -15,6 +15,8 @@ locals {
     WindowEnd     = "dateTime"
   }
   cost_deployment_script = "${path.module}/../../scripts/deploy_cost_function.ps1"
+  cost_function_enabled  = var.enable_cost_pipeline && var.cost_collector_mode == "function"
+  cost_github_enabled    = var.enable_cost_pipeline && var.cost_collector_mode == "githubOidc"
   cost_managed_group_scopes = var.enable_cost_pipeline && var.cost_query_scope == "resourceGroupManaged" ? toset([
     for account in values(var.monitored_accounts) :
     lower(join("/", slice(split("/", account.resource_id), 0, 5)))
@@ -79,6 +81,21 @@ resource "azurerm_monitor_data_collection_rule" "cost" {
     output_stream = "Custom-AICostSnapshot_CL"
   }
 
+  lifecycle {
+    precondition {
+      condition     = length(var.monitored_accounts) > 0
+      error_message = "Configure at least one monitored account before enabling cost collection."
+    }
+    precondition {
+      condition     = length(var.monitored_accounts) * ceil(var.cost_lookback_days / 27) * 2 * 16 <= 1800
+      error_message = "The account count and lookback require more than 30 minutes of minimum API pacing. Reduce either or split the deployment."
+    }
+    precondition {
+      condition     = var.cost_collector_mode != "githubOidc" || can(regex("^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+:ref:refs/heads/main$", var.cost_github_oidc_subject))
+      error_message = "cost_github_oidc_subject must be the exact GitHub repository main-branch subject."
+    }
+  }
+
   depends_on = [azurerm_log_analytics_workspace_table_custom_log.cost]
 }
 
@@ -89,8 +106,17 @@ resource "azurerm_user_assigned_identity" "cost" {
   location            = var.location
 }
 
+resource "azurerm_federated_identity_credential" "cost_github" {
+  count                     = local.cost_github_enabled ? 1 : 0
+  name                      = "github-main"
+  user_assigned_identity_id = azurerm_user_assigned_identity.cost[0].id
+  issuer                    = "https://token.actions.githubusercontent.com"
+  subject                   = var.cost_github_oidc_subject
+  audience                  = ["api://AzureADTokenExchange"]
+}
+
 resource "azurerm_storage_account" "cost" {
-  count                            = var.enable_cost_pipeline ? 1 : 0
+  count                            = local.cost_function_enabled ? 1 : 0
   name                             = "aicost${local.cost_suffix}"
   resource_group_name              = local.resource_group_name
   location                         = var.location
@@ -115,7 +141,7 @@ resource "azurerm_storage_account" "cost" {
 }
 
 resource "azurerm_monitor_diagnostic_setting" "cost_blob_read" {
-  count                      = var.enable_cost_pipeline ? 1 : 0
+  count                      = local.cost_function_enabled ? 1 : 0
   name                       = "cost-storage-blob-read"
   target_resource_id         = "${azurerm_storage_account.cost[0].id}/blobServices/default"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.monitoring.id
@@ -126,14 +152,14 @@ resource "azurerm_monitor_diagnostic_setting" "cost_blob_read" {
 }
 
 resource "azurerm_storage_container" "cost_deployment" {
-  count                 = var.enable_cost_pipeline ? 1 : 0
+  count                 = local.cost_function_enabled ? 1 : 0
   name                  = "function-deployment"
   storage_account_id    = azurerm_storage_account.cost[0].id
   container_access_type = "private"
 }
 
 resource "azurerm_role_assignment" "cost_storage" {
-  count                            = var.enable_cost_pipeline ? 1 : 0
+  count                            = local.cost_function_enabled ? 1 : 0
   scope                            = azurerm_storage_account.cost[0].id
   role_definition_name             = "Storage Blob Data Owner"
   principal_id                     = azurerm_user_assigned_identity.cost[0].principal_id
@@ -142,7 +168,7 @@ resource "azurerm_role_assignment" "cost_storage" {
 }
 
 resource "azurerm_role_assignment" "cost_storage_diagnostics" {
-  count                            = var.enable_cost_pipeline ? 1 : 0
+  count                            = local.cost_function_enabled ? 1 : 0
   scope                            = azurerm_storage_account.cost[0].id
   role_definition_name             = "Storage Table Data Contributor"
   principal_id                     = azurerm_user_assigned_identity.cost[0].principal_id
@@ -194,7 +220,7 @@ resource "azurerm_role_assignment" "cost_ingestion" {
 }
 
 resource "azurerm_role_assignment" "cost_telemetry" {
-  count                            = var.enable_cost_pipeline ? 1 : 0
+  count                            = local.cost_function_enabled ? 1 : 0
   scope                            = azurerm_application_insights.monitoring.id
   role_definition_name             = "Monitoring Metrics Publisher"
   principal_id                     = azurerm_user_assigned_identity.cost[0].principal_id
@@ -203,7 +229,7 @@ resource "azurerm_role_assignment" "cost_telemetry" {
 }
 
 resource "azurerm_service_plan" "cost" {
-  count               = var.enable_cost_pipeline ? 1 : 0
+  count               = local.cost_function_enabled ? 1 : 0
   name                = "ai-cost-${local.cost_suffix}"
   resource_group_name = local.resource_group_name
   location            = var.location
@@ -212,7 +238,7 @@ resource "azurerm_service_plan" "cost" {
 }
 
 resource "azurerm_function_app_flex_consumption" "cost" {
-  count                                          = var.enable_cost_pipeline ? 1 : 0
+  count                                          = local.cost_function_enabled ? 1 : 0
   name                                           = "ai-cost-${local.cost_suffix}"
   resource_group_name                            = local.resource_group_name
   location                                       = var.location
@@ -254,17 +280,6 @@ resource "azurerm_function_app_flex_consumption" "cost" {
     COST_LOOKBACK_DAYS                        = tostring(var.cost_lookback_days)
   }
 
-  lifecycle {
-    precondition {
-      condition     = length(var.monitored_accounts) > 0
-      error_message = "Configure at least one monitored account before enabling cost collection."
-    }
-    precondition {
-      condition     = length(var.monitored_accounts) * ceil(var.cost_lookback_days / 27) * 2 * 16 <= 1800
-      error_message = "The account count and lookback require more than 30 minutes of minimum API pacing. Reduce either or split the deployment."
-    }
-  }
-
   depends_on = [
     azurerm_role_assignment.cost_storage,
     azurerm_role_assignment.cost_storage_diagnostics,
@@ -276,14 +291,14 @@ resource "azurerm_function_app_flex_consumption" "cost" {
 }
 
 data "archive_file" "cost_function" {
-  count       = var.enable_cost_pipeline ? 1 : 0
+  count       = local.cost_function_enabled ? 1 : 0
   type        = "zip"
   source_dir  = "${path.module}/../../function/cost-collector"
   output_path = "${path.module}/.terraform/cost-collector.zip"
 }
 
 resource "terraform_data" "cost_function_deployment" {
-  count = var.enable_cost_pipeline ? 1 : 0
+  count = local.cost_function_enabled ? 1 : 0
   triggers_replace = [
     azurerm_function_app_flex_consumption.cost[0].id,
     data.archive_file.cost_function[0].output_base64sha256,

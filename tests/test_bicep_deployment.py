@@ -57,6 +57,38 @@ class BicepDeploymentTests(unittest.TestCase):
             {"category": "StorageRead", "enabled": True},
             diagnostics["properties"]["logs"],
         )
+        function_types = {
+            "Microsoft.Storage/storageAccounts",
+            "Microsoft.Storage/storageAccounts/blobServices",
+            "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "Microsoft.Insights/diagnosticSettings",
+            "Microsoft.Web/serverfarms",
+            "Microsoft.Web/sites",
+            "Microsoft.Web/sites/config",
+            "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+        }
+        for resource in resources:
+            if resource["type"] in function_types:
+                self.assertEqual(
+                    resource["condition"], "[equals(parameters('collectorMode'), 'function')]"
+                )
+        conditional_roles = [
+            item for item in resources
+            if item["type"] == "Microsoft.Authorization/roleAssignments" and "condition" in item
+        ]
+        self.assertEqual(len(conditional_roles), 3)
+        self.assertTrue(all(
+            item["condition"] == "[equals(parameters('collectorMode'), 'function')]"
+            for item in conditional_roles
+        ))
+        federation = next(
+            item for item in resources
+            if item["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials"
+        )
+        self.assertEqual(federation["condition"], "[equals(parameters('collectorMode'), 'githubOidc')]")
+        self.assertEqual(federation["properties"]["issuer"], "https://token.actions.githubusercontent.com")
+        self.assertEqual(federation["properties"]["subject"], "[parameters('githubOidcSubject')]")
+        self.assertEqual(federation["properties"]["audiences"], ["api://AzureADTokenExchange"])
 
     def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True):
         with tempfile.TemporaryDirectory() as directory:
@@ -150,6 +182,34 @@ class BicepDeploymentTests(unittest.TestCase):
                 scoped["costQueryScope"] = {"value": mode}
                 result, _ = self.run_harness("validate", scoped)
                 self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_github_oidc_requires_an_exact_main_branch_subject(self):
+        for subject in (
+            "repo:example/observability:ref:refs/heads/main",
+            "repo:example@123/observability@456:ref:refs/heads/main",
+        ):
+            with self.subTest(subject=subject):
+                values = parameters()
+                values["costCollectorMode"] = {"value": "githubOidc"}
+                values["costGithubOidcSubject"] = {"value": subject}
+                result, _ = self.run_harness("validate", values)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        for subject in ("", "repo:example/observability:environment:production",
+                        "repo:example/observability:ref:refs/heads/feature"):
+            with self.subTest(subject=subject):
+                values = parameters()
+                values["costCollectorMode"] = {"value": "githubOidc"}
+                values["costGithubOidcSubject"] = {"value": subject}
+                result, _ = self.run_harness("validate", values)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exact GitHub repository main-branch subject", result.stderr)
+
+        disabled = parameters()
+        disabled["enableCostPipeline"] = {"value": False}
+        disabled["costCollectorMode"] = {"value": "githubOidc"}
+        disabled["costGithubOidcSubject"] = {"value": ""}
+        result, _ = self.run_harness("validate", disabled)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_account_group_names_cannot_escape_managed_cost_scope(self):
         for group in (".", "..", "foundry%2fother", "foundry?other", "foundry#other", "foundry\\other", "foundry/other", "foundry\x01other"):
@@ -257,6 +317,17 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertEqual(calls["cli"][2][:3], ["functionapp", "deployment", "source"])
         self.assertIn("host.json", calls["zipEntries"])
         self.assertIn("CollectCost/function.json", [name.replace("\\", "/") for name in calls["zipEntries"]])
+        self.assertFalse(Path(calls["parameterTemp"]).exists())
+        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
+
+    def test_github_oidc_deploy_provisions_grafana_without_publishing_a_function(self):
+        values = parameters()
+        values["costCollectorMode"] = {"value": "githubOidc"}
+        values["costGithubOidcSubject"] = {"value": "repo:example/observability:ref:refs/heads/main"}
+        result, calls = self.run_harness("deploy", values)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(command[0] == "functionapp" for command in calls["cli"]))
+        self.assertEqual(calls["zipEntries"], [])
         self.assertFalse(Path(calls["parameterTemp"]).exists())
         self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
 

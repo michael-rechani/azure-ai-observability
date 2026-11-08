@@ -22,7 +22,7 @@ locals {
     for key, filename in local.dashboard_files :
     key => jsondecode(file("${var.dashboard_directory}/${filename}"))
   }
-  dashboard_uids = [for dashboard in values(local.source_dashboards) : dashboard.uid]
+  dashboard_uids      = [for dashboard in values(local.source_dashboards) : dashboard.uid]
   telemetry_workspace = var.dashboard_defaults.telemetry_workspace_resource_id != null ? var.dashboard_defaults.telemetry_workspace_resource_id : var.dashboard_defaults.monitoring_workspace_resource_id
   telemetry_defaults = local.telemetry_workspace == null ? tomap({}) : tomap({
     workspaceResourceId = local.telemetry_workspace

@@ -276,9 +276,25 @@ variable "cost_budget_threshold_percent" {
 }
 
 variable "enable_cost_pipeline" {
-  description = "Deploy a daily Function that collects account-attributed cost data into Log Analytics."
+  description = "Deploy the optional account-attributed cost collection pipeline."
   type        = bool
   default     = false
+}
+
+variable "cost_collector_mode" {
+  description = "Run the cost collector in an Azure Function or GitHub Actions with OIDC."
+  type        = string
+  default     = "function"
+  validation {
+    condition     = contains(["function", "githubOidc"], var.cost_collector_mode)
+    error_message = "cost_collector_mode must be function or githubOidc."
+  }
+}
+
+variable "cost_github_oidc_subject" {
+  description = "Exact GitHub repository main-branch OIDC subject; required for githubOidc mode."
+  type        = string
+  default     = ""
 }
 
 variable "cost_query_scope" {

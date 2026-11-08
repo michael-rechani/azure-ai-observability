@@ -104,6 +104,14 @@ param costBudgetThresholdPercent int = 80
 @description('Deploy the optional daily cost collector and its Log Analytics ingestion pipeline.')
 param enableCostPipeline bool = false
 
+@description('Run cost collection in an Azure Function or a GitHub Actions OIDC workflow.')
+@allowed(['function', 'githubOidc'])
+param costCollectorMode string = 'function'
+
+@description('Exact GitHub OIDC subject for this repository main branch; required for githubOidc mode.')
+@maxLength(600)
+param costGithubOidcSubject string = ''
+
 @description('Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles).')
 @allowed(['subscription', 'resourceGroup', 'resourceGroupManaged'])
 param costQueryScope string = 'subscription'
@@ -351,6 +359,8 @@ module cost 'modules/cost.bicep' = if (enableCostPipeline) {
     costQueryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
     lookbackDays: costLookbackDays
     retentionInDays: retentionInDays
+    collectorMode: costCollectorMode
+    githubOidcSubject: costGithubOidcSubject
   }
 }
 
@@ -397,6 +407,15 @@ output applicationInsightsResourceId string = insights.id
 output actionGroupResourceId string = actionGroup.id
 output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName : ''
 output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
+output costCollectorConfiguration object = enableCostPipeline ? {
+  subscriptionId: subscription().subscriptionId
+  accountIds: monitoredAccountIds
+  queryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
+  ingestionEndpoint: cost!.outputs.ingestionEndpoint
+  dataCollectionRuleImmutableId: cost!.outputs.ruleImmutableId
+  identityClientId: cost!.outputs.clientId
+  lookbackDays: costLookbackDays
+} : {}
 output dashboardConfiguration object = {
   monitoringWorkspaceResourceId: workspace.id
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId

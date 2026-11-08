@@ -38,7 +38,7 @@ Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, al
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
 
-The commands below show an interactive deployer login. The running Grafana Azure Monitor data source and cost collector use managed identities, not a user's browser session or a client secret. A manual GitHub Actions OIDC workflow is available for Bicep deployments; its live Azure login and deployment have not been validated. See [Bicep OIDC deployment](docs/bicep.md#optional-github-actions-oidc-deployment), [deployment authentication](docs/getting-started.md#2-sign-in-and-collect-your-azure-details), and [cost access boundaries](docs/costs.md#runtime-identity-and-deployment-authentication).
+The commands below show an interactive deployer login. Grafana uses a managed identity; the optional cost collector can use either an Azure Function managed identity or a [Function-free GitHub Actions OIDC job](docs/costs.md#function-free-github-actions-collector), without a client secret. The GitHub mode still runs scheduled code and is not direct Grafana-to-Cost-Management access. Its live Azure setup and a separate [Bicep OIDC deployment workflow](docs/bicep.md#optional-github-actions-oidc-deployment) have not been validated end to end.
 
 ### Deploy with Terraform
 
@@ -46,7 +46,7 @@ Install Terraform 1.7+ and configure protected, locked remote Terraform state fo
 
 **1. Create Azure monitoring resources**
 
-Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars` and replace its placeholders. Set `enable_cost_pipeline = true` to deploy the optional cost collector; the example selects `resourceGroupManaged` so cost-query permissions are scoped to monitored groups. Review the required role-definition permissions in [cost access guidance](docs/costs.md#configure-resource-group-query-mode). If PTU metric support is not yet confirmed, set `enable_ptu_alerts = false` initially; enable it after [metric discovery](docs/setup.md#metric-discovery).
+Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars` and replace its placeholders. The optional cost example selects `githubOidc` and `resourceGroupManaged`; before setting `enable_cost_pipeline = true`, supply the exact main-branch subject and follow [GitHub collector setup](docs/costs.md#function-free-github-actions-collector). Review the required role-definition permissions in [cost access guidance](docs/costs.md#configure-resource-group-query-mode). If PTU metric support is not yet confirmed, set `enable_ptu_alerts = false` initially; enable it after [metric discovery](docs/setup.md#metric-discovery).
 
 ```powershell
 az login
@@ -77,7 +77,7 @@ Remove-Item Env:\GRAFANA_AUTH
 
 ### Deploy with Bicep
 
-Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. Set `enableCostPipeline = true` for the optional Function, cost dashboard, and business overview; the example selects `resourceGroupManaged` and needs the role-definition permissions documented in [cost access guidance](docs/costs.md#configure-resource-group-query-mode). Use real account regions and deployment names in the dashboard defaults.
+Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. The optional cost example selects `githubOidc` and `resourceGroupManaged`; supply the exact main-branch subject and complete [GitHub collector setup](docs/costs.md#function-free-github-actions-collector) before enabling the pipeline and dashboards. The scoped roles need the permissions documented in [cost access guidance](docs/costs.md#configure-resource-group-query-mode). Use real account regions and deployment names in the dashboard defaults.
 
 ```powershell
 az login
@@ -89,7 +89,7 @@ pwsh -NoProfile -File .\scripts\deploy_bicep.ps1 -SubscriptionId "<subscription-
 pwsh -NoProfile -File .\scripts\deploy_bicep.ps1 -SubscriptionId "<subscription-id>" -ResourceGroup "<monitoring-rg>" -ParametersFile .\infra\main.local.bicepparam
 ```
 
-The helper deploys the Bicep template, publishes the Function when enabled, and configures Grafana using a short-lived Entra token. See the [Bicep guide](docs/bicep.md) for permissions, dashboard defaults, reruns, and the important difference between disabling a feature and deleting its Azure resources.
+The helper deploys the Bicep template, publishes the Function only when Function mode is enabled, and configures Grafana using a short-lived Entra token. See the [Bicep guide](docs/bicep.md) for permissions, dashboard defaults, reruns, and the important difference between disabling a feature and deleting its Azure resources.
 
 Existing Foundry/OpenAI accounts and deployments are monitored, not created or resized. Agent charts require real instrumented telemetry; the cost collector runs daily and billing data can lag. Both paths can grant an Entra group read-only Grafana Viewer access, which is **not a data-isolation boundary**. See [business-user access](docs/terraform.md#business-user-access) and [cost interpretation](docs/costs.md).
 
@@ -104,7 +104,7 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
 | Alerting | Per-deployment PTU utilization and 429 metric alerts; opt-in agent failure-rate, p95 latency, and heartbeat alerts | Agent rules require matching telemetry; heartbeat also requires guaranteed expected traffic |
 | Business overview | Collection status, actual cost, agent runs per interval and failure rate over known outcomes, PTU utilization, requests, throttles, and tokens | Cost dashboard toggle required; missing telemetry is not zero or proof of health |
-| Cost visibility | Optional Function-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | Billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
+| Cost visibility | Optional Function- or GitHub OIDC-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | GitHub mode is not live-validated; billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
 **Foundry features do not all emit telemetry automatically.** See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.

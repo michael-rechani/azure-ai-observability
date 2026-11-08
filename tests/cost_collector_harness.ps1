@@ -2,12 +2,17 @@ param(
     [Parameter(Mandatory)][string] $Scenario,
     [string] $NowUtc = '',
     [string] $CostQueryScope = 'subscription',
-    [switch] $UseTimer
+    [switch] $UseTimer,
+    [switch] $UseAccessTokens,
+    [switch] $UseGitHubRunner
 )
 
 $ErrorActionPreference = 'Stop'
+$UseAccessTokens = $UseAccessTokens -or $UseGitHubRunner
 $env:IDENTITY_ENDPOINT = 'https://identity.example.invalid/token'
 $env:IDENTITY_HEADER = 'mock-identity-header'
+$global:IdentityRequests = 0
+$global:TokenRequests = [Collections.Generic.List[string]]::new()
 $global:DataRequestUris = [Collections.Generic.List[string]]::new()
 $global:CostRequests = [Collections.Generic.List[object]]::new()
 $global:Ingestions = [Collections.Generic.List[object]]::new()
@@ -39,11 +44,54 @@ function global:Start-Sleep {
     }
 }
 
+function global:az {
+    $arguments = @($args)
+    $resourceIndex = [Array]::IndexOf($arguments, '--resource')
+    $tenantIndex = [Array]::IndexOf($arguments, '--tenant')
+    if ($arguments[0] -ne 'account' -or $arguments[1] -ne 'get-access-token' -or
+        $resourceIndex -lt 0 -or $tenantIndex -lt 0 -or
+        $arguments[$tenantIndex + 1] -ne '33333333-3333-3333-3333-333333333333' -or
+        $arguments -contains '--subscription') {
+        throw 'Unexpected Azure CLI command.'
+    }
+    $resource = [string] $arguments[$resourceIndex + 1]
+    $global:TokenRequests.Add($resource)
+    $global:LASTEXITCODE = 0
+    if ($Scenario -eq 'github-cli-fail' -or
+        ($Scenario -eq 'github-second-token-fail' -and $resource -eq 'https://monitor.azure.com/')) {
+        $global:LASTEXITCODE = 1
+        return ''
+    }
+    if ($Scenario -eq 'github-invalid-json') {
+        return 'mock-arm-token'
+    }
+    if ($Scenario -eq 'github-missing-expiry') {
+        return '{"accessToken":"mock-arm-token"}'
+    }
+    $expires = if ($Scenario -eq 'github-short-token') {
+        [DateTimeOffset]::UtcNow.AddMinutes(1).ToUnixTimeSeconds()
+    }
+    else {
+        [DateTimeOffset]::UtcNow.AddHours(2).ToUnixTimeSeconds()
+    }
+    $token = if ($resource -eq 'https://management.azure.com/') {
+        'mock-arm-token'
+    }
+    elseif ($resource -eq 'https://monitor.azure.com/') {
+        'mock-ingestion-token'
+    }
+    else {
+        throw 'Unexpected token audience.'
+    }
+    return @{ accessToken = $token; expires_on = $expires } | ConvertTo-Json -Compress
+}
+
 function global:Invoke-RestMethod {
     param($Method, $Uri, $Headers, $ContentType, $Body, [string] $StatusCodeVariable,
         [Nullable[int]] $MaximumRedirection)
 
     if ($Uri -like 'https://identity.example.invalid/*') {
+        $global:IdentityRequests++
         if ($Uri -notmatch 'api-version=2019-08-01' -or
             $Uri -notmatch 'client_id=00000000-0000-0000-0000-000000000003' -or
             $Headers['X-IDENTITY-HEADER'] -ne 'mock-identity-header' -or
@@ -85,8 +133,21 @@ function global:Invoke-RestMethod {
     }
 
     $global:DataRequestUris.Add([string] $Uri)
-    if ($Headers.Authorization -ne 'Bearer mock-token') {
-        throw 'Azure request omitted the managed identity bearer token.'
+    if ($UseAccessTokens) {
+        $expectedToken = if ($Uri -like 'https://management.azure.com/*') {
+            'mock-arm-token'
+        }
+        else {
+            'mock-ingestion-token'
+        }
+        if ($Headers.Authorization -ne ('Bearer ' + $expectedToken)) {
+            throw 'Azure request used the wrong access-token audience.'
+        }
+    }
+    else {
+        if ($Headers.Authorization -ne 'Bearer mock-token') {
+            throw 'Azure request omitted the managed identity bearer token.'
+        }
     }
     $text = [Text.Encoding]::UTF8.GetString($Body)
     if ($Uri -like 'https://management.azure.com/*') {
@@ -364,7 +425,13 @@ try {
         IdentityClientId = '00000000-0000-0000-0000-000000000003'
         LookbackDays = 62
     }
-    if ($UseTimer) {
+    if ($UseGitHubRunner) {
+        $parameters.CostQueryScope = $CostQueryScope
+        $parameters.TenantId = '33333333-3333-3333-3333-333333333333'
+        $runner = Join-Path (Join-Path $repo 'scripts') 'run_cost_github.ps1'
+        $null = & $runner @parameters
+    }
+    elseif ($UseTimer) {
         $env:COST_SUBSCRIPTION_ID = $parameters.SubscriptionId
         $env:COST_ACCOUNT_IDS = $parameters.AccountIdsJson
         $env:COST_INGESTION_ENDPOINT = $parameters.IngestionEndpoint
@@ -382,6 +449,11 @@ try {
     }
     else {
         $parameters.CostQueryScope = $CostQueryScope
+        if ($UseAccessTokens) {
+            $parameters.IdentityProvider = 'accessTokens'
+            $parameters.ArmAccessToken = if ($Scenario -eq 'missing-arm-token') { '' } else { 'mock-arm-token' }
+            $parameters.IngestionAccessToken = if ($Scenario -eq 'missing-ingestion-token') { '' } else { 'mock-ingestion-token' }
+        }
         $null = & $collector @parameters
     }
     $success = $true
@@ -393,6 +465,8 @@ catch {
 $result = [ordered]@{
     Success         = $success
     Error           = $message
+    IdentityRequests = $global:IdentityRequests
+    TokenRequests   = @($global:TokenRequests)
     DataRequestUris = @($global:DataRequestUris)
     CostRequests    = @($global:CostRequests)
     Ingestions      = @($global:Ingestions)

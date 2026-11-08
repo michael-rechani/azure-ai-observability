@@ -47,7 +47,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 
 ## Acceptance checklist
 
-- The three core dashboards and, when enabled, the cost dashboard and business overview query using Grafana's managed identity. The cost dashboards read snapshots from Log Analytics; the Function's separate managed identity collects them from Cost Management.
+- The three core dashboards and, when enabled, the cost dashboard and business overview query using Grafana's managed identity. The cost dashboards read snapshots from Log Analytics; the collector's separate managed identity accesses Cost Management.
 - Resource inventory contains expected authorized accounts/projects; missing rows trigger an RBAC check.
 - A known agent execution produces correlated run, tool, and model spans with an OperationId.
 - Model usage totals match known calls and do not count parent agent summaries twice.
@@ -55,7 +55,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
 - A controlled failure appears in the trace table and the business overview failure-rate panel. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
-- If the cost pipeline is enabled, the scheduled Function produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. The first run is scheduled for 06:00 UTC and billing data can lag.
+- If the cost pipeline is enabled, the Function or GitHub Actions job produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. Function mode runs at 06:00 UTC; GitHub mode requests 06:17 UTC and can be delayed or dropped. Billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.
 
 The repository's offline CI cannot verify live data, KQL execution, model/SKU support, or notification delivery without your Azure environment.
