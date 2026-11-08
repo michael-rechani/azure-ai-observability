@@ -38,7 +38,7 @@ Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, al
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
 
-The commands below show an interactive deployer login. The running Grafana Azure Monitor data source and cost collector use managed identities, not a user's browser session or a client secret. An unattended deployment can use a separate authorized workload identity; an end-to-end OIDC deployment has not been validated here. See [deployment authentication](docs/getting-started.md#2-sign-in-and-collect-your-azure-details) and [cost access boundaries](docs/costs.md#runtime-identity-and-deployment-authentication).
+The commands below show an interactive deployer login. The running Grafana Azure Monitor data source and cost collector use managed identities, not a user's browser session or a client secret. A manual GitHub Actions OIDC workflow is available for Bicep deployments; its live Azure login and deployment have not been validated. See [Bicep OIDC deployment](docs/bicep.md#optional-github-actions-oidc-deployment), [deployment authentication](docs/getting-started.md#2-sign-in-and-collect-your-azure-details), and [cost access boundaries](docs/costs.md#runtime-identity-and-deployment-authentication).
 
 ### Deploy with Terraform
 

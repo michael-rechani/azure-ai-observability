@@ -72,6 +72,20 @@ Grafana Admin or managed-identity role assignments can take time to propagate. I
 
 The helper marks resources it creates in Grafana. It refuses to overwrite an unrelated data source or dashboard with the same UID and does not force-update version conflicts. Managed dashboards are reconciled on rerun, so edit their checked-in JSON rather than relying on persistent Grafana UI edits. Review and resolve UID/ownership collisions explicitly.
 
+## Optional GitHub Actions OIDC deployment
+
+`.github/workflows/deploy-bicep.yml` provides a manually dispatched deployment on the `main` branch. It uses GitHub's OIDC token with `Azure/login`, not a client secret, and invokes the same `scripts/deploy_bicep.ps1` helper as a local deployment. The default operation is **what-if**; **apply** runs the full Bicep deployment and, if enabled, Function publishing and Grafana provisioning. The what-if previews only the ARM deployment, not those post-deployment operations. The workflow has not been validated against a live Azure subscription.
+
+Before using it:
+
+1. Create a GitHub Environment named `azure-production`. Restrict its deployment branches to `main` and configure required reviewers so an apply must receive human approval. Merely referencing an Environment in the workflow does not enable these protection rules; configure them in repository settings before use.
+2. Add these environment variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and `AZURE_RESOURCE_GROUP`. The resource group must already exist.
+3. Add an environment secret named `BICEP_PARAMETERS` containing the complete text of a parameter file based on `infra/main.example.bicepparam`, including `using './main.bicep'`. Do not put credentials in the parameter file.
+4. Configure an Entra federated identity credential for `https://token.actions.githubusercontent.com` with audience `api://AzureADTokenExchange`. Its subject must match this repository's GitHub OIDC subject for the `azure-production` environment. Do not use a wildcard subject. Restrict the GitHub Environment to `main` as well.
+5. Grant the federated identity only the Azure permissions required by the selected configuration. The role-assignment and optional custom-role-definition permissions in [Prerequisites](#prerequisites) still apply; the workflow does not create the resource group or grant itself access.
+
+From the repository's **Actions** tab, run **Deploy Bicep to Azure** on `main` and select `what-if` first. Review the ARM changes and expected charges. Select `apply` only when ready; it executes the full helper and may create billable resources or change Azure and Grafana state. The workflow writes the parameter secret to the ignored `infra/main.local.bicepparam` path only for the job and removes it afterward. The runner is ephemeral, but this cleanup is not a substitute for protecting the GitHub Environment and its secrets.
+
 ## Lifecycle and removal
 
 Bicep uses **incremental** Azure deployments: removing a principal or monitored group, changing cost modes, setting an alert or cost feature to false, or setting the budget amount to zero does **not** delete resources created by a previous deployment. A previously deployed cost Function can keep running and incurring charges, a budget can keep sending alerts, and removed Viewer/publisher or cost role assignments can remain effective. Explicitly review and remove the specific unwanted Azure resources and role assignments through Azure's management tools. Remove an obsolete managed cost role's assignments before deleting its role definition, after confirming neither is used elsewhere. Disabling cost collection also does not delete the Grafana cost dashboard or historical workspace data. Preserve or delete data according to your retention requirements.
