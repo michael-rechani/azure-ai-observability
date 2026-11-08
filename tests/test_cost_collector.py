@@ -1,6 +1,7 @@
 import calendar
 import datetime as dt
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -457,6 +458,50 @@ class CostCollectorTests(unittest.TestCase):
         self.assertFalse(failed["Success"])
         self.assertEqual(len(failed["CostRequests"]), 6)
         self.assertEqual(failed["Ingestions"], [])
+
+    def test_invalid_or_excessive_retry_headers_fail_without_retrying(self):
+        for scenario in (
+            "invalid", "invalid-azure", "negative", "nan", "infinity", "empty",
+            "ambiguous", "invalid-date", "huge", "future-rfc", "future-rfc850", "future-asctime",
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(f"throttle-header-{scenario}")
+                self.assertFalse(result["Success"])
+                message = "retry delay exceeding" if scenario == "huge" or scenario.startswith("future-") else "invalid retry-after"
+                self.assertIn(message, result["Error"].lower())
+                self.assertEqual(len(result["CostRequests"]), 1)
+                self.assertEqual(result["Sleeps"], [])
+                self.assertEqual(result["Ingestions"], [])
+
+        for scenario, message in (
+            ("ingestion-throttle-invalid", "invalid retry-after"),
+            ("ingestion-throttle-huge", "retry delay exceeding"),
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertFalse(result["Success"])
+                self.assertIn(message, result["Error"].lower())
+                self.assertEqual(len(result["Ingestions"]), 1)
+                self.assertFalse(any(row["RecordType"] == "Complete" for row in self.records(result)))
+
+    def test_valid_retry_headers_and_missing_header_are_honored(self):
+        for scenario, delay in (("fractional", 20), ("zero", 1), ("date", 1), ("missing", 1)):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(f"throttle-header-{scenario}")
+                self.assertTrue(result["Success"], result["Error"])
+                self.assertEqual(result["Sleeps"][0], delay)
+                self.assertEqual(len(result["CostRequests"]), 7)
+
+        for date_format in ("rfc", "rfc850", "asctime"):
+            with self.subTest(date_format=date_format):
+                result = self.run_collector(f"throttle-header-soon-{date_format}")
+                self.assertTrue(result["Success"], result["Error"])
+                target = dt.datetime.fromisoformat(result["RetryTarget"])
+                slept_at = dt.datetime.fromisoformat(result["RetrySleepTime"])
+                remaining = max(1, math.ceil((target - slept_at).total_seconds()))
+                self.assertGreaterEqual(result["Sleeps"][0], remaining)
+                self.assertLessEqual(result["Sleeps"][0], 35)
+                self.assertEqual(len(result["CostRequests"]), 7)
 
     def test_non_transient_http_errors_are_not_retried(self):
         for status in (400, 401, 403, 404):

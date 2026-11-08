@@ -15,6 +15,8 @@ $global:Sleeps = [Collections.Generic.List[int]]::new()
 $global:Throttled = $false
 $global:Paged = $false
 $global:CostBatchCount = 0
+$global:RetryTarget = $null
+$global:RetrySleepTime = $null
 
 if ($NowUtc) {
     $global:MockNow = [DateTime]::ParseExact(
@@ -32,6 +34,9 @@ if ($NowUtc) {
 function global:Start-Sleep {
     param([int] $Seconds)
     $global:Sleeps.Add($Seconds)
+    if ($null -ne $global:RetryTarget -and $null -eq $global:RetrySleepTime) {
+        $global:RetrySleepTime = [DateTimeOffset]::UtcNow
+    }
 }
 
 function global:Invoke-RestMethod {
@@ -111,6 +116,45 @@ function global:Invoke-RestMethod {
             $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::TooManyRequests)
             $null = $response.Headers.TryAddWithoutValidation('Retry-After', '5')
             $null = $response.Headers.TryAddWithoutValidation('x-ms-ratelimit-microsoft.costmanagement-entity-retry-after', '19')
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock throttling', $response)
+        }
+        if ($Scenario -like 'throttle-header-*' -and -not $global:Throttled) {
+            $global:Throttled = $true
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::TooManyRequests)
+            switch ($Scenario) {
+                'throttle-header-invalid' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'invalid') }
+                'throttle-header-invalid-azure' {
+                    $null = $response.Headers.TryAddWithoutValidation('Retry-After', '5')
+                    $null = $response.Headers.TryAddWithoutValidation('x-ms-ratelimit-microsoft.costmanagement-entity-retry-after', 'invalid')
+                }
+                'throttle-header-negative' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '-1') }
+                'throttle-header-nan' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'NaN') }
+                'throttle-header-infinity' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'Infinity') }
+                'throttle-header-empty' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '') }
+                'throttle-header-ambiguous' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '5, 6') }
+                'throttle-header-invalid-date' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '1/2/2026') }
+                'throttle-header-huge' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '999999999999999999999') }
+                'throttle-header-fractional' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '19.2') }
+                'throttle-header-zero' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '0') }
+                'throttle-header-date' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'Sun, 06 Nov 1994 08:49:37 GMT') }
+                { $_ -match '^throttle-header-(future|soon)-(rfc|rfc850|asctime)$' } {
+                    $seconds = if ($Scenario -like 'throttle-header-future-*') { 86400 } else { 35 }
+                    $future = [DateTimeOffset]::UtcNow.AddSeconds($seconds)
+                    $global:RetryTarget = [DateTimeOffset]::FromUnixTimeSeconds($future.ToUnixTimeSeconds())
+                    $culture = [Globalization.CultureInfo]::InvariantCulture
+                    $value = switch -Wildcard ($Scenario) {
+                        '*-rfc' { $future.ToString('r', $culture) }
+                        '*-rfc850' { $future.ToString("dddd, dd-MMM-yy HH:mm:ss 'GMT'", $culture) }
+                        '*-asctime' {
+                            $future.ToString('ddd MMM', $culture) + ' ' + $future.Day.ToString().PadLeft(2) + ' ' +
+                                $future.ToString('HH:mm:ss yyyy', $culture)
+                        }
+                    }
+                    $null = $response.Headers.TryAddWithoutValidation('Retry-After', $value)
+                }
+                'throttle-header-missing' {}
+                default { throw 'Unknown retry-header test scenario.' }
+            }
             throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock throttling', $response)
         }
         if ($Scenario -eq 'empty' -or $Scenario -eq 'empty-200' -or
@@ -269,6 +313,12 @@ function global:Invoke-RestMethod {
         $global:Ingestions.Add([pscustomobject]@{ Bytes = $Body.Length; Records = $records })
         if ($records[0].RecordType -eq 'Cost') {
             $global:CostBatchCount++
+            if ($Scenario -in @('ingestion-throttle-invalid', 'ingestion-throttle-huge')) {
+                $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::TooManyRequests)
+                $retryValue = if ($Scenario -eq 'ingestion-throttle-invalid') { 'invalid' } else { '999999999999999999999' }
+                $null = $response.Headers.TryAddWithoutValidation('Retry-After', $retryValue)
+                throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock ingestion throttling', $response)
+            }
             if ($Scenario -eq 'ingestion-error' -or
                 ($Scenario -eq 'ingestion-error-late' -and $global:CostBatchCount -eq 2)) {
                 throw 'Mock Logs Ingestion failure.'
@@ -346,5 +396,7 @@ $result = [ordered]@{
     CostRequests    = @($global:CostRequests)
     Ingestions      = @($global:Ingestions)
     Sleeps          = @($global:Sleeps)
+    RetryTarget     = if ($null -ne $global:RetryTarget) { $global:RetryTarget.ToString('o') } else { $null }
+    RetrySleepTime  = if ($null -ne $global:RetrySleepTime) { $global:RetrySleepTime.ToString('o') } else { $null }
 }
 Write-Output ('RESULT=' + (ConvertTo-Json -InputObject $result -Depth 20 -Compress))

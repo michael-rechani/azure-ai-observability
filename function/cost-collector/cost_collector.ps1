@@ -59,24 +59,36 @@ function Get-RetryDelay {
             if ($header.Key -notmatch '^(?i:retry-after|x-ms-ratelimit-.*retry-after)$') {
                 continue
             }
-            foreach ($value in $header.Value) {
+            $values = @($header.Value)
+            if ($values.Count -eq 0) {
+                throw 'Azure returned an invalid retry-after header.'
+            }
+            foreach ($value in $values) {
                 $seconds = 0.0
-                $date = [DateTimeOffset]::MinValue
+                $retryCondition = $null
                 if ([double]::TryParse(
                     [string] $value,
                     [System.Globalization.NumberStyles]::Float,
                     $script:InvariantCulture,
                     [ref] $seconds
                 )) {
+                    if ([double]::IsNaN($seconds) -or [double]::IsInfinity($seconds) -or $seconds -lt 0) {
+                        throw 'Azure returned an invalid retry-after header.'
+                    }
                     $delay = [Math]::Max($delay, $seconds)
                 }
-                elseif ([DateTimeOffset]::TryParse([string] $value, [ref] $date)) {
-                    $delay = [Math]::Max($delay, ($date - [DateTimeOffset]::UtcNow).TotalSeconds)
+                elseif ([System.Net.Http.Headers.RetryConditionHeaderValue]::TryParse(
+                    [string] $value, [ref] $retryCondition
+                ) -and $null -ne $retryCondition.Date) {
+                    $delay = [Math]::Max($delay, ($retryCondition.Date - [DateTimeOffset]::UtcNow).TotalSeconds)
+                }
+                else {
+                    throw 'Azure returned an invalid retry-after header.'
                 }
             }
         }
     }
-    return [int][Math]::Ceiling($delay)
+    return [Math]::Ceiling($delay)
 }
 
 function Invoke-AzurePost {
@@ -139,10 +151,10 @@ function Invoke-AzurePost {
             }
             $delay = Get-RetryDelay -Response $response -Attempt $attempt
             if ($delay -gt 900) {
-                throw "Azure requested a retry delay of $delay seconds; retry the failed job later."
+                throw 'Azure requested a retry delay exceeding 900 seconds; retry the failed job later.'
             }
             Write-Warning "Azure request failed with status $status; retrying in $delay seconds."
-            Start-Sleep -Seconds $delay
+            Start-Sleep -Seconds ([int] $delay)
         }
     }
 }
