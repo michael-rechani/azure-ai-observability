@@ -20,5 +20,5 @@ telemetry_publisher_principals   = {}
 enable_agent_alerts              = false
 monthly_ai_cost_budget_amount    = 0
 enable_cost_pipeline             = false
-cost_query_scope                 = "subscription" # resourceGroup requires separate cost-role grants.
+cost_query_scope                 = "subscription" # Or resourceGroup (separate grants) / resourceGroupManaged (scoped custom roles).
 cost_lookback_days               = 90

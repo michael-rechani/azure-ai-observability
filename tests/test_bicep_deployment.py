@@ -144,10 +144,22 @@ class BicepDeploymentTests(unittest.TestCase):
                 self.assertIn(expected, result.stderr)
 
     def test_resource_group_cost_scope_is_accepted_by_deployment_validation(self):
-        scoped = parameters()
-        scoped["costQueryScope"] = {"value": "resourceGroup"}
-        result, _ = self.run_harness("validate", scoped)
-        self.assertEqual(result.returncode, 0, result.stderr)
+        for mode in ("resourceGroup", "resourceGroupManaged"):
+            with self.subTest(mode=mode):
+                scoped = parameters()
+                scoped["costQueryScope"] = {"value": mode}
+                result, _ = self.run_harness("validate", scoped)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_account_group_names_cannot_escape_managed_cost_scope(self):
+        for group in (".", "..", "foundry%2fother", "foundry?other", "foundry#other", "foundry\\other", "foundry/other", "foundry\x01other"):
+            with self.subTest(group=group):
+                scoped = parameters()
+                scoped["costQueryScope"] = {"value": "resourceGroupManaged"}
+                scoped["monitoredAccounts"]["value"][0]["resourceGroup"] = group
+                result, _ = self.run_harness("validate", scoped)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("resource group", result.stderr)
 
     def test_grafana_creates_dashboards_with_separate_workspace_defaults(self):
         result, calls = self.run_harness("grafana")
@@ -274,7 +286,7 @@ class BicepTemplateTests(unittest.TestCase):
         self.assertEqual(template["parameters"]["costQueryScope"]["defaultValue"], "subscription")
         self.assertEqual(
             template["parameters"]["costQueryScope"]["allowedValues"],
-            ["subscription", "resourceGroup"],
+            ["subscription", "resourceGroup", "resourceGroupManaged"],
         )
         self.assertIn("costIdentityPrincipalId", template["outputs"])
         resources = resources_of(template)
@@ -288,8 +300,8 @@ class BicepTemplateTests(unittest.TestCase):
                                if r["type"].lower() == "microsoft.resources/deployments"
                                and r["properties"]["template"] == cost_template)
         self.assertEqual(
-            cost_deployment["properties"]["parameters"]["costQueryScope"]["value"],
-            "[parameters('costQueryScope')]",
+            cost_deployment["properties"]["parameters"]["costQueryScope"],
+            "[if(equals(parameters('costQueryScope'), 'resourceGroupManaged'), createObject('value', 'resourceGroup'), createObject('value', parameters('costQueryScope')))]",
         )
         cost_reader = next(r for r in resources
                            if r["type"].lower() == "microsoft.resources/deployments"
@@ -303,6 +315,50 @@ class BicepTemplateTests(unittest.TestCase):
             cost_reader["properties"]["parameters"]["principalId"]["value"],
             "[reference('cost').outputs.principalId.value]",
         )
+        cost_group_reader = next(r for r in resources
+                                 if r["type"].lower() == "microsoft.resources/deployments"
+                                 and "-cost-rg-" in r["name"])
+        self.assertEqual(cost_group_reader["copy"]["count"], "[length(variables('costAccountGroups'))]")
+        self.assertEqual(
+            template["variables"]["costAccountGroups"],
+            "[union(variables('costAccountGroupTargets'), createArray())]",
+        )
+        self.assertIn("resourceGroupManaged", cost_group_reader["condition"])
+        subscription_guard = cost_group_reader["properties"]["parameters"]["subscriptionMatches"]["value"]
+        self.assertIn("subscriptionId", subscription_guard)
+        self.assertEqual(
+            cost_group_reader["properties"]["parameters"]["principalId"]["value"],
+            "[reference('cost').outputs.principalId.value]",
+        )
+        group_template = cost_group_reader["properties"]["template"]
+        self.assertEqual(group_template["parameters"]["scopeIsValid"]["allowedValues"], [True])
+        scope_guard = group_template["parameters"]["scopeIsValid"]["defaultValue"]
+        self.assertIn("createArray('.', '..')", scope_guard)
+        self.assertIn("'%'", scope_guard)
+        self.assertIn("'?'", scope_guard)
+        self.assertIn("'#'", scope_guard)
+        self.assertIn("uriComponent", scope_guard)
+        self.assertIn("'%0'", scope_guard)
+        self.assertIn("'%1'", scope_guard)
+        self.assertIn("'%7F'", scope_guard)
+        group_resources = resources_of(group_template)
+        group_role = next(r for r in group_resources
+                          if r["type"].lower() == "microsoft.authorization/roledefinitions")
+        self.assertEqual(group_role["properties"]["assignableScopes"], ["[variables('groupScope')]"])
+        self.assertEqual(group_role["properties"]["permissions"], [{
+            "actions": ["Microsoft.CostManagement/query/read"],
+            "notActions": [],
+            "dataActions": [],
+            "notDataActions": [],
+        }])
+        group_assignment_deployment = next(r for r in group_resources
+                                           if r["type"].lower() == "microsoft.resources/deployments")
+        self.assertEqual(group_assignment_deployment["resourceGroup"], "[parameters('resourceGroupName')]")
+        group_assignment = resources_of(group_assignment_deployment["properties"]["template"])[0]
+        self.assertEqual(group_assignment["type"].lower(), "microsoft.authorization/roleassignments")
+        self.assertEqual(group_assignment["properties"]["principalId"], "[parameters('principalId')]")
+        self.assertEqual(group_assignment["properties"]["principalType"], "ServicePrincipal")
+        self.assertEqual(group_assignment["properties"]["roleDefinitionId"], "[parameters('roleDefinitionId')]")
         cost_resources = resources_of(cost_template)
         app = next(r for r in cost_resources if r["type"].lower() == "microsoft.web/sites")
         config = app["properties"]["functionAppConfig"]

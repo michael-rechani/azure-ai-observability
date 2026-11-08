@@ -4,7 +4,7 @@ This walkthrough takes you from an existing Azure AI account to dashboards in Az
 
 **Jump to:** [Preparation](#1-install-the-tools-and-get-the-repository) · [Bicep](#3a-deploy-with-bicep) · [Terraform](#3b-deploy-with-terraform) · [Verify](#4-open-and-verify-the-dashboards) · [Troubleshooting](#troubleshooting-and-cleanup)
 
-> **Before you start:** The complete deployment has not yet been validated in a live Azure subscription. An isolated lab tested the optional Bicep cost Function module only; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
+> **Before you start:** The complete deployment has not yet been validated in a live Azure subscription. Isolated lab tests covered the optional Bicep cost Function and scoped role modules separately; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
 
 ## What you need and what will be created
 
@@ -34,7 +34,7 @@ Ask your Azure administrator to confirm the following before deployment. An Azur
 | Who | Access needed |
 | --- | --- |
 | Person deploying | Permission to create or update the monitoring resources and write role assignments in the monitoring resource group and on each selected AI account and telemetry workspace. Creating a resource group also needs subscription-level permission. |
-| Person deploying optional costs | In addition, permission to publish the Function. The default also assigns **Cost Management Reader at subscription scope**; its access extends beyond account filters and includes `Microsoft.Support/*`, which can permit support-ticket writes. An optional resource-group mode needs separately managed grants. Review [cost permissions](costs.md#operation-and-permissions). |
+| Person deploying optional costs | In addition, permission to publish the Function. The default also assigns **Cost Management Reader at subscription scope**; its access extends beyond account filters and includes `Microsoft.Support/*`, which can permit support-ticket writes. Resource-group mode can use separate grants, or managed custom roles with role-definition permissions at subscription scope and role-assignment permissions in each group. Review [cost permissions](costs.md#operation-and-permissions). |
 | Grafana administrator | The signed-in identity running the Grafana configuration must receive **Grafana Admin** on the new instance. The deployment assigns this to the object ID you provide; Azure subscription permissions alone are not Grafana data-plane access. |
 | Grafana managed identity | The deployment grants it monitoring access to the selected accounts and read access to selected workspaces. These are separate from the human administrator's permissions. |
 | Business users, if desired | An existing Entra group or user can receive **Grafana Viewer**. Viewer is read-only, but it is **not a data-isolation boundary**: the shared data source can query data accessible to Grafana's identity. Use separate deployments or data boundaries for sensitive or different customer data. |
@@ -157,7 +157,7 @@ Replace every example subscription ID, account name, account resource group, acc
 | `foundryDashboardAccount`, `ptuDashboardAccount` | Initial dashboard selections. Each non-null account must also appear in `monitoredAccounts`; use that account's actual region. |
 | `enableAgentAlerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enableCostPipeline` | Leave `false` for no cost collector, or set `true` after reviewing the permissions and charges in [cost collection](costs.md). This also enables the cost and business dashboards. |
-| `costQueryScope` | Defaults to `subscription`. The optional `resourceGroup` mode needs separate role assignments and an access-migration review; see [configuration](costs.md#configure-resource-group-query-mode). |
+| `costQueryScope` | Defaults to `subscription`. Use `resourceGroup` for separate grants or `resourceGroupManaged` to create scoped custom roles; review [permissions and migration](costs.md#configure-resource-group-query-mode). |
 
 **Add** `param enablePtuAlerts = false` to the file: PTU alerts otherwise default to enabled. Turn them on later, after [discovering the metrics](setup.md#metric-discovery).
 
@@ -358,7 +358,7 @@ Replace the example values:
 | `monitored_accounts` | The full account resource IDs and actual provisioned deployment names. Use `ptu_deployments = []` for accounts without PTUs; list a shared Foundry/PTU account only once. |
 | `enable_agent_alerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enable_cost_pipeline` | Leave `false`, or set `true` after reviewing the [cost permissions and charges](costs.md). The Grafana stage has a separate switch for the cost and business dashboards. |
-| `cost_query_scope` | Defaults to `subscription`. The optional `resourceGroup` mode needs separate role assignments and an access-migration review; see [configuration](costs.md#configure-resource-group-query-mode). |
+| `cost_query_scope` | Defaults to `subscription`. Use `resourceGroup` for separate grants or `resourceGroupManaged` to create scoped custom roles; review [permissions and migration](costs.md#configure-resource-group-query-mode). |
 
 Add `enable_ptu_alerts = false` to the file; the default is `true`. If one account is used for both Foundry and PTUs, the account map can look like this:
 

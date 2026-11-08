@@ -15,6 +15,11 @@ locals {
     WindowEnd     = "dateTime"
   }
   cost_deployment_script = "${path.module}/../../scripts/deploy_cost_function.ps1"
+  cost_managed_group_scopes = var.enable_cost_pipeline && var.cost_query_scope == "resourceGroupManaged" ? toset([
+    for account in values(var.monitored_accounts) :
+    lower(join("/", slice(split("/", account.resource_id), 0, 5)))
+    if length(split("/", account.resource_id)) >= 5
+  ]) : toset([])
 }
 
 resource "azurerm_log_analytics_workspace_table_custom_log" "cost" {
@@ -154,6 +159,31 @@ resource "azurerm_role_assignment" "cost_reader" {
   skip_service_principal_aad_check = true
 }
 
+resource "azurerm_role_definition" "cost_group_query" {
+  for_each    = local.cost_managed_group_scopes
+  name        = "AI Observatory Cost Query ${substr(sha256("${local.cost_suffix}/${each.value}"), 0, 16)}"
+  scope       = "/subscriptions/${var.subscription_id}"
+  description = "Query Cost Management at one monitored resource group."
+
+  permissions {
+    actions          = ["Microsoft.CostManagement/query/read"]
+    not_actions      = []
+    data_actions     = []
+    not_data_actions = []
+  }
+
+  assignable_scopes = [each.value]
+}
+
+resource "azurerm_role_assignment" "cost_group_query" {
+  for_each                         = local.cost_managed_group_scopes
+  scope                            = each.value
+  role_definition_id               = azurerm_role_definition.cost_group_query[each.key].role_definition_resource_id
+  principal_id                     = azurerm_user_assigned_identity.cost[0].principal_id
+  principal_type                   = "ServicePrincipal"
+  skip_service_principal_aad_check = true
+}
+
 resource "azurerm_role_assignment" "cost_ingestion" {
   count                            = var.enable_cost_pipeline ? 1 : 0
   scope                            = azurerm_monitor_data_collection_rule.cost[0].id
@@ -217,7 +247,7 @@ resource "azurerm_function_app_flex_consumption" "cost" {
     APPLICATIONINSIGHTS_AUTHENTICATION_STRING = "ClientId=${azurerm_user_assigned_identity.cost[0].client_id};Authorization=AAD"
     COST_SUBSCRIPTION_ID                      = var.subscription_id
     COST_ACCOUNT_IDS                          = jsonencode([for account in values(var.monitored_accounts) : account.resource_id])
-    COST_QUERY_SCOPE                          = var.cost_query_scope
+    COST_QUERY_SCOPE                          = var.cost_query_scope == "resourceGroupManaged" ? "resourceGroup" : var.cost_query_scope
     COST_INGESTION_ENDPOINT                   = azurerm_monitor_data_collection_endpoint.cost[0].logs_ingestion_endpoint
     COST_DCR_IMMUTABLE_ID                     = azurerm_monitor_data_collection_rule.cost[0].immutable_id
     COST_IDENTITY_CLIENT_ID                   = azurerm_user_assigned_identity.cost[0].client_id
@@ -239,6 +269,7 @@ resource "azurerm_function_app_flex_consumption" "cost" {
     azurerm_role_assignment.cost_storage,
     azurerm_role_assignment.cost_storage_diagnostics,
     azurerm_role_assignment.cost_reader,
+    azurerm_role_assignment.cost_group_query,
     azurerm_role_assignment.cost_ingestion,
     azurerm_role_assignment.cost_telemetry,
   ]

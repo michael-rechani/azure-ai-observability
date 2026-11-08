@@ -20,7 +20,7 @@ These static checks do not guarantee security or inspect deployed Azure resource
 
 ## Optional cost-pipeline permissions
 
-By default, the collector's identity receives subscription-wide Cost Management Reader, which includes `Microsoft.Support/*` and is not strictly read-only. An opt-in resource-group query mode requires separate grants; switching modes does not automatically remove every existing or inherited assignment. Account filters do not limit role permissions, and Grafana Viewer is not a per-user Azure authorization boundary. See [cost permissions and migration](docs/costs.md#configure-resource-group-query-mode) before enabling or changing the pipeline.
+By default, the collector's identity receives subscription-wide Cost Management Reader, which includes `Microsoft.Support/*` and is not strictly read-only. Opt-in resource-group query modes use separately managed grants or deployment-managed custom roles. Switching modes does not automatically remove every existing or inherited assignment. Account filters do not limit role permissions, and Grafana Viewer is not a per-user Azure authorization boundary. See [cost permissions and migration](docs/costs.md#configure-resource-group-query-mode) before enabling or changing the pipeline.
 
 ## Optional cost-pipeline storage
 

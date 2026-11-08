@@ -104,8 +104,8 @@ param costBudgetThresholdPercent int = 80
 @description('Deploy the optional daily cost collector and its Log Analytics ingestion pipeline.')
 param enableCostPipeline bool = false
 
-@description('Cost query scope. Resource-group mode requires cost role assignments managed separately.')
-@allowed(['subscription', 'resourceGroup'])
+@description('Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles).')
+@allowed(['subscription', 'resourceGroup', 'resourceGroupManaged'])
 param costQueryScope string = 'subscription'
 
 @minValue(31)
@@ -128,6 +128,11 @@ var grafanaAdminRole = subscriptionResourceId('Microsoft.Authorization/roleDefin
 var grafanaViewerRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '60921a7e-fef1-4a43-9b16-a26c52ad4769')
 var metricsPublisherRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
 var monitoredAccountIds = [for account in monitoredAccounts: resourceId(account.subscriptionId, account.resourceGroup, 'Microsoft.CognitiveServices/accounts', account.name)]
+var costAccountGroupTargets = [for account in monitoredAccounts: {
+  subscriptionId: toLower(account.subscriptionId)
+  name: toLower(account.resourceGroup)
+}]
+var costAccountGroups = union(costAccountGroupTargets, [])
 var agentAlertRules = [
   {
     name: 'failure-rate'
@@ -343,7 +348,7 @@ module cost 'modules/cost.bicep' = if (enableCostPipeline) {
     workspaceName: workspace.name
     insightsName: insights.name
     accountIds: monitoredAccountIds
-    costQueryScope: costQueryScope
+    costQueryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
     lookbackDays: costLookbackDays
     retentionInDays: retentionInDays
   }
@@ -356,6 +361,18 @@ module costReader 'modules/cost-reader.bicep' = if (enableCostPipeline && costQu
     principalId: cost!.outputs.principalId
   }
 }
+
+module costGroupReaders 'modules/cost-group-reader.bicep' = [for group in costAccountGroups: if (enableCostPipeline && costQueryScope == 'resourceGroupManaged') {
+  name: '${namePrefix}-cost-rg-${uniqueString(resourceGroup().id, namePrefix, group.name)}'
+  scope: subscription()
+  params: {
+    resourceGroupName: group.name
+    stackResourceGroupId: resourceGroup().id
+    namePrefix: namePrefix
+    principalId: cost!.outputs.principalId
+    subscriptionMatches: group.subscriptionId == toLower(subscription().subscriptionId)
+  }
+}]
 
 module budget 'modules/budget.bicep' = if (monthlyAiCostBudgetAmount > 0) {
   name: '${namePrefix}-budget'

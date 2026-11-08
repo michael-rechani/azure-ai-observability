@@ -126,6 +126,16 @@ variable "monitored_accounts" {
     error_message = "All monitored accounts must be in subscription_id. Deploy another stack for a different subscription."
   }
   validation {
+    condition = alltrue([
+      for account in values(var.monitored_accounts) : try(
+        !contains([".", ".."], split("/", account.resource_id)[4]) &&
+        !can(regex("[\\\\%?#\\x00-\\x1f\\x7f]", split("/", account.resource_id)[4])),
+        false
+      )
+    ])
+    error_message = "Each account must have a valid resource group name without path traversal, URI delimiters, backslashes, or control characters."
+  }
+  validation {
     condition     = length(distinct([for account in values(var.monitored_accounts) : lower(account.resource_id)])) == length(var.monitored_accounts)
     error_message = "Each monitored account must be listed only once."
   }
@@ -272,12 +282,12 @@ variable "enable_cost_pipeline" {
 }
 
 variable "cost_query_scope" {
-  description = "Cost query scope: subscription (automatic reader role) or resourceGroup (cost roles managed separately)."
+  description = "Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles)."
   type        = string
   default     = "subscription"
   validation {
-    condition     = contains(["subscription", "resourceGroup"], var.cost_query_scope)
-    error_message = "cost_query_scope must be subscription or resourceGroup."
+    condition     = contains(["subscription", "resourceGroup", "resourceGroupManaged"], var.cost_query_scope)
+    error_message = "cost_query_scope must be subscription, resourceGroup, or resourceGroupManaged."
   }
 }
 

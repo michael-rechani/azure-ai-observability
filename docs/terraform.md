@@ -14,7 +14,7 @@ The Grafana stage needs an existing endpoint and a propagated Grafana Admin role
 - Existing Foundry/OpenAI accounts. All monitored accounts must be in the **same subscription** as this Terraform Azure stage. Deploy separate stacks for other subscriptions. Existing telemetry workspace IDs can be specified separately; permissions must exist at those scopes.
 - The identity that runs the Grafana stage needs the Grafana Admin role; use its Entra **object ID** as `grafana_admin_object_id`, or assign it separately. The Azure subscription role alone is not Grafana data-plane access.
 - The environment must reach both Azure APIs and the Grafana endpoint. Public endpoints are enabled by this starter; private networking requires a separate design.
-- For the cost pipeline, the deployer must reach the Function's SCM deployment endpoint and have permission to publish the app. The default cost scope also requires permission to assign **Cost Management Reader at subscription scope**; the optional resource-group mode requires an administrator to manage separate grants. Check Flex Consumption and PowerShell 7.6 availability in the chosen region.
+- For the cost pipeline, the deployer must reach the Function's SCM deployment endpoint and have permission to publish the app. The default cost scope also requires permission to assign **Cost Management Reader at subscription scope**. Resource-group mode can use separate grants or create custom roles automatically; the latter needs role-definition write/delete permission at subscription scope and role-assignment write/delete permission in each monitored group. Check Flex Consumption and PowerShell 7.6 availability in the chosen region.
 
 **State contains sensitive information.** AzureRM stores Application Insights connection strings and workspace keys in state even though they are not output here, and email addresses/resource metadata may also appear. Neither root configures a backend by default. Follow the [remote-state walkthrough](getting-started.md#prepare-remote-state-for-terraform) to configure separate encrypted, access-controlled, locked state blobs before real use. Local state is for evaluation only; never commit state, plans, credentials, or real `.tfvars`. Treat Terraform debug logs and plan files as sensitive.
 
@@ -70,7 +70,7 @@ To collect costs, configure at least one `monitored_accounts` entry and add to t
 
 ```hcl
 enable_cost_pipeline = true
-cost_query_scope     = "subscription" # Default; resourceGroup needs separate grants.
+cost_query_scope     = "subscription" # Or resourceGroup / resourceGroupManaged.
 cost_lookback_days   = 90 # UTC days, including today; allowed range: 31-366
 ```
 
@@ -78,7 +78,7 @@ Terraform creates a Linux Flex Consumption Function, user-assigned managed ident
 
 Terraform packages the PowerShell Function and invokes `az functionapp deployment source config-zip` through a PowerShell 7 local provisioner after resource creation; the CLI uses Flex's supported deployment path. An authenticated Azure CLI 2.60.0+ and PowerShell 7 must be available to the **machine running Terraform**, including CI runners. Python is not required. The caller needs network access and publishing permission. The deployment reruns when the package or publishing command changes. If deployment fails, the apply fails; correct the issue and reapply. Azure role propagation can delay startup, publishing, or collection.
 
-The default identity assignment is **Cost Management Reader for the entire subscription**, not just the selected accounts. To opt into queries scoped to each account's group, set `cost_query_scope = "resourceGroup"` and arrange the separately managed grants described in [cost collection](costs.md#configure-resource-group-query-mode). The Terraform deployment path has not been validated live. For an existing Terraform deployment, review the plan for removal of its managed subscription assignment and review any inherited or externally managed access separately. Also review pacing, snapshot behavior, and financial interpretation before enabling the collector.
+The default identity assignment is **Cost Management Reader for the entire subscription**, not just the selected accounts. For resource-group queries, set `cost_query_scope = "resourceGroup"` and arrange separate grants, or use `resourceGroupManaged` to create one single-action custom role and assignment per distinct group. See [cost collection](costs.md#configure-resource-group-query-mode) for the required deployer permissions, access migration, propagation, and lifecycle. The Terraform deployment path, including its managed-role mode, has not been validated live. For an existing Terraform deployment, review the plan for removal of its managed subscription assignment and review any inherited or externally managed access separately. These options still use the Function and a shared cost table.
 
 From the repository root in PowerShell:
 

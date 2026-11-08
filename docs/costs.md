@@ -46,11 +46,21 @@ Billing can arrive late or be revised. The collector refreshes a rolling window 
 
 The Function runs daily at **06:00 UTC**, querying each selected account for actual and amortized costs. It uses Flex Consumption with no always-ready instances; the scale-out maximum of 40 is a ceiling, not 40 running instances. It writes to a custom `AICostSnapshot_CL` table through a data collection endpoint and rule.
 
-By default, the Function's managed identity receives **Cost Management Reader for the entire subscription**, even though its queries filter to the selected accounts. The opt-in `resourceGroup` query mode instead queries each account's resource group and creates **no cost role assignment**; an administrator must grant suitable access separately in every monitored group. Both modes also grant Storage Blob Data Owner and Storage Table Data Contributor on the Function's storage account, plus Monitoring Metrics Publisher on the data collection rule and Application Insights. Review these permissions for each customer.
+The deployment offers three query and role modes:
+
+| Mode | Cost Management access granted to the Function identity |
+| --- | --- |
+| `subscription` (default) | Assigns **Cost Management Reader for the entire subscription**, even though queries filter to selected accounts. |
+| `resourceGroup` | Queries each account's resource group but creates **no cost role assignment**; arrange separate grants for every monitored group. |
+| `resourceGroupManaged` | Queries each account's resource group and creates one custom role per distinct group, containing only `Microsoft.CostManagement/query/read`, and assigns it to the Function identity at that group. |
+
+These are options for the **Function-based collector**, not a direct Grafana or per-viewer solution. All modes also grant Storage Blob Data Owner and Storage Table Data Contributor on the Function's storage account, plus Monitoring Metrics Publisher on the data collection rule and Application Insights. Review these permissions for each customer.
 
 The [built-in Cost Management Reader role](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/management-and-governance#cost-management-reader) includes `Microsoft.Support/*`, which can permit support-ticket writes where those operations apply. It is not strictly read-only. An account filter does not limit either role's permissions: a resource-group assignment can expose all cost data available at that group. Grafana reads the resulting table using its shared workspace-reader identity; Viewer access and dashboard filters do not enforce the viewer's own Azure cost permissions.
 
 A separate [investigation](https://github.com/michael-rechani/azure-ai-observability/issues/4) verified that a temporary managed identity with only `Microsoft.CostManagement/query/read` on one resource group could query that group's actual and amortized costs in one subscription. Queries at subscription scope and another resource group, and a query by an unassigned identity, were denied. This identity-only test did **not** validate the deployed collector, the role in other billing environments, or direct Grafana queries. Test any custom role and billing agreement before relying on them.
+
+A later isolated Lab deployment of the Bicep group-role module created the expected single-action role and assignment at one resource group for a temporary service principal without credentials. Both resources and the temporary application, principal, and deployment records were independently verified absent after cleanup. This tested the module's provisioning and removal, not a cost query through that principal, the complete Bicep or Terraform deployment, or per-viewer access.
 
 A follow-up comparison using a signed-in Azure CLI user queried one AI account with the collector's resource ID filter at both resource-group and subscription scope. Actual and amortized daily totals matched for that account over one 27-day window, with 13 rows in each result and no continuation. This was not a collector or managed-identity test; other accounts, billing agreements, windows, and pagination still need validation.
 
@@ -68,7 +78,11 @@ The workspace's retention and daily ingestion cap apply to these records. Snapsh
 
 ## Configure resource-group query mode
 
-This mode changes the query endpoint, not existing Azure permissions. Set `cost_query_scope = "resourceGroup"` in the Terraform Azure stage or `param costQueryScope = 'resourceGroup'` in the Bicep parameters, with cost collection enabled. Both default to `subscription` for compatibility. Neither deployment creates resource-group cost grants; separately managed grants must cover **every** resource group containing a monitored account.
+Set `cost_query_scope = "resourceGroupManaged"` in the Terraform Azure stage or `param costQueryScope = 'resourceGroupManaged'` in the Bicep parameters, with cost collection enabled, to create the narrowly scoped roles and assignments automatically. Each custom role is assignable only at its monitored resource group; several accounts in the same group share one role and assignment. The deployer needs `Microsoft.Authorization/roleDefinitions/write` and, for lifecycle cleanup, `Microsoft.Authorization/roleDefinitions/delete` at subscription scope, plus role-assignment write/delete permission on each monitored group. Bicep also requires subscription deployment permissions for its nested role modules. Check custom-role quotas and organizational policies. The complete managed-role deployment has not been validated live; only the isolated Bicep role module was deployed in the Lab.
+
+Alternatively, set `cost_query_scope = "resourceGroup"` or `param costQueryScope = 'resourceGroup'` to manage the group grants yourself. This changes the query endpoint but does not create or remove cost grants. Separately managed grants must cover **every** resource group containing a monitored account. Both deployment paths default to `subscription` for compatibility.
+
+### Grant separately in `resourceGroup` mode
 
 After deploying the enabled pipeline, retrieve the cost identity's **object ID**. For Terraform, from the repository root:
 
@@ -97,7 +111,9 @@ if ($LASTEXITCODE -ne 0) { throw "Cost role assignment failed" }
 
 Repeat for every distinct monitored group. Allow time for role propagation, then verify actual and amortized collection for your billing environment. A newly deployed Function can fail its first run until these grants exist and propagate; a denied or incomplete collection does not publish a completion marker.
 
-**Existing deployments need an access migration.** Where possible, grant and verify the new group access first. For Terraform, inspect the plan: switching scope should remove `azurerm_role_assignment.cost_reader[0]` if that subscription assignment is managed by this state. Apply only after reviewing the plan. For Bicep, incremental deployment does **not** delete a previously created subscription assignment when the module is omitted; review and explicitly remove the specific unwanted assignment separately. Externally managed resource-group grants and custom roles have their own lifecycle in either path.
+### Review and migrate existing access
+
+**Existing deployments need an access migration.** Where possible, grant and verify the new group access first; propagation and the order of role changes can interrupt collection. For Terraform, inspect the plan: switching scope should remove `azurerm_role_assignment.cost_reader[0]` if that subscription assignment is managed by this state. Terraform also manages the new custom roles and assignments in state; removing a group, disabling the pipeline, or changing modes can plan their removal. Apply only after reviewing the plan. For Bicep, incremental deployment does **not** delete a previously created subscription assignment, group assignment, or custom role when a module or monitored group is omitted. Review and explicitly remove each specific unwanted assignment first, then its custom role definition if it is no longer used. Never remove a role or assignment used by another workload. Externally managed grants have their own lifecycle in either path.
 
 In both cases, other direct, inherited, group-based, or billing-scope permissions can remain. A successful group query while broader access remains does **not** prove the group grant is sufficient: verify with an isolated identity lacking broader access or after reviewing and removing unwanted grants, including negative tests at excluded scopes in an authorized test environment. Review effective access before claiming reduced privilege; do not remove an assignment needed by another workload. For each monitored group, this read-only command lists direct assignments to the identity at that scope and inherited parent scopes, but does not by itself prove effective permissions or enumerate every group or billing grant:
 
