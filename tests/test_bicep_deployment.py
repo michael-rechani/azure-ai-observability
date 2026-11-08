@@ -202,7 +202,8 @@ class BicepDeploymentTests(unittest.TestCase):
                 values["costGithubOidcSubject"] = {"value": subject}
                 result, _ = self.run_harness("validate", values)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("exact GitHub repository main-branch subject", result.stderr)
+                self.assertIn("costGithubOidcSubject", result.stderr)
+                self.assertIn("main-branch", result.stderr)
 
         disabled = parameters()
         disabled["enableCostPipeline"] = {"value": False}
