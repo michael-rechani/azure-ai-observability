@@ -2,13 +2,13 @@
 
 The Bicep path deploys Azure monitoring resources, scoped access, alerts, the Grafana data source and dashboards, and an optional cost-collection Function. **Terraform and Python are not required.** Bicep creates the Azure resources; the PowerShell 7 helper packages and publishes the Function and uses the Grafana data-plane API, which are not native Bicep resources.
 
-Neither deployment path has been validated in a live Azure subscription. Start in nonproduction, review expected charges, and complete the [acceptance checklist](setup.md#acceptance-checklist). The templates monitor existing Foundry/OpenAI accounts; they do not create or resize model deployments, instrument applications, or run evaluations.
+Neither complete deployment path has been validated in a live Azure subscription. An isolated lab tested the optional Bicep cost Function module separately; see [cost collection](costs.md). Start in nonproduction, review expected charges, and complete the [acceptance checklist](setup.md#acceptance-checklist). The templates monitor existing Foundry/OpenAI accounts; they do not create or resize model deployments, instrument applications, or run evaluations.
 
 ## Prerequisites
 
 - Azure CLI 2.60+ with Bicep installed (`az bicep install`) and PowerShell 7. The helper runs on the machine with the Azure CLI credentials.
 - An existing monitoring resource group in a region supporting Managed Grafana Standard, Application Insights, and, if enabled, Functions Flex Consumption with PowerShell 7.6.
-- Permission to create resources and role assignments in the monitoring resource group and each selected account/workspace. The cost collector additionally requires permission to assign **Cost Management Reader at subscription scope**; a budget requires permission to create subscription budgets.
+- Permission to create resources and role assignments in the monitoring resource group and each selected account/workspace. The default cost collector also requires permission to assign **Cost Management Reader at subscription scope**; resource-group query mode instead requires separately managed grants. A budget requires permission to create subscription budgets.
 - The signed-in identity must receive **Grafana Admin**. Use its Entra object ID for `grafanaAdminObjectId`, or grant it access separately. Azure subscription permissions alone are not Grafana data-plane access.
 - Network access to Azure management APIs, the public Grafana endpoint, and the Function SCM endpoint when publishing the cost collector. This starter does not implement sovereign-cloud endpoints or private networking.
 
@@ -45,6 +45,8 @@ param telemetryPublisherPrincipals = [
 ### Optional cost collection and budget
 
 Set `enableCostPipeline = true` for the daily collector, detailed cost dashboard, and business overview. The overview keeps cost collection status, actual cost by currency, observed agent activity, and PTU signals distinct; it does not calculate an overall health score. `costLookbackDays` defaults to 90 and can be 31-366 days. At least one account is required, and **all monitored accounts must be in the monitoring subscription** whenever cost collection or the budget is enabled. Deploy separate stacks for other subscriptions. Without those features, Bicep can monitor accounts in other subscriptions when the deployer has access.
+
+`costQueryScope` defaults to `subscription`, which creates the subscription-wide cost-reader assignment. To query each account's resource group instead, set `param costQueryScope = 'resourceGroup'` and arrange the separate grants in [cost collection](costs.md#configure-resource-group-query-mode). The complete Bicep deployment has not been validated end to end in Azure. **Switching an existing Bicep deployment does not delete its old subscription assignment**; inspect and remove unwanted access explicitly.
 
 The helper rejects combinations exceeding 30 minutes of minimum Cost Management API pacing: `accounts x ceil(lookbackDays / 27) x 2 x 16 seconds`. At 90 days, this permits up to 14 accounts. See [cost collection](costs.md) for permissions, billing interpretation, timing, snapshot completion, and limitations.
 

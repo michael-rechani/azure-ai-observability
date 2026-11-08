@@ -30,3 +30,8 @@ output "cost_function_name" {
   description = "Scheduled cost collector Function App, or null when the pipeline is disabled."
   value       = try(azurerm_function_app_flex_consumption.cost[0].name, null)
 }
+
+output "cost_identity_principal_id" {
+  description = "Cost collector managed identity object ID, or null when the pipeline is disabled."
+  value       = try(azurerm_user_assigned_identity.cost[0].principal_id, null)
+}

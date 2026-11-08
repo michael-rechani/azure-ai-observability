@@ -18,6 +18,9 @@ param(
     [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
     [string] $IdentityClientId,
 
+    [ValidateSet('subscription', 'resourceGroup')]
+    [string] $CostQueryScope = 'subscription',
+
     [ValidateRange(31, 366)]
     [int] $LookbackDays = 90
 )
@@ -101,16 +104,36 @@ function Invoke-AzurePost {
                 Authorization = "Bearer $token"
                 ClientType    = 'AzureAIObservabilityCostCollector'
             }
-            return Invoke-RestMethod -Method Post -Uri $Uri -Headers $headers `
-                -ContentType 'application/json; charset=utf-8' -Body $Body
+            $statusCode = $null
+            $result = Invoke-RestMethod -Method Post -Uri $Uri -Headers $headers `
+                -ContentType 'application/json; charset=utf-8' -Body $Body `
+                -MaximumRedirection 0 -StatusCodeVariable statusCode
+            if ($CostRequest) {
+                if ($statusCode -eq 204) {
+                    return $null
+                }
+                if ($statusCode -ne 200) {
+                    throw "Cost Management returned an unexpected HTTP status: $statusCode."
+                }
+                if ($null -eq $result -or
+                    ($result -is [string] -and [string]::IsNullOrWhiteSpace($result))) {
+                    throw 'Cost Management returned an empty HTTP 200 response.'
+                }
+            }
+            elseif ($statusCode -ne 204) {
+                throw "Logs Ingestion returned an unexpected HTTP status: $statusCode."
+            }
+            return $result
         }
         catch {
             $responseProperty = $_.Exception.PSObject.Properties['Response']
             $response = if ($null -ne $responseProperty) { $responseProperty.Value } else { $null }
             $status = if ($null -ne $response) { [int] $response.StatusCode } else { 0 }
             $transient = $status -eq 408 -or $status -eq 429 -or $status -ge 500 -or
-                $_.Exception -is [System.Net.Http.HttpRequestException] -or
-                $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+                ($status -eq 0 -and (
+                    $_.Exception -is [System.Net.Http.HttpRequestException] -or
+                    $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+                ))
             if (-not $transient -or $attempt -eq 5) {
                 throw
             }
@@ -179,9 +202,20 @@ function Get-CostRows {
             $null -eq $properties.PSObject.Properties['rows']) {
             throw 'Cost Management returned a response without columns or rows.'
         }
+        if ($properties.columns -isnot [array] -or $properties.rows -isnot [array]) {
+            throw 'Cost Management returned columns or rows that are not arrays.'
+        }
         $indexes = @{}
         for ($index = 0; $index -lt $properties.columns.Count; $index++) {
-            $indexes[$properties.columns[$index].name] = $index
+            $column = $properties.columns[$index]
+            if ($null -eq $column -or $null -eq $column.PSObject.Properties['name'] -or
+                $column.name -isnot [string] -or [string]::IsNullOrWhiteSpace($column.name)) {
+                throw 'Cost Management returned an invalid column name.'
+            }
+            if ($indexes.ContainsKey($column.name)) {
+                throw 'Cost Management returned duplicate column names.'
+            }
+            $indexes[$column.name] = $index
         }
         foreach ($required in @('PreTaxCost', 'UsageDate', 'Currency')) {
             if (-not $indexes.ContainsKey($required)) {
@@ -190,7 +224,7 @@ function Get-CostRows {
         }
 
         foreach ($row in $properties.rows) {
-            if ($row.Count -ne $properties.columns.Count) {
+            if ($row -isnot [array] -or $row.Count -ne $properties.columns.Count) {
                 throw 'Cost Management returned a row with an unexpected number of columns.'
             }
             $usageDate = [DateTime]::ParseExact(
@@ -201,12 +235,13 @@ function Get-CostRows {
                     [System.Globalization.DateTimeStyles]::AdjustToUniversal
             )
             $currency = [string] $row[$indexes['Currency']]
+            $cost = $row[$indexes['PreTaxCost']]
             if ($usageDate.Date -lt $Start.Date -or $usageDate.Date -gt $End.Date -or
                 $currency -notmatch '^[A-Za-z]{3}$' -or
-                $null -eq $row[$indexes['PreTaxCost']]) {
+                $null -eq $cost -or $cost -is [bool]) {
                 throw 'Cost Management returned an invalid date, currency, or cost.'
             }
-            $amount = [Convert]::ToDecimal($row[$indexes['PreTaxCost']], $script:InvariantCulture)
+            $amount = [Convert]::ToDecimal($cost, $script:InvariantCulture)
             [pscustomobject]@{
                 AccountId = $AccountId
                 CostType  = $CostType
@@ -254,22 +289,37 @@ if ($accounts.Count -eq 0) {
     throw 'At least one monitored AI account is required.'
 }
 $accountPattern = '^/subscriptions/' + [regex]::Escape($SubscriptionId) +
-    '/resourceGroups/[^/]+/providers/Microsoft\.CognitiveServices/accounts/[^/]+$'
+    '/resourceGroups/(?<resourceGroup>[^/]+)/providers/Microsoft\.CognitiveServices/accounts/[^/]+$'
 $accountSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$accountScopes = @{}
+$subscriptionScope = "https://management.azure.com/subscriptions/$SubscriptionId"
 foreach ($account in $accounts) {
-    if ($account -isnot [string] -or $account -notmatch $accountPattern -or -not $accountSet.Add($account)) {
+    if ($account -isnot [string]) {
         throw 'Monitored accounts must be unique AI account resource IDs in the configured subscription.'
     }
+    $match = [regex]::Match($account, $accountPattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success -or -not $accountSet.Add($account)) {
+        throw 'Monitored accounts must be unique AI account resource IDs in the configured subscription.'
+    }
+    $scope = $subscriptionScope
+    if ($CostQueryScope -eq 'resourceGroup') {
+        $resourceGroup = $match.Groups['resourceGroup'].Value
+        if ($resourceGroup -in @('.', '..') -or $resourceGroup -match '[\\%\x00-\x1f\x7f]') {
+            throw 'The monitored account contains an invalid resource group name.'
+        }
+        $scope += '/resourceGroups/' + [uri]::EscapeDataString($resourceGroup)
+    }
+    $accountScopes[$account] = $scope
 }
 
 $now = (Get-Date).ToUniversalTime()
 $windowStart = $now.Date.AddDays(1 - $LookbackDays)
-$costUri = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.CostManagement/query?api-version=2025-03-01"
 $ingestionUri = $IngestionEndpoint.TrimEnd('/') +
     "/dataCollectionRules/$RuleId/streams/Custom-AICostSnapshot?api-version=2023-01-01"
 $uniqueRows = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 
 foreach ($account in $accounts) {
+    $costUri = $accountScopes[$account] + '/providers/Microsoft.CostManagement/query?api-version=2025-03-01'
     foreach ($costType in @('ActualCost', 'AmortizedCost')) {
         # Leave a full-day margin inside Cost Management's calendar-month limit.
         for ($start = $windowStart; $start -le $now.Date; $start = $start.AddDays(27)) {

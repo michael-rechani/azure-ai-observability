@@ -338,6 +338,7 @@ run "cost_pipeline_uses_managed_identity_and_complete_schema" {
     condition = (
       azurerm_role_assignment.cost_reader[0].scope == "/subscriptions/00000000-0000-0000-0000-000000000000" &&
       azurerm_role_assignment.cost_reader[0].role_definition_name == "Cost Management Reader" &&
+      azurerm_function_app_flex_consumption.cost[0].app_settings["COST_QUERY_SCOPE"] == "subscription" &&
       azurerm_role_assignment.cost_ingestion[0].scope == azurerm_monitor_data_collection_rule.cost[0].id &&
       azurerm_role_assignment.cost_ingestion[0].role_definition_name == "Monitoring Metrics Publisher"
     )
@@ -370,6 +371,45 @@ run "cost_pipeline_uses_managed_identity_and_complete_schema" {
     )
     error_message = "The cost table must contain the snapshot completeness and usage-date fields."
   }
+}
+
+run "resource_group_cost_scope_omits_subscription_role" {
+  command = plan
+  variables {
+    enable_cost_pipeline = true
+    cost_query_scope     = "resourceGroup"
+    monitored_accounts = {
+      foundry = {
+        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
+        ptu_deployments = []
+      }
+    }
+  }
+  override_resource {
+    target          = azurerm_user_assigned_identity.cost[0]
+    override_during = plan
+    values = {
+      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cost"
+      principal_id = "00000000-0000-0000-0000-000000000008"
+      client_id    = "00000000-0000-0000-0000-000000000009"
+    }
+  }
+  assert {
+    condition = (
+      length(azurerm_role_assignment.cost_reader) == 0 &&
+      azurerm_function_app_flex_consumption.cost[0].app_settings["COST_QUERY_SCOPE"] == "resourceGroup" &&
+      output.cost_identity_principal_id == azurerm_user_assigned_identity.cost[0].principal_id
+    )
+    error_message = "Resource-group queries must not receive the automatic subscription cost role and must expose the identity for separate assignments."
+  }
+}
+
+run "cost_scope_must_be_valid" {
+  command = plan
+  variables {
+    cost_query_scope = "invalid"
+  }
+  expect_failures = [var.cost_query_scope]
 }
 
 run "cost_collection_requires_accounts" {
@@ -416,5 +456,46 @@ run "cost_collection_accepts_maximum_default_accounts" {
   assert {
     condition     = length(azurerm_function_app_flex_consumption.cost) == 1
     error_message = "Fourteen accounts with the default lookback must fit within the request-pacing limit."
+  }
+}
+
+run "cost_scope_migration_initial_subscription_role" {
+  command = apply
+  plan_options {
+    target = [azurerm_role_assignment.cost_reader]
+  }
+  variables {
+    enable_cost_pipeline = true
+    monitored_accounts = {
+      foundry = {
+        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
+        ptu_deployments = []
+      }
+    }
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.cost_reader) == 1
+    error_message = "The original subscription-scoped cost assignment must be represented in state."
+  }
+}
+
+run "cost_scope_migration_removes_managed_subscription_role" {
+  command = plan
+  plan_options {
+    target = [azurerm_role_assignment.cost_reader]
+  }
+  variables {
+    enable_cost_pipeline = true
+    cost_query_scope     = "resourceGroup"
+    monitored_accounts = {
+      foundry = {
+        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
+        ptu_deployments = []
+      }
+    }
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.cost_reader) == 0
+    error_message = "Switching to resource-group queries must remove the Terraform-managed subscription cost assignment."
   }
 }

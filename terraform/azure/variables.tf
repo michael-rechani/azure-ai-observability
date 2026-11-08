@@ -271,6 +271,16 @@ variable "enable_cost_pipeline" {
   default     = false
 }
 
+variable "cost_query_scope" {
+  description = "Cost query scope: subscription (automatic reader role) or resourceGroup (cost roles managed separately)."
+  type        = string
+  default     = "subscription"
+  validation {
+    condition     = contains(["subscription", "resourceGroup"], var.cost_query_scope)
+    error_message = "cost_query_scope must be subscription or resourceGroup."
+  }
+}
+
 variable "cost_lookback_days" {
   description = "Rolling daily cost history to refresh. Older corrections are not collected automatically."
   type        = number

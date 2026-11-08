@@ -157,7 +157,7 @@
   <path d="M1054 936H1120" class="data"/>
   <rect x="72" y="1024" width="462" height="116" rx="10" fill="#211e16" stroke="#725f2e" stroke-width="1.5"/>
   <text x="88" y="1054" class="name">Function identity and storage</text>
-  <text x="88" y="1080" class="body">Separate identity: subscription-wide cost reader</text>
+  <text x="88" y="1080" class="body">Separate identity; cost scope configurable</text>
   <text x="88" y="1104" class="body">Storage supports the Function runtime</text>
   <text x="88" y="1128" class="small">Function logs → App Insights; storage reads → workspace</text>
   <rect x="560" y="1024" width="494" height="116" rx="10" fill="#211e16" stroke="#725f2e" stroke-width="1.5"/>

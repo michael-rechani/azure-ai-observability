@@ -18,6 +18,10 @@ Include the affected component, reproduction steps, and sanitized evidence where
 
 These static checks do not guarantee security or inspect deployed Azure resources. The scanners may not understand every Azure resource or expression. Review their findings, access controls, public endpoints, cost-collector permissions, and your Azure configuration before production.
 
+## Optional cost-pipeline permissions
+
+By default, the collector's identity receives subscription-wide Cost Management Reader, which includes `Microsoft.Support/*` and is not strictly read-only. An opt-in resource-group query mode requires separate grants; switching modes does not automatically remove every existing or inherited assignment. Account filters do not limit role permissions, and Grafana Viewer is not a per-user Azure authorization boundary. See [cost permissions and migration](docs/costs.md#configure-resource-group-query-mode) before enabling or changing the pipeline.
+
 ## Optional cost-pipeline storage
 
 The optional cost pipeline's storage account enables seven-day soft delete for blobs and containers and sends Blob `StorageRead` diagnostics to the monitoring workspace. Workspace ingestion and retention can incur charges. The account still has a public network endpoint; anonymous blob access and shared-key authentication are disabled, and the Function uses Entra authorization. A private endpoint and customer-managed keys are not provisioned by default because they require customer-specific networking, DNS, and key-lifecycle decisions. Review those requirements and the remaining scanner findings before production use.

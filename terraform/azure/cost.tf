@@ -146,7 +146,7 @@ resource "azurerm_role_assignment" "cost_storage_diagnostics" {
 }
 
 resource "azurerm_role_assignment" "cost_reader" {
-  count                            = var.enable_cost_pipeline ? 1 : 0
+  count                            = var.enable_cost_pipeline && var.cost_query_scope == "subscription" ? 1 : 0
   scope                            = "/subscriptions/${var.subscription_id}"
   role_definition_name             = "Cost Management Reader"
   principal_id                     = azurerm_user_assigned_identity.cost[0].principal_id
@@ -217,6 +217,7 @@ resource "azurerm_function_app_flex_consumption" "cost" {
     APPLICATIONINSIGHTS_AUTHENTICATION_STRING = "ClientId=${azurerm_user_assigned_identity.cost[0].client_id};Authorization=AAD"
     COST_SUBSCRIPTION_ID                      = var.subscription_id
     COST_ACCOUNT_IDS                          = jsonencode([for account in values(var.monitored_accounts) : account.resource_id])
+    COST_QUERY_SCOPE                          = var.cost_query_scope
     COST_INGESTION_ENDPOINT                   = azurerm_monitor_data_collection_endpoint.cost[0].logs_ingestion_endpoint
     COST_DCR_IMMUTABLE_ID                     = azurerm_monitor_data_collection_rule.cost[0].immutable_id
     COST_IDENTITY_CLIENT_ID                   = azurerm_user_assigned_identity.cost[0].client_id

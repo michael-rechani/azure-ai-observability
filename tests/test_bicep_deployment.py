@@ -134,11 +134,20 @@ class BicepDeploymentTests(unittest.TestCase):
         invalid_prefix = parameters()
         invalid_prefix["namePrefix"] = {"value": "Invalid-Prefix"}
         cases.append((invalid_prefix, "namePrefix must"))
+        invalid_scope = parameters()
+        invalid_scope["costQueryScope"] = {"value": "invalid"}
+        cases.append((invalid_scope, "costQueryScope must"))
         for values, expected in cases:
             with self.subTest(expected=expected):
                 result, _ = self.run_harness("validate", values)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(expected, result.stderr)
+
+    def test_resource_group_cost_scope_is_accepted_by_deployment_validation(self):
+        scoped = parameters()
+        scoped["costQueryScope"] = {"value": "resourceGroup"}
+        result, _ = self.run_harness("validate", scoped)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_grafana_creates_dashboards_with_separate_workspace_defaults(self):
         result, calls = self.run_harness("grafana")
@@ -262,6 +271,12 @@ class BicepTemplateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         template = json.loads(result.stdout)
         self.assertEqual(template["parameters"]["grafanaMajorVersion"]["defaultValue"], "12")
+        self.assertEqual(template["parameters"]["costQueryScope"]["defaultValue"], "subscription")
+        self.assertEqual(
+            template["parameters"]["costQueryScope"]["allowedValues"],
+            ["subscription", "resourceGroup"],
+        )
+        self.assertIn("costIdentityPrincipalId", template["outputs"])
         resources = resources_of(template)
         self.assertTrue(any(r["type"].lower() == "microsoft.insights/scheduledqueryrules" for r in resources))
         nested = [r["properties"]["template"] for r in resources
@@ -269,12 +284,33 @@ class BicepTemplateTests(unittest.TestCase):
         cost_template = next(t for t in nested if any(
             r["type"].lower() == "microsoft.web/sites" for r in resources_of(t)
         ))
+        cost_deployment = next(r for r in resources
+                               if r["type"].lower() == "microsoft.resources/deployments"
+                               and r["properties"]["template"] == cost_template)
+        self.assertEqual(
+            cost_deployment["properties"]["parameters"]["costQueryScope"]["value"],
+            "[parameters('costQueryScope')]",
+        )
+        cost_reader = next(r for r in resources
+                           if r["type"].lower() == "microsoft.resources/deployments"
+                           and "-cost-reader" in r["name"])
+        self.assertEqual(
+            cost_reader["condition"],
+            "[and(parameters('enableCostPipeline'), equals(parameters('costQueryScope'), 'subscription'))]",
+        )
+        self.assertEqual(cost_reader["subscriptionId"], "[subscription().subscriptionId]")
+        self.assertEqual(
+            cost_reader["properties"]["parameters"]["principalId"]["value"],
+            "[reference('cost').outputs.principalId.value]",
+        )
         cost_resources = resources_of(cost_template)
         app = next(r for r in cost_resources if r["type"].lower() == "microsoft.web/sites")
         config = app["properties"]["functionAppConfig"]
         self.assertEqual(config["runtime"], {"name": "powershell", "version": "7.6"})
         self.assertEqual(config["scaleAndConcurrency"]["maximumInstanceCount"], 40)
         self.assertEqual(config["deployment"]["storage"]["authentication"]["type"], "UserAssignedIdentity")
+        app_settings = next(r for r in cost_resources if r["type"].lower() == "microsoft.web/sites/config")
+        self.assertEqual(app_settings["properties"]["COST_QUERY_SCOPE"], "[parameters('costQueryScope')]")
         self.assertTrue(any(r["type"].lower() == "microsoft.operationalinsights/workspaces/tables" for r in cost_resources))
         budget_template = next(t for t in nested if any(
             r["type"].lower() == "microsoft.consumption/budgets" for r in resources_of(t)

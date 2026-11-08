@@ -4,7 +4,7 @@ This walkthrough takes you from an existing Azure AI account to dashboards in Az
 
 **Jump to:** [Preparation](#1-install-the-tools-and-get-the-repository) · [Bicep](#3a-deploy-with-bicep) · [Terraform](#3b-deploy-with-terraform) · [Verify](#4-open-and-verify-the-dashboards) · [Troubleshooting](#troubleshooting-and-cleanup)
 
-> **Before you start:** This repository has not yet been validated in a live Azure subscription. Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
+> **Before you start:** The complete deployment has not yet been validated in a live Azure subscription. An isolated lab tested the optional Bicep cost Function module only; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
 
 ## What you need and what will be created
 
@@ -34,7 +34,7 @@ Ask your Azure administrator to confirm the following before deployment. An Azur
 | Who | Access needed |
 | --- | --- |
 | Person deploying | Permission to create or update the monitoring resources and write role assignments in the monitoring resource group and on each selected AI account and telemetry workspace. Creating a resource group also needs subscription-level permission. |
-| Person deploying optional costs | In addition, permission to assign **Cost Management Reader at subscription scope** and publish the Function. The Function identity receives subscription-wide cost-read access, even though its queries filter to selected accounts. |
+| Person deploying optional costs | In addition, permission to publish the Function. The default also assigns **Cost Management Reader at subscription scope**; its access extends beyond account filters and includes `Microsoft.Support/*`, which can permit support-ticket writes. An optional resource-group mode needs separately managed grants. Review [cost permissions](costs.md#operation-and-permissions). |
 | Grafana administrator | The signed-in identity running the Grafana configuration must receive **Grafana Admin** on the new instance. The deployment assigns this to the object ID you provide; Azure subscription permissions alone are not Grafana data-plane access. |
 | Grafana managed identity | The deployment grants it monitoring access to the selected accounts and read access to selected workspaces. These are separate from the human administrator's permissions. |
 | Business users, if desired | An existing Entra group or user can receive **Grafana Viewer**. Viewer is read-only, but it is **not a data-isolation boundary**: the shared data source can query data accessible to Grafana's identity. Use separate deployments or data boundaries for sensitive or different customer data. |
@@ -157,6 +157,7 @@ Replace every example subscription ID, account name, account resource group, acc
 | `foundryDashboardAccount`, `ptuDashboardAccount` | Initial dashboard selections. Each non-null account must also appear in `monitoredAccounts`; use that account's actual region. |
 | `enableAgentAlerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enableCostPipeline` | Leave `false` for no cost collector, or set `true` after reviewing the permissions and charges in [cost collection](costs.md). This also enables the cost and business dashboards. |
+| `costQueryScope` | Defaults to `subscription`. The optional `resourceGroup` mode needs separate role assignments and an access-migration review; see [configuration](costs.md#configure-resource-group-query-mode). |
 
 **Add** `param enablePtuAlerts = false` to the file: PTU alerts otherwise default to enabled. Turn them on later, after [discovering the metrics](setup.md#metric-discovery).
 
@@ -357,6 +358,7 @@ Replace the example values:
 | `monitored_accounts` | The full account resource IDs and actual provisioned deployment names. Use `ptu_deployments = []` for accounts without PTUs; list a shared Foundry/PTU account only once. |
 | `enable_agent_alerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enable_cost_pipeline` | Leave `false`, or set `true` after reviewing the [cost permissions and charges](costs.md). The Grafana stage has a separate switch for the cost and business dashboards. |
+| `cost_query_scope` | Defaults to `subscription`. The optional `resourceGroup` mode needs separate role assignments and an access-migration review; see [configuration](costs.md#configure-resource-group-query-mode). |
 
 Add `enable_ptu_alerts = false` to the file; the default is `true`. If one account is used for both Foundry and PTUs, the account map can look like this:
 
@@ -464,7 +466,7 @@ Use the full [acceptance checklist](setup.md#acceptance-checklist) before relyin
 | Dashboard opens but data queries fail | Check the Grafana managed identity's Monitoring Reader or Log Analytics Reader assignments, data-source configuration, selected resource IDs, and role propagation. |
 | Agent charts are empty | Confirm actual tracing/exporter configuration, workspace, ingestion permissions, and the attribute contract; see [telemetry troubleshooting](telemetry.md). |
 | PTU panels are empty | Confirm a provisioned SKU, the deployment name, real traffic, time range, and supported metric definitions and dimensions. |
-| Cost dashboard is missing or stale | Confirm both Terraform switches or the Bicep switch, the scheduled Function run, subscription cost-reader access, ingestion, and billing availability. See [cost troubleshooting](costs.md#troubleshooting). |
+| Cost dashboard is missing or stale | Confirm both Terraform switches or the Bicep switch, the scheduled Function run, cost access at the configured scope, ingestion, and billing availability. See [cost troubleshooting](costs.md#troubleshooting). |
 | Terraform cannot access state | Check the storage/container names, distinct state keys, Blob Data Contributor role, role propagation, endpoint networking, and Azure CLI sign-in. |
 
 **Cleanup can delete data.** Terraform-managed dashboards should be removed with the Grafana stage while Grafana is still reachable, before removing the Azure stage; review each destruction plan and retention policy. A Terraform-managed resource group may be deleted along with its contents. Keep the separate state account until the lifecycle is complete and your retention policy permits removal.

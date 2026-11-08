@@ -103,6 +103,10 @@ function Test-BicepDeploymentParameters {
     $enableCost = [bool](Get-BicepParameter $Parameters 'enableCostPipeline' $false)
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
     $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)
+    $costScope = [string](Get-BicepParameter $Parameters 'costQueryScope' 'subscription')
+    if ($costScope -cnotin @('subscription', 'resourceGroup')) {
+        throw 'costQueryScope must be subscription or resourceGroup.'
+    }
     if ($lookback -lt 31 -or $lookback -gt 366) {
         throw 'costLookbackDays must be between 31 and 366.'
     }

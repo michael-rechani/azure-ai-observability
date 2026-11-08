@@ -1,10 +1,13 @@
 import calendar
 import datetime as dt
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[1]
 PWSH = shutil.which("pwsh")
@@ -12,10 +15,14 @@ PWSH = shutil.which("pwsh")
 
 @unittest.skipUnless(PWSH, "PowerShell 7 is required to exercise the Function collector")
 class CostCollectorTests(unittest.TestCase):
-    def run_collector(self, scenario, now_utc=None):
+    def run_collector(self, scenario, now_utc=None, query_scope=None, use_timer=False):
         command = [PWSH, "-NoLogo", "-NoProfile", "-File", str(ROOT / "tests" / "cost_collector_harness.ps1"), scenario]
         if now_utc:
             command.extend(["-NowUtc", now_utc])
+        if query_scope is not None:
+            command.extend(["-CostQueryScope", query_scope])
+        if use_timer:
+            command.append("-UseTimer")
         process = subprocess.run(
             command,
             check=True,
@@ -37,6 +44,7 @@ class CostCollectorTests(unittest.TestCase):
         self.assertEqual({entry["Query"]["type"] for entry in requests}, {"ActualCost", "AmortizedCost"})
         for entry in requests:
             query = entry["Query"]
+            self.assertIn("/subscriptions/00000000-0000-0000-0000-000000000000/providers/", entry["Uri"])
             start = dt.datetime.fromisoformat(query["timePeriod"]["from"].replace("Z", "+00:00"))
             end = dt.datetime.fromisoformat(query["timePeriod"]["to"].replace("Z", "+00:00"))
             self.assertLess(end - start, dt.timedelta(days=27))
@@ -61,6 +69,59 @@ class CostCollectorTests(unittest.TestCase):
         self.assertEqual(len({row["RowKey"] for row in costs}), len(costs))
         self.assertTrue(all(row["Currency"] == "USD" and row["Cost"] == -12.34 for row in costs))
         self.assertEqual({row["RunId"] for row in records}, {marker["RunId"]})
+
+    def test_resource_group_queries_follow_each_account_and_encode_group_names(self):
+        result = self.run_collector("multiple-resource-groups", query_scope="resourceGroup")
+        self.assertTrue(result["Success"], result["Error"])
+        self.assertEqual(len(result["CostRequests"]), 18)
+        for request in result["CostRequests"]:
+            account = request["Query"]["dataset"]["filter"]["dimensions"]["values"][0]
+            group = account.split("/")[4]
+            expected = "rg%20%28east%29" if group == "rg (east)" else group
+            self.assertIn(f"/resourceGroups/{expected}/providers/Microsoft.CostManagement/query?", request["Uri"])
+        costs = [row for row in self.records(result) if row["RecordType"] == "Cost"]
+        self.assertEqual(len(costs), 18)
+        self.assertEqual(self.records(result)[-1]["ExpectedRows"], 18)
+
+    def test_resource_group_mode_rejects_unsafe_scopes_and_does_not_publish_partial_results(self):
+        for scenario in ("invalid-group-dot", "invalid-group-encoded", "invalid-group-backslash"):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario, query_scope="resourceGroup")
+                self.assertFalse(result["Success"])
+                self.assertIn("invalid resource group", result["Error"])
+                self.assertEqual(result["DataRequestUris"], [])
+                self.assertEqual(result["Ingestions"], [])
+
+        denied = self.run_collector("denied-resource-group", query_scope="resourceGroup")
+        self.assertFalse(denied["Success"])
+        self.assertIn("resource group denial", denied["Error"])
+        self.assertEqual(len(denied["CostRequests"]), 7)
+        self.assertEqual(denied["Ingestions"], [])
+
+        for scenario in ("bad-next-other-group", "bad-next-subscription"):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario, query_scope="resourceGroup")
+                self.assertFalse(result["Success"])
+                self.assertIn("continuation URL", result["Error"])
+                self.assertEqual(len(result["CostRequests"]), 1)
+                self.assertEqual(result["Ingestions"], [])
+
+    def test_timer_defaults_to_subscription_and_rejects_invalid_scope(self):
+        default = self.run_collector("normal", query_scope="__missing__", use_timer=True)
+        self.assertTrue(default["Success"], default["Error"])
+        self.assertTrue(all("/resourceGroups/" not in entry["Uri"] for entry in default["CostRequests"]))
+
+        scoped = self.run_collector("normal", query_scope="resourceGroup", use_timer=True)
+        self.assertTrue(scoped["Success"], scoped["Error"])
+        self.assertTrue(all("/resourceGroups/ai/" in entry["Uri"] for entry in scoped["CostRequests"]))
+
+        for use_timer in (False, True):
+            with self.subTest(use_timer=use_timer):
+                invalid = self.run_collector("normal", query_scope="invalid", use_timer=use_timer)
+                self.assertFalse(invalid["Success"])
+                self.assertIn("CostQueryScope", invalid["Error"])
+                self.assertEqual(invalid["DataRequestUris"], [])
+                self.assertEqual(invalid["Ingestions"], [])
 
     def test_windows_cover_short_months_leap_days_and_partial_days(self):
         for timestamp in (
@@ -94,22 +155,248 @@ class CostCollectorTests(unittest.TestCase):
                 self.assertEqual(marker["WindowEnd"], timestamp)
 
     def test_empty_result_is_not_fabricated_zero_cost(self):
-        result = self.run_collector("empty")
-        self.assertTrue(result["Success"], result["Error"])
-        records = self.records(result)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["RecordType"], "Complete")
-        self.assertEqual(records[0]["ExpectedRows"], 0)
+        for scenario in ("empty", "empty-rows"):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertTrue(result["Success"], result["Error"])
+                records = self.records(result)
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0]["RecordType"], "Complete")
+                self.assertEqual(records[0]["ExpectedRows"], 0)
 
-    def test_follows_safe_pagination_and_rejects_external_continuations(self):
+    def test_invalid_successful_cost_responses_do_not_publish_a_snapshot(self):
+        for scenario in (
+            "empty-200", "json-null", "unexpected-status",
+            "null-rows", "scalar-rows", "object-rows", "non-array-row", "null-rows-after-page",
+            "null-columns", "scalar-columns",
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertFalse(result["Success"])
+                self.assertIn("Cost Management", result["Error"])
+                self.assertEqual(result["Ingestions"], [])
+                if scenario == "null-rows-after-page":
+                    self.assertEqual(len(result["CostRequests"]), 2)
+
+    def test_ambiguous_columns_and_boolean_cost_do_not_publish_a_snapshot(self):
+        for scenario in (
+            "duplicate-cost-column", "duplicate-cost-column-case",
+            "duplicate-currency-column", "duplicate-date-column",
+            "duplicate-column-after-page", "boolean-cost", "boolean-zero-cost",
+            "null-column-name", "blank-column-name", "numeric-column-name",
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertFalse(result["Success"])
+                self.assertIn("Cost Management", result["Error"])
+                if scenario.startswith("duplicate"):
+                    self.assertIn("duplicate column names", result["Error"])
+                elif scenario.endswith("column-name"):
+                    self.assertIn("invalid column name", result["Error"])
+                else:
+                    self.assertIn("invalid date, currency, or cost", result["Error"])
+                self.assertEqual(result["Ingestions"], [])
+                if scenario == "duplicate-column-after-page":
+                    self.assertEqual(len(result["CostRequests"]), 2)
+
+    def test_numeric_costs_are_preserved(self):
+        for scenario, expected in (
+            ("integer-cost", -12), ("zero-cost", 0), ("numeric-string-cost", 12.34),
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertTrue(result["Success"], result["Error"])
+                costs = [row for row in self.records(result) if row["RecordType"] == "Cost"]
+                self.assertTrue(costs)
+                self.assertTrue(all(row["Cost"] == expected for row in costs))
+                self.assertEqual(self.records(result)[-1]["ExpectedRows"], len(costs))
+
+    def test_real_http_transport_distinguishes_empty_and_malformed_responses(self):
+        requests = []
+        redirected_requests = []
+        responses = {
+            "/no-content": (204, b""),
+            "/empty-success": (200, b""),
+            "/json-null": (200, b"null"),
+            "/unexpected-status": (202, b'{"properties":{"columns":[],"rows":[]}}'),
+            "/valid": (200, b'{"properties":{"columns":[],"rows":[]}}'),
+            "/ingestion-valid": (204, b""),
+            "/ingestion-unexpected-200": (200, b'{"error":"unexpected"}'),
+            "/ingestion-unexpected-202": (202, b"{}"),
+            "/ingestion-unexpected-206": (206, b"{}"),
+        }
+        for status in (301, 302, 303, 307, 308):
+            for kind in ("cost", "ingestion"):
+                responses[f"/redirect-{kind}-{status}"] = (status, b"")
+
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def respond(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                redirected_requests.append((self.command, self.path, body))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"properties":{"columns":[],"rows":[]}}')
+
+            def do_GET(self):
+                self.respond()
+
+            def do_POST(self):
+                self.respond()
+
+        redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        redirect_thread = threading.Thread(target=redirect_server.serve_forever, daemon=True)
+        redirect_thread.start()
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                requests.append(self.path)
+                status, body = responses[self.path]
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                if self.path.startswith("/redirect-"):
+                    self.send_header(
+                        "Location", f"http://127.0.0.1:{redirect_server.server_port}/target"
+                    )
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        env = os.environ.copy()
+        for key in list(env):
+            if key.lower() in ("http_proxy", "https_proxy", "all_proxy"):
+                env.pop(key)
+        env["COST_COLLECTOR_SOURCE"] = str(ROOT / "function" / "cost-collector" / "cost_collector.ps1")
+        env["COST_COLLECTOR_TEST_URL"] = f"http://127.0.0.1:{server.server_port}"
+        script = r"""
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $env:COST_COLLECTOR_SOURCE, [ref] $tokens, [ref] $errors
+            )
+            if ($errors.Count -gt 0) { throw 'Unable to parse the collector.' }
+            $definition = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq 'Invoke-AzurePost'
+            }, $true)
+            if ($null -eq $definition) { throw 'Collector transport function not found.' }
+            . ([ScriptBlock]::Create($definition.Extent.Text))
+            function Get-ManagedToken { param($Resource) return 'mock-token' }
+
+            $cases = @(
+                'no-content', 'empty-success', 'json-null', 'unexpected-status', 'valid',
+                'ingestion-valid', 'ingestion-unexpected-200', 'ingestion-unexpected-202',
+                'ingestion-unexpected-206'
+            )
+            foreach ($status in @(301, 302, 303, 307, 308)) {
+                $cases += "redirect-cost-$status", "redirect-ingestion-$status"
+            }
+            $results = @(foreach ($case in $cases) {
+                $script:LastCostRequest = $null
+                try {
+                    $value = Invoke-AzurePost -Uri ($env:COST_COLLECTOR_TEST_URL + '/' + $case) `
+                        -Audience 'mock' -Body ([Text.Encoding]::UTF8.GetBytes('{"query":"synthetic"}')) `
+                        -CostRequest:($case -notlike '*ingestion*')
+                    [pscustomobject]@{
+                        Case = $case
+                        Success = $true
+                        IsNull = $null -eq $value
+                        HasProperties = $null -ne $value -and $null -ne $value.PSObject.Properties['properties']
+                    }
+                }
+                catch {
+                    [pscustomobject]@{
+                        Case = $case
+                        Success = $false
+                        Error = $_.Exception.Message
+                    }
+                }
+            })
+            Write-Output ('RESULT=' + (ConvertTo-Json -InputObject $results -Compress))
+        """
+        try:
+            process = subprocess.run(
+                [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+                check=False,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            redirect_server.shutdown()
+            redirect_server.server_close()
+            redirect_thread.join()
+        self.assertEqual(process.returncode, 0, process.stderr)
+        result = json.loads(next(line[7:] for line in process.stdout.splitlines() if line.startswith("RESULT=")))
+        by_case = {entry["Case"]: entry for entry in result}
+        self.assertCountEqual(requests, responses)
+        self.assertTrue(by_case["no-content"]["Success"])
+        self.assertTrue(by_case["no-content"]["IsNull"])
+        self.assertTrue(by_case["valid"]["Success"])
+        self.assertFalse(by_case["valid"]["IsNull"])
+        self.assertTrue(by_case["valid"]["HasProperties"])
+        self.assertTrue(by_case["ingestion-valid"]["Success"])
+        for status in (200, 202, 206):
+            with self.subTest(ingestion_status=status):
+                result = by_case[f"ingestion-unexpected-{status}"]
+                self.assertFalse(result["Success"])
+                self.assertIn("Logs Ingestion", result["Error"])
+        for case in ("empty-success", "json-null", "unexpected-status"):
+            with self.subTest(case=case):
+                self.assertFalse(by_case[case]["Success"])
+                self.assertIn("Cost Management", by_case[case]["Error"])
+        for status in (301, 302, 303, 307, 308):
+            for kind in ("cost", "ingestion"):
+                with self.subTest(status=status, kind=kind):
+                    self.assertFalse(by_case[f"redirect-{kind}-{status}"]["Success"])
+        self.assertEqual(redirected_requests, [])
+
+    def test_follows_safe_pagination_and_rejects_unsafe_continuations(self):
         result = self.run_collector("pagination")
         self.assertTrue(result["Success"], result["Error"])
         self.assertEqual(len(result["CostRequests"]), 7)
         self.assertEqual(self.records(result)[-1]["ExpectedRows"], 7)
-        rejected = self.run_collector("bad-next")
-        self.assertFalse(rejected["Success"])
-        self.assertIn("unexpected continuation", rejected["Error"])
-        self.assertEqual(rejected["Ingestions"], [])
+        continuation = next(entry for entry in result["CostRequests"] if "$skiptoken=" in entry["Uri"])
+        initial_uri = continuation["Uri"].split("&$skiptoken=", 1)[0]
+        self.assertTrue(any(
+            entry["Uri"] == initial_uri and entry["Query"] == continuation["Query"]
+            for entry in result["CostRequests"]
+        ))
+
+        for scenario, expected_requests in (
+            ("bad-next", 1),
+            ("bad-next-host-suffix", 1),
+            ("bad-next-http", 1),
+            ("bad-next-port", 1),
+            ("bad-next-userinfo", 1),
+            ("bad-next-path", 1),
+            ("bad-next-repeat", 1),
+            ("bad-next-cycle", 2),
+        ):
+            with self.subTest(scenario=scenario):
+                rejected = self.run_collector(scenario)
+                self.assertFalse(rejected["Success"])
+                self.assertIn("continuation URL", rejected["Error"])
+                self.assertEqual(len(rejected["CostRequests"]), expected_requests)
+                self.assertEqual(
+                    rejected["DataRequestUris"],
+                    [entry["Uri"] for entry in rejected["CostRequests"]],
+                )
+                self.assertEqual(rejected["Ingestions"], [])
 
     def test_deduplicates_identical_rows_but_rejects_conflicts(self):
         result = self.run_collector("duplicate")
@@ -137,6 +424,24 @@ class CostCollectorTests(unittest.TestCase):
         self.assertEqual(len(failed["CostRequests"]), 6)
         self.assertEqual(failed["Ingestions"], [])
 
+    def test_non_transient_http_errors_are_not_retried(self):
+        for status in (400, 401, 403, 404):
+            with self.subTest(status=status):
+                result = self.run_collector(f"client-error-{status}")
+                self.assertFalse(result["Success"])
+                self.assertEqual(len(result["CostRequests"]), 1)
+                self.assertEqual(result["Sleeps"], [])
+                self.assertEqual(result["Ingestions"], [])
+
+    def test_transient_http_and_network_errors_are_retried(self):
+        for scenario in ("transient-http-408", "transient-http-500", "transient-network"):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertFalse(result["Success"])
+                self.assertEqual(len(result["CostRequests"]), 6)
+                self.assertTrue(result["Sleeps"])
+                self.assertEqual(result["Ingestions"], [])
+
     def test_bad_cost_response_fails_before_ingestion(self):
         for scenario in ("cost-error", "bad-columns"):
             with self.subTest(scenario=scenario):
@@ -156,6 +461,23 @@ class CostCollectorTests(unittest.TestCase):
                 self.assertFalse(failed["Success"])
                 self.assertTrue(failed["Ingestions"])
                 self.assertFalse(any(row["RecordType"] == "Complete" for row in self.records(failed)))
+
+    def test_unexpected_ingestion_success_status_does_not_publish_completion(self):
+        for status in (200, 202, 206):
+            with self.subTest(status=status):
+                result = self.run_collector(f"ingestion-unexpected-{status}")
+                self.assertFalse(result["Success"])
+                self.assertIn(f"Logs Ingestion returned an unexpected HTTP status: {status}", result["Error"])
+                self.assertEqual(len(result["Ingestions"]), 1)
+                self.assertFalse(any(row["RecordType"] == "Complete" for row in self.records(result)))
+
+    def test_unexpected_completion_response_is_reported_as_failure(self):
+        for status in (200, 202, 206):
+            with self.subTest(status=status):
+                result = self.run_collector(f"marker-unexpected-{status}")
+                self.assertFalse(result["Success"])
+                self.assertIn(f"Logs Ingestion returned an unexpected HTTP status: {status}", result["Error"])
+                self.assertEqual([row["RecordType"] for row in self.records(result)][-1], "Complete")
 
 
 if __name__ == "__main__":

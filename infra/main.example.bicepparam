@@ -48,6 +48,8 @@ param enableAgentAlerts = false
 
 // Set true to deploy the cost Function and dashboard; all accounts must be in this subscription.
 param enableCostPipeline = false
+// resourceGroup requires separately managed cost-role grants.
+param costQueryScope = 'subscription'
 param costLookbackDays = 90
 
 // Optional monthly account-filtered budget, in subscription billing currency.

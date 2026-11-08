@@ -47,7 +47,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 
 ## Acceptance checklist
 
-- The three core dashboards and, when enabled, the cost dashboard and business overview query using the managed identity.
+- The three core dashboards and, when enabled, the cost dashboard and business overview query using Grafana's managed identity. The cost dashboards read snapshots from Log Analytics; the Function's separate managed identity collects them from Cost Management.
 - Resource inventory contains expected authorized accounts/projects; missing rows trigger an RBAC check.
 - A known agent execution produces correlated run, tool, and model spans with an OperationId.
 - Model usage totals match known calls and do not count parent agent summaries twice.

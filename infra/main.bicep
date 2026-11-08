@@ -104,6 +104,10 @@ param costBudgetThresholdPercent int = 80
 @description('Deploy the optional daily cost collector and its Log Analytics ingestion pipeline.')
 param enableCostPipeline bool = false
 
+@description('Cost query scope. Resource-group mode requires cost role assignments managed separately.')
+@allowed(['subscription', 'resourceGroup'])
+param costQueryScope string = 'subscription'
+
 @minValue(31)
 @maxValue(366)
 param costLookbackDays int = 90
@@ -339,12 +343,13 @@ module cost 'modules/cost.bicep' = if (enableCostPipeline) {
     workspaceName: workspace.name
     insightsName: insights.name
     accountIds: monitoredAccountIds
+    costQueryScope: costQueryScope
     lookbackDays: costLookbackDays
     retentionInDays: retentionInDays
   }
 }
 
-module costReader 'modules/cost-reader.bicep' = if (enableCostPipeline) {
+module costReader 'modules/cost-reader.bicep' = if (enableCostPipeline && costQueryScope == 'subscription') {
   name: '${namePrefix}-cost-reader'
   scope: subscription()
   params: {
@@ -374,6 +379,7 @@ output workspaceResourceId string = workspace.id
 output applicationInsightsResourceId string = insights.id
 output actionGroupResourceId string = actionGroup.id
 output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName : ''
+output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
 output dashboardConfiguration object = {
   monitoringWorkspaceResourceId: workspace.id
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId

@@ -5,6 +5,7 @@ param namePrefix string
 param workspaceName string
 param insightsName string
 param accountIds string[]
+param costQueryScope string
 param lookbackDays int
 param retentionInDays int
 
@@ -266,6 +267,7 @@ resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
     APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${identity.properties.clientId};Authorization=AAD'
     COST_SUBSCRIPTION_ID: subscription().subscriptionId
     COST_ACCOUNT_IDS: string(accountIds)
+    COST_QUERY_SCOPE: costQueryScope
     COST_INGESTION_ENDPOINT: endpoint.properties.logsIngestion.endpoint
     COST_DCR_IMMUTABLE_ID: rule.properties.immutableId
     COST_IDENTITY_CLIENT_ID: identity.properties.clientId

@@ -149,7 +149,8 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 - Public endpoints with Entra authorization in this starter. Private endpoints and Azure Monitor Private Link require a separate networking design; see setup.
 - No prompt, response, tool-argument, or exception-content capture in the demo.
 - Log retention defaults to 30 days with a 1 GB daily ingestion cap. A cap can cause gaps and is **not** a complete spending limit.
-- The opt-in cost collector receives **Cost Management Reader for the subscription**, even though it queries only the selected account IDs. Grafana Viewer access is read-only, not a data-isolation boundary.
+- The opt-in cost collector defaults to **Cost Management Reader for the subscription**, even though it filters to selected accounts. The role includes `Microsoft.Support/*`, which can permit support-ticket writes. An optional [resource-group query mode](docs/costs.md#configure-resource-group-query-mode) requires separate grants. A private-storage lab probe verified a complete actual and amortized cost snapshot, but full dashboard and other billing-environment validation remain outstanding. Grafana Viewer access is read-only, not a data-isolation boundary.
+- [Direct Grafana managed-identity cost queries and delegated per-viewer access](https://github.com/michael-rechani/azure-ai-observability/issues/4) remain under investigation and have not been demonstrated.
 - Grafana hosting, telemetry ingestion/retention, alert rules, Function execution, and storage can incur charges. PTU deployment and reservation charges remain separate.
 
 For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md). This repository is licensed under [Apache-2.0](LICENSE).
