@@ -1,0 +1,76 @@
+name: Collect Azure AI costs
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    if: github.ref == 'refs/heads/main' && vars.COST_COLLECTOR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      AZURE_CORE_OUTPUT: none
+    concurrency:
+      group: azure-ai-cost-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check collector configuration
+        shell: pwsh
+        env:
+          COST_AZURE_CLIENT_ID: ${{ vars.COST_AZURE_CLIENT_ID }}
+          COST_AZURE_TENANT_ID: ${{ vars.COST_AZURE_TENANT_ID }}
+          COST_AZURE_SUBSCRIPTION_ID: ${{ vars.COST_AZURE_SUBSCRIPTION_ID }}
+          COST_ACCOUNT_IDS: ${{ vars.COST_ACCOUNT_IDS }}
+          COST_QUERY_SCOPE: ${{ vars.COST_QUERY_SCOPE }}
+          COST_INGESTION_ENDPOINT: ${{ vars.COST_INGESTION_ENDPOINT }}
+          COST_DCR_IMMUTABLE_ID: ${{ vars.COST_DCR_IMMUTABLE_ID }}
+          COST_LOOKBACK_DAYS: ${{ vars.COST_LOOKBACK_DAYS }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @(
+            'COST_AZURE_CLIENT_ID', 'COST_AZURE_TENANT_ID', 'COST_AZURE_SUBSCRIPTION_ID',
+            'COST_ACCOUNT_IDS', 'COST_QUERY_SCOPE', 'COST_INGESTION_ENDPOINT',
+            'COST_DCR_IMMUTABLE_ID', 'COST_LOOKBACK_DAYS'
+          )) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Configure the $name repository variable before enabling the collector."
+            }
+          }
+      - uses: Azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ vars.COST_AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.COST_AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Collect and publish a complete snapshot
+        shell: pwsh
+        env:
+          COST_AZURE_CLIENT_ID: ${{ vars.COST_AZURE_CLIENT_ID }}
+          COST_AZURE_TENANT_ID: ${{ vars.COST_AZURE_TENANT_ID }}
+          COST_AZURE_SUBSCRIPTION_ID: ${{ vars.COST_AZURE_SUBSCRIPTION_ID }}
+          COST_ACCOUNT_IDS: ${{ vars.COST_ACCOUNT_IDS }}
+          COST_QUERY_SCOPE: ${{ vars.COST_QUERY_SCOPE }}
+          COST_INGESTION_ENDPOINT: ${{ vars.COST_INGESTION_ENDPOINT }}
+          COST_DCR_IMMUTABLE_ID: ${{ vars.COST_DCR_IMMUTABLE_ID }}
+          COST_LOOKBACK_DAYS: ${{ vars.COST_LOOKBACK_DAYS }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\run_cost_github.ps1 `
+            -SubscriptionId $env:COST_AZURE_SUBSCRIPTION_ID `
+            -TenantId $env:COST_AZURE_TENANT_ID `
+            -AccountIdsJson $env:COST_ACCOUNT_IDS `
+            -IngestionEndpoint $env:COST_INGESTION_ENDPOINT `
+            -RuleId $env:COST_DCR_IMMUTABLE_ID `
+            -IdentityClientId $env:COST_AZURE_CLIENT_ID `
+            -CostQueryScope $env:COST_QUERY_SCOPE `
+            -LookbackDays $env:COST_LOOKBACK_DAYS

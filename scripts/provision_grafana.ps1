@@ -124,6 +124,19 @@ foreach ($entry in $files.GetEnumerator()) {
     $prepared.Add(@{ dashboard = $dashboard; existing = $null })
 }
 
+$availableDashboardUids = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($item in $prepared) {
+    [void]$availableDashboardUids.Add([string]$item.dashboard.uid)
+}
+foreach ($item in $prepared) {
+    if ($item.dashboard.Contains('links')) {
+        $item.dashboard['links'] = @($item.dashboard.links | Where-Object {
+            $match = [regex]::Match([string]$_.url, '^/d/([^/]+)/')
+            -not $match.Success -or $availableDashboardUids.Contains($match.Groups[1].Value)
+        })
+    }
+}
+
 $token = (& az account get-access-token --subscription $SubscriptionId `
     --resource 'https://dashboard.azure.com' --query accessToken --output tsv --only-show-errors | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {

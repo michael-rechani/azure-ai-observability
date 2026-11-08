@@ -22,6 +22,7 @@ locals {
     for key, filename in local.dashboard_files :
     key => jsondecode(file("${var.dashboard_directory}/${filename}"))
   }
+  dashboard_uids      = [for dashboard in values(local.source_dashboards) : dashboard.uid]
   telemetry_workspace = var.dashboard_defaults.telemetry_workspace_resource_id != null ? var.dashboard_defaults.telemetry_workspace_resource_id : var.dashboard_defaults.monitoring_workspace_resource_id
   telemetry_defaults = local.telemetry_workspace == null ? tomap({}) : tomap({
     workspaceResourceId = local.telemetry_workspace
@@ -70,6 +71,10 @@ resource "grafana_dashboard" "monitoring" {
   for_each = local.dashboard_files
   config_json = replace(
     jsonencode(merge(local.source_dashboards[each.key], {
+      links = [
+        for link in try(local.source_dashboards[each.key].links, []) :
+        link if contains(local.dashboard_uids, split("/", link.url)[2])
+      ]
       templating = merge(local.source_dashboards[each.key].templating, {
         list = [
           for variable in local.source_dashboards[each.key].templating.list :

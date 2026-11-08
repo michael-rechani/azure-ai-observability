@@ -8,6 +8,12 @@ import build_dashboards
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_DS = {"type": "grafana-testdata-datasource", "uid": "ai-demo-data"}
+DEMO_DASHBOARD_UIDS = {
+    "demo-foundry-agent-operations",
+    "demo-azure-openai-ptu",
+    "demo-azure-ai-costs",
+    "demo-azure-ai-business-overview",
+}
 
 
 def series(name, values, ref_id):
@@ -66,7 +72,7 @@ AGENT_DATA = {
         ("OutputTokens", [24000, 25000, 24500, 26000, 27000, 26500, 28000, 30000, 32000, 30000, 31000, 33000, 30000, 29000, 31000, 30000, 28000, 29000, 28500, 27500]),
         ("MissingUsageSpans", [1, 0, 1, 1, 2, 1, 1, 2, 3, 2, 1, 2, 1, 1, 2, 1, 1, 0, 1, 1]),
     ],
-    5: "OperationId,Name,ResultCode,DurationMs,Agent,Operation\n0af7651916cd43dd8448eb211c80319c,model-request,429,1200,sample-agent,chat\n4bf92f3577b34da6a3ce929d0e0e4736,search-tool,503,2100,sample-agent,execute_tool\n",
+    5: "OperationId,Name,ResultCode,DurationMs\n0af7651916cd43dd8448eb211c80319c,model-request,429,1200\n4bf92f3577b34da6a3ce929d0e0e4736,search-tool,503,2100\n",
     6: [
         ("ObservedSpans", [1600, 1650, 1630, 1700, 1750, 1730, 1780, 1820, 1900, 1850, 1880, 1920, 1860, 1840, 1890, 1850, 1800, 1820, 1840, 1810]),
         ("GenAISpans", [1200, 1250, 1230, 1300, 1350, 1330, 1380, 1420, 1500, 1450, 1480, 1520, 1460, 1440, 1490, 1450, 1400, 1420, 1440, 1410]),
@@ -110,12 +116,17 @@ COST_DATA = {
 BUSINESS_DATA = {
     1: COST_DATA[2],
     2: COST_DATA[3],
-    3: AGENT_DATA[2],
+    3: AGENT_DATA[2][:1],
     4: PTU_DATA[1],
     5: COST_DATA[5],
     6: AGENT_DATA[1],
     7: PTU_DATA[3],
-    8: [
+    8: PTU_DATA[4],
+    9: [("FailureRatePercent", [
+        round(100 * failed / observed, 2)
+        for failed, observed in zip(AGENT_DATA[2][1][1], AGENT_RUN_COUNTS, strict=True)
+    ])],
+    10: [
         ("Input tokens", PTU_DATA[5][0][1]),
         ("Output tokens", PTU_DATA[6][0][1]),
     ],
@@ -130,6 +141,19 @@ def demo_dashboard(source, samples):
     result["tags"].append("demo-simulated-data")
     result.pop("__inputs", None)
     result["refresh"] = False
+    result["links"] = [
+        {
+            **link,
+            "url": link["url"].replace(
+                f"/d/{link['url'].split('/')[2]}/",
+                f"/d/demo-{link['url'].split('/')[2]}/",
+                1,
+            ),
+        }
+        for link in result.get("links", [])
+        if not link["url"].startswith("/d/")
+        or f"demo-{link['url'].split('/')[2]}" in DEMO_DASHBOARD_UIDS
+    ]
     for item in result["panels"]:
         item["gridPos"]["y"] += 3
         item["datasource"] = DEMO_DS

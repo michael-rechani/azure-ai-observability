@@ -46,6 +46,9 @@ function Test-BicepDeploymentParameters {
     foreach ($target in $accounts) {
         Assert-RealGuid $target.subscriptionId 'Account subscription ID'
         Assert-TargetName $target.resourceGroup 'Account resource group'
+        if ($target.resourceGroup -in @('.', '..') -or $target.resourceGroup -match '[\\%?#\x00-\x1f\x7f]') {
+            throw 'Account resource group cannot contain path traversal, URI delimiters, backslashes, or control characters.'
+        }
         Assert-TargetName $target.name 'Account name'
         $id = "/subscriptions/$($target.subscriptionId)/resourceGroups/$($target.resourceGroup)/providers/Microsoft.CognitiveServices/accounts/$($target.name)"
         if (-not $accountIds.Add($id)) {
@@ -103,6 +106,19 @@ function Test-BicepDeploymentParameters {
     $enableCost = [bool](Get-BicepParameter $Parameters 'enableCostPipeline' $false)
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
     $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)
+    $costScope = [string](Get-BicepParameter $Parameters 'costQueryScope' 'subscription')
+    $collectorMode = [string](Get-BicepParameter $Parameters 'costCollectorMode' 'githubOidc')
+    $githubSubject = [string](Get-BicepParameter $Parameters 'costGithubOidcSubject' '')
+    if ($collectorMode -cnotin @('function', 'githubOidc')) {
+        throw 'costCollectorMode must be function or githubOidc.'
+    }
+    if ($enableCost -and $collectorMode -eq 'githubOidc' -and
+        $githubSubject -cnotmatch '^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+:ref:refs/heads/main$') {
+        throw 'costGithubOidcSubject must be the exact GitHub repository main-branch subject.'
+    }
+    if ($costScope -cnotin @('subscription', 'resourceGroup', 'resourceGroupManaged')) {
+        throw 'costQueryScope must be subscription, resourceGroup, or resourceGroupManaged.'
+    }
     if ($lookback -lt 31 -or $lookback -gt 366) {
         throw 'costLookbackDays must be between 31 and 366.'
     }

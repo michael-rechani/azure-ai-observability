@@ -1,17 +1,27 @@
 param(
     [Parameter(Mandatory)][string] $Scenario,
-    [string] $NowUtc = ''
+    [string] $NowUtc = '',
+    [string] $CostQueryScope = 'subscription',
+    [switch] $UseTimer,
+    [switch] $UseAccessTokens,
+    [switch] $UseGitHubRunner
 )
 
 $ErrorActionPreference = 'Stop'
+$UseAccessTokens = $UseAccessTokens -or $UseGitHubRunner
 $env:IDENTITY_ENDPOINT = 'https://identity.example.invalid/token'
 $env:IDENTITY_HEADER = 'mock-identity-header'
+$global:IdentityRequests = 0
+$global:TokenRequests = [Collections.Generic.List[string]]::new()
+$global:DataRequestUris = [Collections.Generic.List[string]]::new()
 $global:CostRequests = [Collections.Generic.List[object]]::new()
 $global:Ingestions = [Collections.Generic.List[object]]::new()
 $global:Sleeps = [Collections.Generic.List[int]]::new()
 $global:Throttled = $false
 $global:Paged = $false
 $global:CostBatchCount = 0
+$global:RetryTarget = $null
+$global:RetrySleepTime = $null
 
 if ($NowUtc) {
     $global:MockNow = [DateTime]::ParseExact(
@@ -29,22 +39,115 @@ if ($NowUtc) {
 function global:Start-Sleep {
     param([int] $Seconds)
     $global:Sleeps.Add($Seconds)
+    if ($null -ne $global:RetryTarget -and $null -eq $global:RetrySleepTime) {
+        $global:RetrySleepTime = [DateTimeOffset]::UtcNow
+    }
+}
+
+function global:az {
+    $arguments = @($args)
+    $resourceIndex = [Array]::IndexOf($arguments, '--resource')
+    $tenantIndex = [Array]::IndexOf($arguments, '--tenant')
+    if ($arguments[0] -ne 'account' -or $arguments[1] -ne 'get-access-token' -or
+        $resourceIndex -lt 0 -or $tenantIndex -lt 0 -or
+        $arguments[$tenantIndex + 1] -ne '33333333-3333-3333-3333-333333333333' -or
+        $arguments -contains '--subscription') {
+        throw 'Unexpected Azure CLI command.'
+    }
+    $resource = [string] $arguments[$resourceIndex + 1]
+    $global:TokenRequests.Add($resource)
+    $global:LASTEXITCODE = 0
+    if ($Scenario -eq 'github-cli-fail' -or
+        ($Scenario -eq 'github-second-token-fail' -and $resource -eq 'https://monitor.azure.com/')) {
+        $global:LASTEXITCODE = 1
+        return ''
+    }
+    if ($Scenario -eq 'github-invalid-json') {
+        return 'mock-arm-token'
+    }
+    if ($Scenario -eq 'github-missing-expiry') {
+        return '{"accessToken":"mock-arm-token"}'
+    }
+    $expires = if ($Scenario -eq 'github-short-token') {
+        [DateTimeOffset]::UtcNow.AddMinutes(1).ToUnixTimeSeconds()
+    }
+    else {
+        [DateTimeOffset]::UtcNow.AddHours(2).ToUnixTimeSeconds()
+    }
+    $token = if ($resource -eq 'https://management.azure.com/') {
+        'mock-arm-token'
+    }
+    elseif ($resource -eq 'https://monitor.azure.com/') {
+        'mock-ingestion-token'
+    }
+    else {
+        throw 'Unexpected token audience.'
+    }
+    return @{ accessToken = $token; expires_on = $expires } | ConvertTo-Json -Compress
 }
 
 function global:Invoke-RestMethod {
-    param($Method, $Uri, $Headers, $ContentType, $Body)
+    param($Method, $Uri, $Headers, $ContentType, $Body, [string] $StatusCodeVariable,
+        [Nullable[int]] $MaximumRedirection)
 
     if ($Uri -like 'https://identity.example.invalid/*') {
+        $global:IdentityRequests++
         if ($Uri -notmatch 'api-version=2019-08-01' -or
             $Uri -notmatch 'client_id=00000000-0000-0000-0000-000000000003' -or
-            $Headers['X-IDENTITY-HEADER'] -ne 'mock-identity-header') {
-            throw 'Managed identity request omitted its version or identity.'
+            $Headers['X-IDENTITY-HEADER'] -ne 'mock-identity-header' -or
+            $null -eq $MaximumRedirection -or $MaximumRedirection -ne 0) {
+            throw 'Managed identity request omitted required parameters or allowed redirects.'
         }
         return [pscustomobject]@{ access_token = 'mock-token' }
     }
 
-    if ($Headers.Authorization -ne 'Bearer mock-token') {
-        throw 'Azure request omitted the managed identity bearer token.'
+    if ($StatusCodeVariable) {
+        if ($null -eq $MaximumRedirection -or $MaximumRedirection -ne 0) {
+            throw 'Azure requests must not automatically follow redirects.'
+        }
+        $status = if (($Scenario -eq 'empty' -or
+                ($Scenario -eq 'empty-continuation' -and $Uri.Contains('$skiptoken='))) -and
+            $Uri -like 'https://management.azure.com/*') {
+            204
+        }
+        elseif ($Scenario -eq 'unexpected-status' -and $Uri -like 'https://management.azure.com/*') {
+            202
+        }
+        elseif ($Scenario -match '^ingestion-unexpected-(200|202|206)$' -and
+            $Uri -like 'https://*.ingest.monitor.azure.com/*') {
+            [int] $Matches[1]
+        }
+        elseif ($Scenario -match '^marker-unexpected-(200|202|206)$' -and
+            $Uri -like 'https://*.ingest.monitor.azure.com/*') {
+            $unexpectedStatus = [int] $Matches[1]
+            $records = @(ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString($Body)))
+            if ($records[0].RecordType -eq 'Complete') { $unexpectedStatus } else { 204 }
+        }
+        elseif ($Uri -like 'https://*.ingest.monitor.azure.com/*') {
+            204
+        }
+        else {
+            200
+        }
+        Set-Variable -Name $StatusCodeVariable -Value $status -Scope 1
+    }
+
+    $global:DataRequestUris.Add([string] $Uri)
+    if ($UseAccessTokens) {
+        $expectedToken = if ($Uri -like 'https://management.azure.com/*') {
+            'mock-arm-token'
+        }
+        else {
+            'mock-ingestion-token'
+        }
+        if ($Headers.Authorization -ne ('Bearer ' + $expectedToken)) {
+            throw 'Azure request used the wrong access-token audience.'
+        }
+    }
+    else {
+        if ($Headers.Authorization -ne 'Bearer mock-token') {
+            throw 'Azure request omitted the managed identity bearer token.'
+        }
     }
     $text = [Text.Encoding]::UTF8.GetString($Body)
     if ($Uri -like 'https://management.azure.com/*') {
@@ -53,6 +156,23 @@ function global:Invoke-RestMethod {
         if ($Scenario -eq 'cost-error') {
             throw 'Mock Cost Management failure.'
         }
+        if ($Scenario -eq 'denied-resource-group' -and $Uri -like '*/resourceGroups/denied/*') {
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::Forbidden)
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock resource group denial', $response)
+        }
+        if ($Scenario -match '^client-error-(400|401|403|404)$') {
+            $statusCode = [int] $Matches[1]
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode] $statusCode)
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock client error', $response)
+        }
+        if ($Scenario -match '^transient-http-(408|500)$') {
+            $statusCode = [int] $Matches[1]
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode] $statusCode)
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock transient error', $response)
+        }
+        if ($Scenario -eq 'transient-network') {
+            throw [System.Net.Http.HttpRequestException]::new('Mock network error')
+        }
         if (($Scenario -eq 'throttle' -and -not $global:Throttled) -or $Scenario -eq 'retry-exhausted') {
             $global:Throttled = $true
             $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::TooManyRequests)
@@ -60,7 +180,50 @@ function global:Invoke-RestMethod {
             $null = $response.Headers.TryAddWithoutValidation('x-ms-ratelimit-microsoft.costmanagement-entity-retry-after', '19')
             throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock throttling', $response)
         }
-        if ($Scenario -eq 'empty') {
+        if ($Scenario -like 'throttle-header-*' -and -not $global:Throttled) {
+            $global:Throttled = $true
+            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::TooManyRequests)
+            switch ($Scenario) {
+                'throttle-header-invalid' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'invalid') }
+                'throttle-header-invalid-azure' {
+                    $null = $response.Headers.TryAddWithoutValidation('Retry-After', '5')
+                    $null = $response.Headers.TryAddWithoutValidation('x-ms-ratelimit-microsoft.costmanagement-entity-retry-after', 'invalid')
+                }
+                'throttle-header-negative' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '-1') }
+                'throttle-header-nan' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'NaN') }
+                'throttle-header-infinity' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'Infinity') }
+                'throttle-header-empty' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '') }
+                'throttle-header-ambiguous' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '5, 6') }
+                'throttle-header-invalid-date' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '1/2/2026') }
+                'throttle-header-huge' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '999999999999999999999') }
+                'throttle-header-fractional' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '19.2') }
+                'throttle-header-zero' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', '0') }
+                'throttle-header-date' { $null = $response.Headers.TryAddWithoutValidation('Retry-After', 'Sun, 06 Nov 1994 08:49:37 GMT') }
+                { $_ -match '^throttle-header-(future|soon)-(rfc|rfc850|asctime)$' } {
+                    $seconds = if ($Scenario -like 'throttle-header-future-*') { 86400 } else { 35 }
+                    $future = [DateTimeOffset]::UtcNow.AddSeconds($seconds)
+                    $global:RetryTarget = [DateTimeOffset]::FromUnixTimeSeconds($future.ToUnixTimeSeconds())
+                    $culture = [Globalization.CultureInfo]::InvariantCulture
+                    $value = switch -Wildcard ($Scenario) {
+                        '*-rfc' { $future.ToString('r', $culture) }
+                        '*-rfc850' { $future.ToString("dddd, dd-MMM-yy HH:mm:ss 'GMT'", $culture) }
+                        '*-asctime' {
+                            $future.ToString('ddd MMM', $culture) + ' ' + $future.Day.ToString().PadLeft(2) + ' ' +
+                                $future.ToString('HH:mm:ss yyyy', $culture)
+                        }
+                    }
+                    $null = $response.Headers.TryAddWithoutValidation('Retry-After', $value)
+                }
+                'throttle-header-missing' {}
+                default { throw 'Unknown retry-header test scenario.' }
+            }
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock throttling', $response)
+        }
+        if ($Scenario -eq 'empty' -or $Scenario -eq 'empty-200' -or
+            ($Scenario -eq 'empty-continuation' -and $Uri.Contains('$skiptoken='))) {
+            return ''
+        }
+        if ($Scenario -eq 'json-null') {
             return $null
         }
 
@@ -75,7 +238,10 @@ function global:Invoke-RestMethod {
             [pscustomobject]@{ name = 'PreTaxCost'; type = 'Number' }
         )
         $rows = @()
-        if ($Scenario -eq 'many' -or $Scenario -eq 'ingestion-error-late') {
+        if ($Scenario -eq 'empty-rows') {
+            $rows = @()
+        }
+        elseif ($Scenario -eq 'many' -or $Scenario -eq 'ingestion-error-late') {
             for ($i = 0; $i -lt 450; $i++) {
                 $currency = '{0}{1}{2}' -f [char][int](65 + [Math]::Floor($i / 676)),
                     [char][int](65 + [Math]::Floor(($i % 676) / 26)), [char][int](65 + ($i % 26))
@@ -95,18 +261,113 @@ function global:Invoke-RestMethod {
         if ($Scenario -eq 'bad-columns') {
             $columns = @($columns | Where-Object name -ne 'Currency')
         }
+        switch ($Scenario) {
+            'null-rows' { $rows = $null }
+            'scalar-rows' { $rows = 'invalid' }
+            'object-rows' { $rows = [pscustomobject]@{ value = 'invalid' } }
+            'non-array-row' { $rows = @('invalid') }
+            'boolean-cost' { $rows = @(,@('usd', $dateNumber, $true)) }
+            'boolean-zero-cost' { $rows = @(,@('usd', $dateNumber, $false)) }
+            'integer-cost' { $rows = @(,@('usd', $dateNumber, -12)) }
+            'zero-cost' { $rows = @(,@('usd', $dateNumber, 0)) }
+            'numeric-string-cost' { $rows = @(,@('usd', $dateNumber, '12.34')) }
+            'duplicate-cost-column' {
+                $columns += [pscustomobject]@{ name = 'PreTaxCost'; type = 'Number' }
+                $rows = @(,@('usd', $dateNumber, -12.34, 42))
+            }
+            'duplicate-cost-column-case' {
+                $columns += [pscustomobject]@{ name = 'pretaxcost'; type = 'Number' }
+                $rows = @(,@('usd', $dateNumber, -12.34, 42))
+            }
+            'duplicate-currency-column' {
+                $columns += [pscustomobject]@{ name = 'Currency'; type = 'String' }
+                $rows = @(,@('usd', $dateNumber, -12.34, 'EUR'))
+            }
+            'duplicate-date-column' {
+                $columns += [pscustomobject]@{ name = 'UsageDate'; type = 'Number' }
+                $rows = @(,@('usd', $dateNumber, -12.34, $dateNumber))
+            }
+            'duplicate-column-after-page' {
+                if ($Uri.Contains('$skiptoken=')) {
+                    $columns += [pscustomobject]@{ name = 'PreTaxCost'; type = 'Number' }
+                    $rows = @(,@('usd', $dateNumber, -12.34, 42))
+                }
+            }
+            'null-column-name' { $columns[0] = [pscustomobject]@{ name = $null; type = 'String' } }
+            'blank-column-name' { $columns[0] = [pscustomobject]@{ name = ' '; type = 'String' } }
+            'numeric-column-name' { $columns[0] = [pscustomobject]@{ name = 1; type = 'String' } }
+            'null-rows-after-page' {
+                if ($Uri.Contains('$skiptoken=')) { $rows = $null }
+            }
+            'null-columns' { $columns = $null }
+            'scalar-columns' { $columns = 'invalid' }
+        }
 
         $next = $null
-        if ($Scenario -eq 'pagination' -and -not $global:Paged -and $query.type -eq 'ActualCost') {
+        if ($Scenario -in @('pagination', 'empty-continuation', 'null-rows-after-page', 'duplicate-column-after-page',
+                'invalid-next-array-after-page') -and
+            -not $global:Paged -and $query.type -eq 'ActualCost') {
             $global:Paged = $true
             $next = $Uri + '&$skiptoken=next'
         }
-        if ($Scenario -eq 'bad-next') {
-            $next = 'https://evil.example.invalid/steal'
+        switch ($Scenario) {
+            'invalid-next-empty-array' { $next = @() }
+            'invalid-next-empty-object' { $next = [pscustomobject]@{} }
+            'invalid-next-single-array' {
+                if (-not $Uri.Contains('$skiptoken=')) { $next = @($Uri + '&$skiptoken=next') }
+            }
+            'invalid-next-boolean' { $next = $false }
+            'invalid-next-number' { $next = 0 }
+            'invalid-next-array-after-page' {
+                if ($Uri.Contains('$skiptoken=')) { $next = @() }
+            }
+            'empty-next-string' { $next = '' }
+            'bad-next' {
+                $next = 'https://evil.example.invalid/steal'
+            }
+            'bad-next-host-suffix' {
+                $next = $Uri.Replace('management.azure.com', 'management.azure.com.evil.example.invalid')
+            }
+            'bad-next-http' {
+                $next = $Uri.Replace('https://', 'http://')
+            }
+            'bad-next-port' {
+                $next = $Uri.Replace('management.azure.com', 'management.azure.com:8443')
+            }
+            'bad-next-userinfo' {
+                $next = $Uri.Replace('management.azure.com', 'user@management.azure.com')
+            }
+            'bad-next-path' {
+                $next = $Uri.Replace('/query?', '/exports?')
+            }
+            'bad-next-other-group' {
+                $next = $Uri.Replace('/resourceGroups/ai/', '/resourceGroups/other/')
+            }
+            'bad-next-subscription' {
+                $next = $Uri.Replace('/resourceGroups/ai/', '/')
+            }
+            'bad-next-repeat' {
+                $next = $Uri
+            }
+            'bad-next-cycle' {
+                $next = if ($Uri.Contains('$skiptoken=')) {
+                    $Uri.Replace('&$skiptoken=cycle', '')
+                }
+                else {
+                    $Uri + '&$skiptoken=cycle'
+                }
+            }
         }
-        return [pscustomobject]@{
-            properties = [pscustomobject]@{ columns = $columns; rows = $rows; nextLink = $next }
+        $properties = [ordered]@{ columns = $columns; rows = $rows }
+        if ($Scenario -ne 'missing-next-property') {
+            $properties.nextLink = $next
         }
+        $result = [pscustomobject]@{ properties = [pscustomobject] $properties }
+        if ($Scenario -like 'invalid-next-*') {
+            $json = ConvertTo-Json -InputObject $result -Depth 10 -Compress
+            return ConvertFrom-Json -InputObject $json
+        }
+        return $result
     }
 
     if ($Uri -like 'https://*.ingest.monitor.azure.com/*') {
@@ -114,6 +375,12 @@ function global:Invoke-RestMethod {
         $global:Ingestions.Add([pscustomobject]@{ Bytes = $Body.Length; Records = $records })
         if ($records[0].RecordType -eq 'Cost') {
             $global:CostBatchCount++
+            if ($Scenario -in @('ingestion-throttle-invalid', 'ingestion-throttle-huge')) {
+                $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::TooManyRequests)
+                $retryValue = if ($Scenario -eq 'ingestion-throttle-invalid') { 'invalid' } else { '999999999999999999999' }
+                $null = $response.Headers.TryAddWithoutValidation('Retry-After', $retryValue)
+                throw [Microsoft.PowerShell.Commands.HttpResponseException]::new('Mock ingestion throttling', $response)
+            }
             if ($Scenario -eq 'ingestion-error' -or
                 ($Scenario -eq 'ingestion-error-late' -and $global:CostBatchCount -eq 2)) {
                 throw 'Mock Logs Ingestion failure.'
@@ -127,17 +394,68 @@ function global:Invoke-RestMethod {
 $repo = Split-Path -Parent $PSScriptRoot
 $collector = Join-Path (Join-Path (Join-Path $repo 'function') 'cost-collector') 'cost_collector.ps1'
 $account = '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/example'
-$accountIds = ConvertTo-Json -InputObject @($account) -Compress
+$accounts = @($account)
+switch ($Scenario) {
+    'multiple-resource-groups' {
+        $accounts += $account.Replace('/resourceGroups/ai/', '/resourceGroups/AI/').Replace('/accounts/example', '/accounts/second')
+        $accounts += $account.Replace('/resourceGroups/ai/', '/resourceGroups/rg (east)/').Replace('/accounts/example', '/accounts/third')
+    }
+    'denied-resource-group' {
+        $accounts += $account.Replace('/resourceGroups/ai/', '/resourceGroups/denied/').Replace('/accounts/example', '/accounts/second')
+    }
+    'invalid-group-dot' {
+        $accounts += $account.Replace('/resourceGroups/ai/', '/resourceGroups/../').Replace('/accounts/example', '/accounts/second')
+    }
+    'invalid-group-encoded' {
+        $accounts += $account.Replace('/resourceGroups/ai/', '/resourceGroups/%2e%2e/').Replace('/accounts/example', '/accounts/second')
+    }
+    'invalid-group-backslash' {
+        $accounts += $account.Replace('/resourceGroups/ai/', '/resourceGroups/invalid\group/').Replace('/accounts/example', '/accounts/second')
+    }
+}
+$accountIds = ConvertTo-Json -InputObject $accounts -Compress
 $success = $false
 $message = ''
 try {
-    $null = & $collector `
-        -SubscriptionId '00000000-0000-0000-0000-000000000000' `
-        -AccountIdsJson $accountIds `
-        -IngestionEndpoint 'https://test.eastus-1.ingest.monitor.azure.com' `
-        -RuleId 'dcr-00000000000000000000000000000000' `
-        -IdentityClientId '00000000-0000-0000-0000-000000000003' `
-        -LookbackDays 62
+    $parameters = @{
+        SubscriptionId = '00000000-0000-0000-0000-000000000000'
+        AccountIdsJson = $accountIds
+        IngestionEndpoint = 'https://test.eastus-1.ingest.monitor.azure.com'
+        RuleId = 'dcr-00000000000000000000000000000000'
+        IdentityClientId = '00000000-0000-0000-0000-000000000003'
+        LookbackDays = 62
+    }
+    if ($UseGitHubRunner) {
+        $parameters.CostQueryScope = $CostQueryScope
+        $parameters.TenantId = '33333333-3333-3333-3333-333333333333'
+        $runner = Join-Path (Join-Path $repo 'scripts') 'run_cost_github.ps1'
+        $null = & $runner @parameters
+    }
+    elseif ($UseTimer) {
+        $env:COST_SUBSCRIPTION_ID = $parameters.SubscriptionId
+        $env:COST_ACCOUNT_IDS = $parameters.AccountIdsJson
+        $env:COST_INGESTION_ENDPOINT = $parameters.IngestionEndpoint
+        $env:COST_DCR_IMMUTABLE_ID = $parameters.RuleId
+        $env:COST_IDENTITY_CLIENT_ID = $parameters.IdentityClientId
+        $env:COST_LOOKBACK_DAYS = $parameters.LookbackDays
+        if ($CostQueryScope -eq '__missing__') {
+            Remove-Item Env:\COST_QUERY_SCOPE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:COST_QUERY_SCOPE = $CostQueryScope
+        }
+        $timer = Join-Path (Join-Path (Split-Path -Parent $collector) 'CollectCost') 'run.ps1'
+        $null = & $timer -Timer $null
+    }
+    else {
+        $parameters.CostQueryScope = $CostQueryScope
+        if ($UseAccessTokens) {
+            $parameters.IdentityProvider = 'accessTokens'
+            $parameters.ArmAccessToken = if ($Scenario -eq 'missing-arm-token') { '' } else { 'mock-arm-token' }
+            $parameters.IngestionAccessToken = if ($Scenario -eq 'missing-ingestion-token') { '' } else { 'mock-ingestion-token' }
+        }
+        $null = & $collector @parameters
+    }
     $success = $true
 }
 catch {
@@ -145,10 +463,15 @@ catch {
 }
 
 $result = [ordered]@{
-    Success      = $success
-    Error        = $message
-    CostRequests = @($global:CostRequests)
-    Ingestions   = @($global:Ingestions)
-    Sleeps       = @($global:Sleeps)
+    Success         = $success
+    Error           = $message
+    IdentityRequests = $global:IdentityRequests
+    TokenRequests   = @($global:TokenRequests)
+    DataRequestUris = @($global:DataRequestUris)
+    CostRequests    = @($global:CostRequests)
+    Ingestions      = @($global:Ingestions)
+    Sleeps          = @($global:Sleeps)
+    RetryTarget     = if ($null -ne $global:RetryTarget) { $global:RetryTarget.ToString('o') } else { $null }
+    RetrySleepTime  = if ($null -ne $global:RetrySleepTime) { $global:RetrySleepTime.ToString('o') } else { $null }
 }
 Write-Output ('RESULT=' + (ConvertTo-Json -InputObject $result -Depth 20 -Compress))

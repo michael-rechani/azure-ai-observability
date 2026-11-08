@@ -20,4 +20,7 @@ telemetry_publisher_principals   = {}
 enable_agent_alerts              = false
 monthly_ai_cost_budget_amount    = 0
 enable_cost_pipeline             = false
+cost_collector_mode              = "githubOidc"
+cost_github_oidc_subject         = "" # Set the exact repository main-branch subject before enabling.
+cost_query_scope                 = "resourceGroupManaged" # Least-privilege default when enabling; requires role-definition permissions.
 cost_lookback_days               = 90

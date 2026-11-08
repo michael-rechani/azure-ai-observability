@@ -126,6 +126,16 @@ variable "monitored_accounts" {
     error_message = "All monitored accounts must be in subscription_id. Deploy another stack for a different subscription."
   }
   validation {
+    condition = alltrue([
+      for account in values(var.monitored_accounts) : try(
+        !contains([".", ".."], split("/", account.resource_id)[4]) &&
+        !can(regex("[\\\\%?#\\x00-\\x1f\\x7f]", split("/", account.resource_id)[4])),
+        false
+      )
+    ])
+    error_message = "Each account must have a valid resource group name without path traversal, URI delimiters, backslashes, or control characters."
+  }
+  validation {
     condition     = length(distinct([for account in values(var.monitored_accounts) : lower(account.resource_id)])) == length(var.monitored_accounts)
     error_message = "Each monitored account must be listed only once."
   }
@@ -266,9 +276,35 @@ variable "cost_budget_threshold_percent" {
 }
 
 variable "enable_cost_pipeline" {
-  description = "Deploy a daily Function that collects account-attributed cost data into Log Analytics."
+  description = "Deploy the optional account-attributed cost collection pipeline."
   type        = bool
   default     = false
+}
+
+variable "cost_collector_mode" {
+  description = "Cost collector runtime. githubOidc (default) is Function-free: no Function App, plan, or storage account is deployed and a scheduled GitHub Actions job federates to the managed identity through OIDC. function deploys the original Azure Function. Changing the mode on an existing deployment adds or removes those resources; stored snapshots in Log Analytics are kept."
+  type        = string
+  default     = "githubOidc"
+  validation {
+    condition     = contains(["function", "githubOidc"], var.cost_collector_mode)
+    error_message = "cost_collector_mode must be function or githubOidc."
+  }
+}
+
+variable "cost_github_oidc_subject" {
+  description = "Exact GitHub repository main-branch OIDC subject; required for githubOidc mode."
+  type        = string
+  default     = ""
+}
+
+variable "cost_query_scope" {
+  description = "Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles)."
+  type        = string
+  default     = "subscription"
+  validation {
+    condition     = contains(["subscription", "resourceGroup", "resourceGroupManaged"], var.cost_query_scope)
+    error_message = "cost_query_scope must be subscription, resourceGroup, or resourceGroupManaged."
+  }
 }
 
 variable "cost_lookback_days" {

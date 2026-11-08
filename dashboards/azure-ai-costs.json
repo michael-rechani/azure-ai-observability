@@ -517,5 +517,25 @@
       "pluginId": "grafana-azure-monitor-datasource",
       "pluginName": "Azure Monitor"
     }
+  ],
+  "links": [
+    {
+      "type": "link",
+      "title": "Business overview",
+      "url": "/d/azure-ai-business-overview/_?var-monitoringWorkspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "PTU performance",
+      "url": "/d/azure-openai-ptu/_",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    }
   ]
 }

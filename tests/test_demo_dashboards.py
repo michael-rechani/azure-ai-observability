@@ -43,12 +43,16 @@ class DemoDashboardTests(unittest.TestCase):
 
     def test_demo_cannot_be_confused_with_live_dashboard(self):
         real_uids = {dashboard["uid"] for dashboard in self.real.values()}
+        demo_uids = {dashboard["uid"] for dashboard in self.demo.values()}
         for dashboard in self.demo.values():
             self.assertTrue(dashboard["uid"].startswith("demo-"))
             self.assertNotIn(dashboard["uid"], real_uids)
             self.assertIn("SIMULATED", dashboard["description"])
             self.assertIn("SIMULATED DATA", dashboard["panels"][0]["title"])
             self.assertIn("do not change the sample data", dashboard["panels"][0]["options"]["content"])
+            for link in dashboard.get("links", []):
+                self.assertIn(link["url"].split("/")[2], demo_uids)
+                self.assertTrue(link["url"].split("/")[2].startswith("demo-"))
             for panel in dashboard["panels"][1:]:
                 self.assertEqual(panel["datasource"], demo_builder.DEMO_DS)
                 if panel["type"] == "text":

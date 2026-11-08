@@ -7,7 +7,7 @@ param location string = resourceGroup().location
 @maxLength(20)
 param namePrefix string = 'ai-observe'
 
-@description('Microsoft Entra object ID of the user/group receiving Grafana Admin access.')
+@description('Microsoft Entra object ID of the user, group, or service principal receiving Grafana Admin access.')
 @minLength(36)
 @maxLength(36)
 param grafanaAdminObjectId string
@@ -104,6 +104,18 @@ param costBudgetThresholdPercent int = 80
 @description('Deploy the optional daily cost collector and its Log Analytics ingestion pipeline.')
 param enableCostPipeline bool = false
 
+@description('Cost collector runtime. githubOidc (default) is Function-free: no Function App, plan, or storage account is deployed and a scheduled GitHub Actions job federates to the managed identity through OIDC. function deploys the original Azure Function. Incremental redeployments never delete existing resources, so switching modes does not remove a previously deployed Function; stored snapshots in Log Analytics are kept.')
+@allowed(['function', 'githubOidc'])
+param costCollectorMode string = 'githubOidc'
+
+@description('Exact GitHub OIDC subject for this repository main branch; required for githubOidc mode.')
+@maxLength(600)
+param costGithubOidcSubject string = ''
+
+@description('Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles).')
+@allowed(['subscription', 'resourceGroup', 'resourceGroupManaged'])
+param costQueryScope string = 'subscription'
+
 @minValue(31)
 @maxValue(366)
 param costLookbackDays int = 90
@@ -124,6 +136,11 @@ var grafanaAdminRole = subscriptionResourceId('Microsoft.Authorization/roleDefin
 var grafanaViewerRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '60921a7e-fef1-4a43-9b16-a26c52ad4769')
 var metricsPublisherRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
 var monitoredAccountIds = [for account in monitoredAccounts: resourceId(account.subscriptionId, account.resourceGroup, 'Microsoft.CognitiveServices/accounts', account.name)]
+var costAccountGroupTargets = [for account in monitoredAccounts: {
+  subscriptionId: toLower(account.subscriptionId)
+  name: toLower(account.resourceGroup)
+}]
+var costAccountGroups = union(costAccountGroupTargets, [])
 var agentAlertRules = [
   {
     name: 'failure-rate'
@@ -339,18 +356,33 @@ module cost 'modules/cost.bicep' = if (enableCostPipeline) {
     workspaceName: workspace.name
     insightsName: insights.name
     accountIds: monitoredAccountIds
+    costQueryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
     lookbackDays: costLookbackDays
     retentionInDays: retentionInDays
+    collectorMode: costCollectorMode
+    githubOidcSubject: costGithubOidcSubject
   }
 }
 
-module costReader 'modules/cost-reader.bicep' = if (enableCostPipeline) {
+module costReader 'modules/cost-reader.bicep' = if (enableCostPipeline && costQueryScope == 'subscription') {
   name: '${namePrefix}-cost-reader'
   scope: subscription()
   params: {
     principalId: cost!.outputs.principalId
   }
 }
+
+module costGroupReaders 'modules/cost-group-reader.bicep' = [for group in costAccountGroups: if (enableCostPipeline && costQueryScope == 'resourceGroupManaged') {
+  name: '${namePrefix}-cost-rg-${uniqueString(resourceGroup().id, namePrefix, group.name)}'
+  scope: subscription()
+  params: {
+    resourceGroupName: group.name
+    stackResourceGroupId: resourceGroup().id
+    namePrefix: namePrefix
+    principalId: cost!.outputs.principalId
+    subscriptionMatches: group.subscriptionId == toLower(subscription().subscriptionId)
+  }
+}]
 
 module budget 'modules/budget.bicep' = if (monthlyAiCostBudgetAmount > 0) {
   name: '${namePrefix}-budget'
@@ -374,6 +406,17 @@ output workspaceResourceId string = workspace.id
 output applicationInsightsResourceId string = insights.id
 output actionGroupResourceId string = actionGroup.id
 output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName : ''
+output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
+output costCollectorConfiguration object = enableCostPipeline ? {
+  collectorMode: costCollectorMode
+  subscriptionId: subscription().subscriptionId
+  accountIds: monitoredAccountIds
+  queryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
+  ingestionEndpoint: cost!.outputs.ingestionEndpoint
+  dataCollectionRuleImmutableId: cost!.outputs.ruleImmutableId
+  identityClientId: cost!.outputs.clientId
+  lookbackDays: costLookbackDays
+} : {}
 output dashboardConfiguration object = {
   monitoringWorkspaceResourceId: workspace.id
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId

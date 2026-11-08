@@ -131,9 +131,9 @@
     },
     {
       "id": 2,
-      "title": "Agent runs and failures",
+      "title": "Agent runs per interval and failures",
       "type": "timeseries",
-      "description": "Observed runs and failed runs are shown on separate axes. Counts are weighted by ItemCount when sampling is present; missing spans are not counted.",
+      "description": "Each point is a time-bucket count, not the total for the selected range. Observed and failed runs use separate axes; counts retain ItemCount sampling weights.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -429,7 +429,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where Success == false\n| where isnotempty(tostring(Properties[\"gen_ai.operation.name\"]))\n| project TimeGenerated, OperationId, Name, ResultCode, DurationMs,\n    Agent = tostring(Properties[\"gen_ai.agent.name\"]),\n    Operation = tostring(Properties[\"gen_ai.operation.name\"])\n| order by TimeGenerated desc\n| take 100\n",
+            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where Success == false\n| where isnotempty(tostring(Properties[\"gen_ai.operation.name\"]))\n| project TimeGenerated, OperationId, Name, ResultCode, DurationMs\n| order by TimeGenerated desc\n| take 100\n",
             "resultFormat": "table",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -469,9 +469,81 @@
           {
             "matcher": {
               "id": "byRegexp",
+              "options": "/^TimeGenerated$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Time"
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^OperationId$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Trace ID"
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^Name$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Operation name"
+              },
+              {
+                "id": "custom.width",
+                "value": 145
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ResultCode$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Result"
+              },
+              {
+                "id": "custom.width",
+                "value": 85
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
               "options": "/^DurationMs$/"
             },
             "properties": [
+              {
+                "id": "displayName",
+                "value": "Duration"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              },
               {
                 "id": "unit",
                 "value": "ms"
@@ -665,6 +737,35 @@
       "type": "datasource",
       "pluginId": "grafana-azure-monitor-datasource",
       "pluginName": "Azure Monitor"
+    }
+  ],
+  "links": [
+    {
+      "type": "link",
+      "title": "Foundry overview",
+      "url": "/d/foundry-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "PTU performance",
+      "url": "/d/azure-openai-ptu/_",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Business overview",
+      "url": "/d/azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
     }
   ]
 }

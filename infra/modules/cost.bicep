@@ -5,8 +5,12 @@ param namePrefix string
 param workspaceName string
 param insightsName string
 param accountIds string[]
+param costQueryScope string
 param lookbackDays int
 param retentionInDays int
+@allowed(['function', 'githubOidc'])
+param collectorMode string = 'githubOidc'
+param githubOidcSubject string = ''
 
 var suffix = take(uniqueString(subscription().id, resourceGroup().id, namePrefix), 12)
 var costColumns = [
@@ -98,7 +102,17 @@ resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' 
   location: location
 }
 
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+resource githubFederation 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = if (collectorMode == 'githubOidc') {
+  parent: identity
+  name: 'github-main'
+  properties: {
+    issuer: 'https://token.actions.githubusercontent.com'
+    subject: githubOidcSubject
+    audiences: ['api://AzureADTokenExchange']
+  }
+}
+
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = if (collectorMode == 'function') {
   name: 'aicost${suffix}'
   location: location
   kind: 'StorageV2'
@@ -117,7 +131,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = if (collectorMode == 'function') {
   parent: storage
   name: 'default'
   properties: {
@@ -132,9 +146,9 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01'
   }
 }
 
-resource blobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+resource blobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (collectorMode == 'function') {
   name: 'cost-storage-blob-read'
-  scope: blobService
+  scope: blobService!
   properties: {
     workspaceId: workspace.id
     logs: [
@@ -147,7 +161,7 @@ resource blobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-previ
   }
 }
 
-resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = if (collectorMode == 'function') {
   parent: blobService
   name: 'function-deployment'
   properties: {
@@ -155,9 +169,9 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   }
 }
 
-resource blobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, identity.id, blobOwnerRole)
-  scope: storage
+resource blobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (collectorMode == 'function') {
+  name: guid(storage!.id, identity.id, blobOwnerRole)
+  scope: storage!
   properties: {
     principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -165,9 +179,9 @@ resource blobOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource tableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, identity.id, tableContributorRole)
-  scope: storage
+resource tableContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (collectorMode == 'function') {
+  name: guid(storage!.id, identity.id, tableContributorRole)
+  scope: storage!
   properties: {
     principalId: identity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -185,7 +199,7 @@ resource ingestionPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-resource telemetryPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource telemetryPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (collectorMode == 'function') {
   name: guid(insights.id, identity.id, metricsPublisherRole)
   scope: insights
   properties: {
@@ -195,7 +209,7 @@ resource telemetryPublisher 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
+resource plan 'Microsoft.Web/serverfarms@2024-04-01' = if (collectorMode == 'function') {
   name: 'ai-cost-${suffix}'
   location: location
   kind: 'functionapp'
@@ -208,7 +222,7 @@ resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
   }
 }
 
-resource app 'Microsoft.Web/sites@2024-04-01' = {
+resource app 'Microsoft.Web/sites@2024-04-01' = if (collectorMode == 'function') {
   name: 'ai-cost-${suffix}'
   location: location
   kind: 'functionapp,linux'
@@ -219,7 +233,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
     }
   }
   properties: {
-    serverFarmId: plan.id
+    serverFarmId: plan!.id
     httpsOnly: true
     publicNetworkAccess: 'Enabled'
     siteConfig: {
@@ -230,7 +244,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
       deployment: {
         storage: {
           type: 'blobContainer'
-          value: '${storage.properties.primaryEndpoints.blob}${deploymentContainer.name}'
+          value: '${storage!.properties.primaryEndpoints.blob}${deploymentContainer!.name}'
           authentication: {
             type: 'UserAssignedIdentity'
             userAssignedIdentityResourceId: identity.id
@@ -255,17 +269,18 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
   ]
 }
 
-resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
+resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = if (collectorMode == 'function') {
   parent: app
   name: 'appsettings'
   properties: {
-    AzureWebJobsStorage__accountName: storage.name
+    AzureWebJobsStorage__accountName: storage!.name
     AzureWebJobsStorage__credential: 'managedidentity'
     AzureWebJobsStorage__clientId: identity.properties.clientId
     APPLICATIONINSIGHTS_CONNECTION_STRING: insights.properties.ConnectionString
     APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${identity.properties.clientId};Authorization=AAD'
     COST_SUBSCRIPTION_ID: subscription().subscriptionId
     COST_ACCOUNT_IDS: string(accountIds)
+    COST_QUERY_SCOPE: costQueryScope
     COST_INGESTION_ENDPOINT: endpoint.properties.logsIngestion.endpoint
     COST_DCR_IMMUTABLE_ID: rule.properties.immutableId
     COST_IDENTITY_CLIENT_ID: identity.properties.clientId
@@ -273,7 +288,7 @@ resource appSettings 'Microsoft.Web/sites/config@2024-04-01' = {
   }
 }
 
-resource scmPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+resource scmPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = if (collectorMode == 'function') {
   parent: app
   name: 'scm'
   properties: {
@@ -281,5 +296,8 @@ resource scmPolicy 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-
   }
 }
 
-output functionName string = app.name
+output functionName string = collectorMode == 'function' ? app!.name : ''
 output principalId string = identity.properties.principalId
+output clientId string = identity.properties.clientId
+output ingestionEndpoint string = endpoint.properties.logsIngestion.endpoint
+output ruleImmutableId string = rule.properties.immutableId

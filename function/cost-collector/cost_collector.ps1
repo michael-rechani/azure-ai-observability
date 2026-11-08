@@ -18,6 +18,16 @@ param(
     [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
     [string] $IdentityClientId,
 
+    [ValidateSet('function', 'accessTokens')]
+    [string] $IdentityProvider = 'function',
+
+    [string] $ArmAccessToken = '',
+
+    [string] $IngestionAccessToken = '',
+
+    [ValidateSet('subscription', 'resourceGroup')]
+    [string] $CostQueryScope = 'subscription',
+
     [ValidateRange(31, 366)]
     [int] $LookbackDays = 90
 )
@@ -25,11 +35,25 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+if ($IdentityProvider -eq 'accessTokens' -and (
+        [string]::IsNullOrWhiteSpace($ArmAccessToken) -or
+        [string]::IsNullOrWhiteSpace($IngestionAccessToken))) {
+    throw 'Both ARM and Logs Ingestion access tokens are required.'
+}
+
 $script:LastCostRequest = $null
 $script:InvariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
 
 function Get-ManagedToken {
     param([string] $Resource)
+
+    if ($IdentityProvider -eq 'accessTokens') {
+        switch -CaseSensitive ($Resource) {
+            'https://management.azure.com/' { return $ArmAccessToken }
+            'https://monitor.azure.com/' { return $IngestionAccessToken }
+            default { throw 'Unsupported access-token audience.' }
+        }
+    }
 
     if (-not $env:IDENTITY_ENDPOINT -or -not $env:IDENTITY_HEADER) {
         throw 'Azure Functions managed identity endpoint is unavailable.'
@@ -40,7 +64,7 @@ function Get-ManagedToken {
     $identityResponse = Invoke-RestMethod -Method Get -Uri $uri -Headers @{
         'X-IDENTITY-HEADER' = $env:IDENTITY_HEADER
         Metadata            = 'true'
-    }
+    } -MaximumRedirection 0
     if (-not $identityResponse.access_token) {
         throw 'Azure Functions managed identity returned no access token.'
     }
@@ -56,24 +80,36 @@ function Get-RetryDelay {
             if ($header.Key -notmatch '^(?i:retry-after|x-ms-ratelimit-.*retry-after)$') {
                 continue
             }
-            foreach ($value in $header.Value) {
+            $values = @($header.Value)
+            if ($values.Count -eq 0) {
+                throw 'Azure returned an invalid retry-after header.'
+            }
+            foreach ($value in $values) {
                 $seconds = 0.0
-                $date = [DateTimeOffset]::MinValue
+                $retryCondition = $null
                 if ([double]::TryParse(
                     [string] $value,
                     [System.Globalization.NumberStyles]::Float,
                     $script:InvariantCulture,
                     [ref] $seconds
                 )) {
+                    if ([double]::IsNaN($seconds) -or [double]::IsInfinity($seconds) -or $seconds -lt 0) {
+                        throw 'Azure returned an invalid retry-after header.'
+                    }
                     $delay = [Math]::Max($delay, $seconds)
                 }
-                elseif ([DateTimeOffset]::TryParse([string] $value, [ref] $date)) {
-                    $delay = [Math]::Max($delay, ($date - [DateTimeOffset]::UtcNow).TotalSeconds)
+                elseif ([System.Net.Http.Headers.RetryConditionHeaderValue]::TryParse(
+                    [string] $value, [ref] $retryCondition
+                ) -and $null -ne $retryCondition.Date) {
+                    $delay = [Math]::Max($delay, ($retryCondition.Date - [DateTimeOffset]::UtcNow).TotalSeconds)
+                }
+                else {
+                    throw 'Azure returned an invalid retry-after header.'
                 }
             }
         }
     }
-    return [int][Math]::Ceiling($delay)
+    return [Math]::Ceiling($delay)
 }
 
 function Invoke-AzurePost {
@@ -101,25 +137,45 @@ function Invoke-AzurePost {
                 Authorization = "Bearer $token"
                 ClientType    = 'AzureAIObservabilityCostCollector'
             }
-            return Invoke-RestMethod -Method Post -Uri $Uri -Headers $headers `
-                -ContentType 'application/json; charset=utf-8' -Body $Body
+            $statusCode = $null
+            $result = Invoke-RestMethod -Method Post -Uri $Uri -Headers $headers `
+                -ContentType 'application/json; charset=utf-8' -Body $Body `
+                -MaximumRedirection 0 -StatusCodeVariable statusCode
+            if ($CostRequest) {
+                if ($statusCode -eq 204) {
+                    return $null
+                }
+                if ($statusCode -ne 200) {
+                    throw "Cost Management returned an unexpected HTTP status: $statusCode."
+                }
+                if ($null -eq $result -or
+                    ($result -is [string] -and [string]::IsNullOrWhiteSpace($result))) {
+                    throw 'Cost Management returned an empty HTTP 200 response.'
+                }
+            }
+            elseif ($statusCode -ne 204) {
+                throw "Logs Ingestion returned an unexpected HTTP status: $statusCode."
+            }
+            return $result
         }
         catch {
             $responseProperty = $_.Exception.PSObject.Properties['Response']
             $response = if ($null -ne $responseProperty) { $responseProperty.Value } else { $null }
             $status = if ($null -ne $response) { [int] $response.StatusCode } else { 0 }
             $transient = $status -eq 408 -or $status -eq 429 -or $status -ge 500 -or
-                $_.Exception -is [System.Net.Http.HttpRequestException] -or
-                $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+                ($status -eq 0 -and (
+                    $_.Exception -is [System.Net.Http.HttpRequestException] -or
+                    $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+                ))
             if (-not $transient -or $attempt -eq 5) {
                 throw
             }
             $delay = Get-RetryDelay -Response $response -Attempt $attempt
             if ($delay -gt 900) {
-                throw "Azure requested a retry delay of $delay seconds; retry the failed job later."
+                throw 'Azure requested a retry delay exceeding 900 seconds; retry the failed job later.'
             }
             Write-Warning "Azure request failed with status $status; retrying in $delay seconds."
-            Start-Sleep -Seconds $delay
+            Start-Sleep -Seconds ([int] $delay)
         }
     }
 }
@@ -168,6 +224,9 @@ function Get-CostRows {
         $result = Invoke-AzurePost -Uri $next -Audience 'https://management.azure.com/' `
             -Body $body -CostRequest
         if ($null -eq $result) {
+            if ($seen.Count -gt 1) {
+                throw 'Cost Management returned HTTP 204 for a continuation; the query may be incomplete.'
+            }
             break
         }
         if ($null -eq $result.PSObject.Properties['properties'] -or $null -eq $result.properties) {
@@ -179,9 +238,20 @@ function Get-CostRows {
             $null -eq $properties.PSObject.Properties['rows']) {
             throw 'Cost Management returned a response without columns or rows.'
         }
+        if ($properties.columns -isnot [array] -or $properties.rows -isnot [array]) {
+            throw 'Cost Management returned columns or rows that are not arrays.'
+        }
         $indexes = @{}
         for ($index = 0; $index -lt $properties.columns.Count; $index++) {
-            $indexes[$properties.columns[$index].name] = $index
+            $column = $properties.columns[$index]
+            if ($null -eq $column -or $null -eq $column.PSObject.Properties['name'] -or
+                $column.name -isnot [string] -or [string]::IsNullOrWhiteSpace($column.name)) {
+                throw 'Cost Management returned an invalid column name.'
+            }
+            if ($indexes.ContainsKey($column.name)) {
+                throw 'Cost Management returned duplicate column names.'
+            }
+            $indexes[$column.name] = $index
         }
         foreach ($required in @('PreTaxCost', 'UsageDate', 'Currency')) {
             if (-not $indexes.ContainsKey($required)) {
@@ -190,7 +260,7 @@ function Get-CostRows {
         }
 
         foreach ($row in $properties.rows) {
-            if ($row.Count -ne $properties.columns.Count) {
+            if ($row -isnot [array] -or $row.Count -ne $properties.columns.Count) {
                 throw 'Cost Management returned a row with an unexpected number of columns.'
             }
             $usageDate = [DateTime]::ParseExact(
@@ -201,12 +271,13 @@ function Get-CostRows {
                     [System.Globalization.DateTimeStyles]::AdjustToUniversal
             )
             $currency = [string] $row[$indexes['Currency']]
+            $cost = $row[$indexes['PreTaxCost']]
             if ($usageDate.Date -lt $Start.Date -or $usageDate.Date -gt $End.Date -or
                 $currency -notmatch '^[A-Za-z]{3}$' -or
-                $null -eq $row[$indexes['PreTaxCost']]) {
+                $null -eq $cost -or $cost -is [bool]) {
                 throw 'Cost Management returned an invalid date, currency, or cost.'
             }
-            $amount = [Convert]::ToDecimal($row[$indexes['PreTaxCost']], $script:InvariantCulture)
+            $amount = [Convert]::ToDecimal($cost, $script:InvariantCulture)
             [pscustomobject]@{
                 AccountId = $AccountId
                 CostType  = $CostType
@@ -216,7 +287,13 @@ function Get-CostRows {
             }
         }
         $nextProperty = $properties.PSObject.Properties['nextLink']
-        $next = if ($null -ne $nextProperty) { [string] $nextProperty.Value } else { '' }
+        $next = ''
+        if ($null -ne $nextProperty -and $null -ne $nextProperty.Value) {
+            if ($nextProperty.Value -isnot [string]) {
+                throw 'Cost Management returned an invalid continuation URL.'
+            }
+            $next = $nextProperty.Value
+        }
     }
 }
 
@@ -254,22 +331,37 @@ if ($accounts.Count -eq 0) {
     throw 'At least one monitored AI account is required.'
 }
 $accountPattern = '^/subscriptions/' + [regex]::Escape($SubscriptionId) +
-    '/resourceGroups/[^/]+/providers/Microsoft\.CognitiveServices/accounts/[^/]+$'
+    '/resourceGroups/(?<resourceGroup>[^/]+)/providers/Microsoft\.CognitiveServices/accounts/[^/]+$'
 $accountSet = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+$accountScopes = @{}
+$subscriptionScope = "https://management.azure.com/subscriptions/$SubscriptionId"
 foreach ($account in $accounts) {
-    if ($account -isnot [string] -or $account -notmatch $accountPattern -or -not $accountSet.Add($account)) {
+    if ($account -isnot [string]) {
         throw 'Monitored accounts must be unique AI account resource IDs in the configured subscription.'
     }
+    $match = [regex]::Match($account, $accountPattern, [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success -or -not $accountSet.Add($account)) {
+        throw 'Monitored accounts must be unique AI account resource IDs in the configured subscription.'
+    }
+    $scope = $subscriptionScope
+    if ($CostQueryScope -eq 'resourceGroup') {
+        $resourceGroup = $match.Groups['resourceGroup'].Value
+        if ($resourceGroup -in @('.', '..') -or $resourceGroup -match '[\\%\x00-\x1f\x7f]') {
+            throw 'The monitored account contains an invalid resource group name.'
+        }
+        $scope += '/resourceGroups/' + [uri]::EscapeDataString($resourceGroup)
+    }
+    $accountScopes[$account] = $scope
 }
 
 $now = (Get-Date).ToUniversalTime()
 $windowStart = $now.Date.AddDays(1 - $LookbackDays)
-$costUri = "https://management.azure.com/subscriptions/$SubscriptionId/providers/Microsoft.CostManagement/query?api-version=2025-03-01"
 $ingestionUri = $IngestionEndpoint.TrimEnd('/') +
     "/dataCollectionRules/$RuleId/streams/Custom-AICostSnapshot?api-version=2023-01-01"
 $uniqueRows = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
 
 foreach ($account in $accounts) {
+    $costUri = $accountScopes[$account] + '/providers/Microsoft.CostManagement/query?api-version=2025-03-01'
     foreach ($costType in @('ActualCost', 'AmortizedCost')) {
         # Leave a full-day margin inside Cost Management's calendar-month limit.
         for ($start = $windowStart; $start -le $now.Date; $start = $start.AddDays(27)) {

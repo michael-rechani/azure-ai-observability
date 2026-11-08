@@ -1069,5 +1069,34 @@
       "pluginId": "grafana-azure-monitor-datasource",
       "pluginName": "Azure Monitor"
     }
+  ],
+  "links": [
+    {
+      "type": "link",
+      "title": "Foundry agent operations",
+      "url": "/d/foundry-agent-operations/_",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Business overview",
+      "url": "/d/azure-ai-business-overview/_?var-ptuSubscription=${subscription:percentencode}&var-ptuResourceGroup=${resourceGroup:percentencode}&var-ptuAccount=${account:percentencode}&var-ptuRegion=${region:percentencode}&var-ptuDeployment=${deployment:percentencode}",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    },
+    {
+      "type": "link",
+      "title": "Cost details",
+      "url": "/d/azure-ai-costs/_",
+      "icon": "external link alt",
+      "keepTime": true,
+      "includeVars": false,
+      "targetBlank": false
+    }
   ]
 }
