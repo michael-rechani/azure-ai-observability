@@ -48,8 +48,9 @@ param enableAgentAlerts = false
 
 // Set true to deploy the cost Function and dashboard; all accounts must be in this subscription.
 param enableCostPipeline = false
-// resourceGroup uses separate grants; resourceGroupManaged creates scoped custom roles.
-param costQueryScope = 'subscription'
+// Recommended when enabling costs: one query-only custom role per monitored resource group.
+// The deployer needs role-definition write/delete and role-assignment permissions.
+param costQueryScope = 'resourceGroupManaged'
 param costLookbackDays = 90
 
 // Optional monthly account-filtered budget, in subscription billing currency.

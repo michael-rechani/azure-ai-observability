@@ -46,7 +46,7 @@ Install Terraform 1.7+ and configure protected, locked remote Terraform state fo
 
 **1. Create Azure monitoring resources**
 
-Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars` and replace its placeholders. Set `enable_cost_pipeline = true` to deploy the optional cost collector. If PTU metric support is not yet confirmed, set `enable_ptu_alerts = false` initially; enable it after [metric discovery](docs/setup.md#metric-discovery).
+Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars` and replace its placeholders. Set `enable_cost_pipeline = true` to deploy the optional cost collector; the example selects `resourceGroupManaged` so cost-query permissions are scoped to monitored groups. Review the required role-definition permissions in [cost access guidance](docs/costs.md#configure-resource-group-query-mode). If PTU metric support is not yet confirmed, set `enable_ptu_alerts = false` initially; enable it after [metric discovery](docs/setup.md#metric-discovery).
 
 ```powershell
 az login
@@ -77,7 +77,7 @@ Remove-Item Env:\GRAFANA_AUTH
 
 ### Deploy with Bicep
 
-Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. Set `enableCostPipeline = true` for the optional Function, cost dashboard, and business overview. Use real account regions and deployment names in the dashboard defaults.
+Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. Set `enableCostPipeline = true` for the optional Function, cost dashboard, and business overview; the example selects `resourceGroupManaged` and needs the role-definition permissions documented in [cost access guidance](docs/costs.md#configure-resource-group-query-mode). Use real account regions and deployment names in the dashboard defaults.
 
 ```powershell
 az login

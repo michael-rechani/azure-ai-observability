@@ -70,7 +70,7 @@ To collect costs, configure at least one `monitored_accounts` entry and add to t
 
 ```hcl
 enable_cost_pipeline = true
-cost_query_scope     = "subscription" # Or resourceGroup / resourceGroupManaged.
+cost_query_scope     = "resourceGroupManaged" # Recommended; requires scoped role-definition permissions.
 cost_lookback_days   = 90 # UTC days, including today; allowed range: 31-366
 ```
 
