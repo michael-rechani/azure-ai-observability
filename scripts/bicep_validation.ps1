@@ -107,7 +107,7 @@ function Test-BicepDeploymentParameters {
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
     $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)
     $costScope = [string](Get-BicepParameter $Parameters 'costQueryScope' 'subscription')
-    $collectorMode = [string](Get-BicepParameter $Parameters 'costCollectorMode' 'function')
+    $collectorMode = [string](Get-BicepParameter $Parameters 'costCollectorMode' 'githubOidc')
     $githubSubject = [string](Get-BicepParameter $Parameters 'costGithubOidcSubject' '')
     if ($collectorMode -cnotin @('function', 'githubOidc')) {
         throw 'costCollectorMode must be function or githubOidc.'

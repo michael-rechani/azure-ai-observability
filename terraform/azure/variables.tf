@@ -282,9 +282,9 @@ variable "enable_cost_pipeline" {
 }
 
 variable "cost_collector_mode" {
-  description = "Run the cost collector in an Azure Function or GitHub Actions with OIDC."
+  description = "Cost collector runtime. githubOidc (default) is Function-free: no Function App, plan, or storage account is deployed and a scheduled GitHub Actions job federates to the managed identity through OIDC. function deploys the original Azure Function. Changing the mode on an existing deployment adds or removes those resources; stored snapshots in Log Analytics are kept."
   type        = string
-  default     = "function"
+  default     = "githubOidc"
   validation {
     condition     = contains(["function", "githubOidc"], var.cost_collector_mode)
     error_message = "cost_collector_mode must be function or githubOidc."

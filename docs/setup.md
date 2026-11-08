@@ -45,6 +45,8 @@ az monitor metrics list --resource "<AI-account-ARM-ID>" --metric AzureOpenAIReq
 
 Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert assumes numeric HTTP status strings. Availability varies by model and SKU. Alerts do not bypass metric validation. Set `enablePtuAlerts = false` if you need to deploy read access first, then enable after discovery. Do not suppress missing metric errors as successful monitoring.
 
+A read-only check of metric *definitions* on three real Foundry (AIServices) accounts in an isolated lab found that all nine metrics used by the PTU, Foundry overview, and business dashboards are exposed (`AzureOpenAIRequests`, `AzureOpenAIProvisionedManagedUtilizationV2`, `AzureOpenAIContextTokensCacheMatchRate`, `AzureOpenAINormalizedTBTInMS`, `AzureOpenAITimeToResponse`, `AzureOpenAITTLTInMS`, `GeneratedTokens`, `ProcessedPromptTokens`, and `TokenTransaction`). This confirms names, not data: none of those accounts had a PTU deployment, so no PTU utilization values or `StatusCode` values were observed. The agent-trace schema was also **not** verified against real workspaces because the testing identity lacked read access to them. Treat PTU panels and agent-trace queries as validated only against simulated data until you confirm them on your own PTU deployments and traces.
+
 ## Acceptance checklist
 
 - The three core dashboards and, when enabled, the cost dashboard and business overview query using Grafana's managed identity. The cost dashboards read snapshots from Log Analytics; the collector's separate managed identity accesses Cost Management.
@@ -55,7 +57,7 @@ Verify the actual StatusCode dimension values; the bundled 429 dashboard/alert a
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
 - A controlled failure appears in the trace table and the business overview failure-rate panel. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
-- If the cost pipeline is enabled, the Function or GitHub Actions job produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. Function mode runs at 06:00 UTC; GitHub mode requests 06:17 UTC and can be delayed or dropped. Billing data can lag.
+- If the cost pipeline is enabled, the scheduled collector produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. The default Function-free job requests 06:17 UTC and can be delayed or dropped; Function mode runs at 06:00 UTC. Billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.
 
 The repository's offline CI cannot verify live data, KQL execution, model/SKU support, or notification delivery without your Azure environment.

@@ -36,9 +36,9 @@ New to Azure or this repository? Start with the [step-by-step deployment guide](
 
 Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, alerts, a Grafana data source, and dashboards. Both support an optional cost collector and the cost and business overview dashboards; the overview is provisioned with the cost dashboard. Neither path requires Python to deploy. Use one tool per deployment; the paths do not share state or ownership.
 
-**Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Function publishing and Grafana's data-plane API; Terraform uses PowerShell 7 and Azure CLI when the cost Function is enabled.
+**Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Grafana's data-plane API (and for Function publishing only in Function mode); Terraform needs PowerShell 7 and Azure CLI only when the optional cost Function is enabled.
 
-The commands below show an interactive deployer login. Grafana uses a managed identity; the optional cost collector can use either an Azure Function managed identity or a [Function-free GitHub Actions OIDC job](docs/costs.md#function-free-github-actions-collector), without a client secret. The GitHub mode still runs scheduled code and is not direct Grafana-to-Cost-Management access. Its live Azure setup and a separate [Bicep OIDC deployment workflow](docs/bicep.md#optional-github-actions-oidc-deployment) have not been validated end to end.
+The commands below show an interactive deployer login. Grafana uses a managed identity. The optional cost collector is **Function-free by default**: a scheduled [GitHub Actions OIDC job](docs/costs.md#function-free-github-actions-collector) federates to a user-assigned managed identity with no client secret, and an Azure Function is available as an alternative mode. The default still runs scheduled code and is not direct Grafana-to-Cost-Management access. It has isolated lab evidence only; its production schedule and a separate [Bicep OIDC deployment workflow](docs/bicep.md#optional-github-actions-oidc-deployment) have not been validated end to end.
 
 ### Deploy with Terraform
 
@@ -89,7 +89,7 @@ pwsh -NoProfile -File .\scripts\deploy_bicep.ps1 -SubscriptionId "<subscription-
 pwsh -NoProfile -File .\scripts\deploy_bicep.ps1 -SubscriptionId "<subscription-id>" -ResourceGroup "<monitoring-rg>" -ParametersFile .\infra\main.local.bicepparam
 ```
 
-The helper deploys the Bicep template, publishes the Function only when Function mode is enabled, and configures Grafana using a short-lived Entra token. See the [Bicep guide](docs/bicep.md) for permissions, dashboard defaults, reruns, and the important difference between disabling a feature and deleting its Azure resources.
+The helper deploys the Bicep template, publishes the Function only when Function mode is selected, and configures Grafana using a short-lived Entra token. See the [Bicep guide](docs/bicep.md) for permissions, dashboard defaults, reruns, and the important difference between disabling a feature and deleting its Azure resources.
 
 Existing Foundry/OpenAI accounts and deployments are monitored, not created or resized. Agent charts require real instrumented telemetry; the cost collector runs daily and billing data can lag. Both paths can grant an Entra group read-only Grafana Viewer access, which is **not a data-isolation boundary**. See [business-user access](docs/terraform.md#business-user-access) and [cost interpretation](docs/costs.md).
 
@@ -104,7 +104,7 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate | Existing provisioned deployments and supported metric definitions |
 | Alerting | Per-deployment PTU utilization and 429 metric alerts; opt-in agent failure-rate, p95 latency, and heartbeat alerts | Agent rules require matching telemetry; heartbeat also requires guaranteed expected traffic |
 | Business overview | Collection status, actual cost, agent runs per interval and failure rate over known outcomes, PTU utilization, requests, throttles, and tokens | Cost dashboard toggle required; missing telemetry is not zero or proof of health |
-| Cost visibility | Optional Function- or GitHub OIDC-fed dashboard for actual and amortized account-attributed pretax costs; an optional account-scoped budget | GitHub mode has isolated lab evidence, not a validated production schedule; billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
+| Cost visibility | Optional dashboard fed by a Function-free OIDC collector (or an optional Azure Function) for actual and amortized account-attributed pretax costs; an optional account-scoped budget | The Function-free mode has isolated lab evidence, not a validated production schedule; billing can be delayed; costs are not invoice totals, reservation coverage, or deployment-level spend |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
 **Foundry features do not all emit telemetry automatically.** See [coverage and architecture](docs/architecture.md) for costs, safety, evaluations, dependencies, and gaps.
@@ -124,7 +124,7 @@ dashboards/  Importable Foundry, agent, PTU, cost, and business overview dashboa
 demo/        Local-only Grafana preview using simulated data
 docs/images/ Actual Grafana screenshots with simulated data (no live Azure connection)
 queries/     Workspace KQL and Azure Resource Graph inventory query
-function/    Optional scheduled Azure Functions cost collector
+function/    Shared cost collector code (run by the Function-free job or the optional Azure Function)
 scripts/     Bicep/Grafana deployment helper and optional dashboard generators
 examples/    Synthetic OpenTelemetry example (no model calls)
 docs/        Setup, coverage, telemetry contract, and alert runbooks
@@ -153,7 +153,7 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 - Log retention defaults to 30 days with a 1 GB daily ingestion cap. A cap can cause gaps and is **not** a complete spending limit.
 - The opt-in cost collector defaults to **Cost Management Reader for the subscription**, even though it filters to selected accounts. The role includes `Microsoft.Support/*`, which can permit support-ticket writes. Optional [resource-group query modes](docs/costs.md#configure-resource-group-query-mode) use separate grants or deployment-managed scoped custom roles. Isolated lab probes verified a complete actual/amortized snapshot and a scoped Bicep role module, but full deployment, dashboard, and other billing-environment validation remain outstanding. Grafana Viewer access is read-only, not a data-isolation boundary.
 - [Direct Grafana managed-identity cost queries and delegated per-viewer access](https://github.com/michael-rechani/azure-ai-observability/issues/4) remain under investigation and have not been demonstrated.
-- Grafana hosting, telemetry ingestion/retention, alert rules, Function execution, and storage can incur charges. PTU deployment and reservation charges remain separate.
+- Grafana hosting, telemetry ingestion/retention, alert rules, collector execution, and (in Function mode) Function and storage can incur charges. PTU deployment and reservation charges remain separate.
 
 For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md). This repository is licensed under [Apache-2.0](LICENSE).
 

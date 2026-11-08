@@ -104,9 +104,9 @@ param costBudgetThresholdPercent int = 80
 @description('Deploy the optional daily cost collector and its Log Analytics ingestion pipeline.')
 param enableCostPipeline bool = false
 
-@description('Run cost collection in an Azure Function or a GitHub Actions OIDC workflow.')
+@description('Cost collector runtime. githubOidc (default) is Function-free: no Function App, plan, or storage account is deployed and a scheduled GitHub Actions job federates to the managed identity through OIDC. function deploys the original Azure Function. Incremental redeployments never delete existing resources, so switching modes does not remove a previously deployed Function; stored snapshots in Log Analytics are kept.')
 @allowed(['function', 'githubOidc'])
-param costCollectorMode string = 'function'
+param costCollectorMode string = 'githubOidc'
 
 @description('Exact GitHub OIDC subject for this repository main branch; required for githubOidc mode.')
 @maxLength(600)
@@ -408,6 +408,7 @@ output actionGroupResourceId string = actionGroup.id
 output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName : ''
 output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
 output costCollectorConfiguration object = enableCostPipeline ? {
+  collectorMode: costCollectorMode
   subscriptionId: subscription().subscriptionId
   accountIds: monitoredAccountIds
   queryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope

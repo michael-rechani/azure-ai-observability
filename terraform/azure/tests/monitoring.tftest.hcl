@@ -57,11 +57,12 @@ mock_provider "azurerm" {
 }
 
 variables {
-  subscription_id         = "00000000-0000-0000-0000-000000000000"
-  resource_group_name     = "monitoring"
-  location                = "eastus"
-  grafana_admin_object_id = "00000000-0000-0000-0000-000000000001"
-  notification_email      = "demo@example.invalid"
+  subscription_id          = "00000000-0000-0000-0000-000000000000"
+  resource_group_name      = "monitoring"
+  location                 = "eastus"
+  grafana_admin_object_id  = "00000000-0000-0000-0000-000000000001"
+  notification_email       = "demo@example.invalid"
+  cost_github_oidc_subject = "repo:example@123/observability@456:ref:refs/heads/main"
 }
 
 run "ptu_alerts_for_provisioned_deployments" {
@@ -318,10 +319,43 @@ run "cost_pipeline_is_opt_in" {
   }
 }
 
+run "cost_collector_defaults_to_function_free_mode" {
+  command = plan
+  variables {
+    enable_cost_pipeline = true
+    monitored_accounts = {
+      foundry = {
+        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
+        ptu_deployments = []
+      }
+    }
+  }
+  override_resource {
+    target          = azurerm_user_assigned_identity.cost[0]
+    override_during = plan
+    values = {
+      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cost"
+      principal_id = "00000000-0000-0000-0000-000000000008"
+      client_id    = "00000000-0000-0000-0000-000000000009"
+    }
+  }
+  assert {
+    condition = (
+      var.cost_collector_mode == "githubOidc" &&
+      length(azurerm_function_app_flex_consumption.cost) == 0 &&
+      length(azurerm_storage_account.cost) == 0 &&
+      length(azurerm_federated_identity_credential.cost_github) == 1 &&
+      output.cost_collector_configuration.collector_mode == "githubOidc"
+    )
+    error_message = "Enabling the cost pipeline must default to the Function-free collector."
+  }
+}
+
 run "cost_pipeline_uses_managed_identity_and_complete_schema" {
   command = plan
   variables {
     enable_cost_pipeline = true
+    cost_collector_mode  = "function"
     monitored_accounts = {
       foundry = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -429,9 +463,11 @@ run "github_oidc_cost_pipeline_uses_scoped_identity_without_function_resources" 
       length(azurerm_role_definition.cost_group_query) == 1 &&
       length(azurerm_role_assignment.cost_group_query) == 1 &&
       azurerm_role_assignment.cost_ingestion[0].role_definition_name == "Monitoring Metrics Publisher" &&
-      output.cost_collector_configuration.query_scope == "resourceGroup"
+      output.cost_collector_configuration.query_scope == "resourceGroup" &&
+      output.cost_collector_configuration.collector_mode == "githubOidc" &&
+      output.cost_function_name == null
     )
-    error_message = "GitHub mode must retain scoped cost and DCR ingestion permissions and expose normalized settings."
+    error_message = "GitHub mode must retain scoped cost and DCR ingestion permissions, expose normalized settings, and report no Function."
   }
 }
 
@@ -454,8 +490,9 @@ run "github_oidc_requires_main_branch_subject" {
 run "github_oidc_rejects_empty_subject_when_enabled" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    cost_collector_mode  = "githubOidc"
+    enable_cost_pipeline     = true
+    cost_collector_mode      = "githubOidc"
+    cost_github_oidc_subject = ""
     monitored_accounts = {
       foundry = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -469,8 +506,9 @@ run "github_oidc_rejects_empty_subject_when_enabled" {
 run "github_oidc_allows_empty_subject_when_disabled" {
   command = plan
   variables {
-    enable_cost_pipeline = false
-    cost_collector_mode  = "githubOidc"
+    enable_cost_pipeline     = false
+    cost_collector_mode      = "githubOidc"
+    cost_github_oidc_subject = ""
   }
   assert {
     condition     = length(azurerm_federated_identity_credential.cost_github) == 0
@@ -506,6 +544,7 @@ run "resource_group_cost_scope_omits_subscription_role" {
   command = plan
   variables {
     enable_cost_pipeline = true
+    cost_collector_mode  = "function"
     cost_query_scope     = "resourceGroup"
     monitored_accounts = {
       foundry = {
@@ -539,6 +578,7 @@ run "managed_resource_group_cost_roles_are_deduplicated_and_narrow" {
   command = plan
   variables {
     enable_cost_pipeline = true
+    cost_collector_mode  = "function"
     cost_query_scope     = "resourceGroupManaged"
     monitored_accounts = {
       first = {
@@ -773,7 +813,7 @@ run "cost_collection_accepts_maximum_default_accounts" {
     }
   }
   assert {
-    condition     = length(azurerm_function_app_flex_consumption.cost) == 1
+    condition     = length(azurerm_monitor_data_collection_rule.cost) == 1
     error_message = "Fourteen accounts with the default lookback must fit within the request-pacing limit."
   }
 }

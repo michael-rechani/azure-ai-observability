@@ -27,7 +27,7 @@ output "action_group_resource_id" {
 }
 
 output "cost_function_name" {
-  description = "Scheduled cost collector Function App, or null when Function mode is not enabled."
+  description = "Cost collector Function App name, or null in the recommended Function-free githubOidc mode and when the pipeline is disabled."
   value       = try(azurerm_function_app_flex_consumption.cost[0].name, null)
 }
 
@@ -39,6 +39,7 @@ output "cost_identity_principal_id" {
 output "cost_collector_configuration" {
   description = "Non-secret settings for configuring the cost collector, or null when disabled."
   value = var.enable_cost_pipeline ? {
+    collector_mode                    = var.cost_collector_mode
     subscription_id                   = var.subscription_id
     account_ids                       = [for account in values(var.monitored_accounts) : account.resource_id]
     query_scope                       = var.cost_query_scope == "resourceGroupManaged" ? "resourceGroup" : var.cost_query_scope

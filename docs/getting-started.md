@@ -4,7 +4,7 @@ This walkthrough takes you from an existing Azure AI account to dashboards in Az
 
 **Jump to:** [Preparation](#1-install-the-tools-and-get-the-repository) · [Bicep](#3a-deploy-with-bicep) · [Terraform](#3b-deploy-with-terraform) · [Verify](#4-open-and-verify-the-dashboards) · [Troubleshooting](#troubleshooting-and-cleanup)
 
-> **Before you start:** The complete deployment has not yet been validated in a live Azure subscription. Isolated lab tests covered the optional Bicep cost Function and scoped role modules separately; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
+> **Before you start:** The complete deployment has not yet been validated in a live Azure subscription. Isolated lab tests covered the Function-free cost collector (managed identity plus OIDC federation), the Bicep cost module, and scoped role modules separately; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
 
 ## What you need and what will be created
 
@@ -16,13 +16,13 @@ You need:
 - An email address for alert notifications and an existing Microsoft Entra user who will administer Grafana. The walkthrough uses your signed-in user for the initial Grafana administrator.
 - Network access from your computer to Azure and the Grafana endpoint; Function cost mode also needs its publishing endpoint. This starter uses public endpoints with authentication; private networking and sovereign-cloud endpoints require a separate design.
 
-The deployment creates Managed Grafana, a Log Analytics workspace, Application Insights, an alert action group, access assignments, an Azure Monitor data source, and dashboards. PTU alerts can be enabled after you verify metric support. An optional cost pipeline uses a daily Function or a GitHub Actions OIDC job and adds the cost dashboard. Azure resources, retained data, queries, alerts, and collector execution can incur charges; the workspace ingestion cap is **not** a total spending limit. Review your organization's pricing and policies first.
+The deployment creates Managed Grafana, a Log Analytics workspace, Application Insights, an alert action group, access assignments, an Azure Monitor data source, and dashboards. PTU alerts can be enabled after you verify metric support. An optional cost pipeline adds the cost dashboard; by default it is Function-free (a scheduled OIDC job writes to a managed-identity-protected ingestion endpoint), with an optional daily Azure Function. Azure resources, retained data, queries, alerts, and collector execution can incur charges; the workspace ingestion cap is **not** a total spending limit. Review your organization's pricing and policies first.
 
 ### Choose one deployment path
 
 | Path | Choose this when | What happens |
 | --- | --- | --- |
-| **Bicep** | You are new to infrastructure as code and want an Azure-native starting point. | A Bicep template creates Azure resources; a PowerShell helper publishes the optional Function and configures Grafana. |
+| **Bicep** | You are new to infrastructure as code and want an Azure-native starting point. | A Bicep template creates Azure resources; a PowerShell helper configures Grafana (and publishes the Function only if you choose Function mode). |
 | **Terraform** | Your team uses Terraform or needs its state-based workflow. | One Terraform stage creates Azure resources; a second configures Grafana. Each stage needs its own protected state. |
 
 Use **only one** path for a particular deployment. They do not share ownership or state; applying both is not a migration and can create duplicates or conflicts. Neither path requires Python to deploy.
@@ -170,7 +170,7 @@ Replace every example subscription ID, account name, account resource group, acc
 | `foundryDashboardAccount`, `ptuDashboardAccount` | Initial dashboard selections. Each non-null account must also appear in `monitoredAccounts`; use that account's actual region. |
 | `enableAgentAlerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enableCostPipeline` | Leave `false` for no cost collector, or set `true` after reviewing the permissions and charges in [cost collection](costs.md). This also enables the cost and business dashboards. |
-| `costCollectorMode`, `costGithubOidcSubject` | The example selects `githubOidc`; provide the exact repository main-branch subject before enabling costs and complete [GitHub setup](costs.md#function-free-github-actions-collector). Use `function` to select the existing Function mode. |
+| `costCollectorMode`, `costGithubOidcSubject` | `githubOidc` (Function-free) is the default and the example states it; provide the exact repository main-branch subject before enabling costs and complete [GitHub setup](costs.md#function-free-github-actions-collector). Use `function` to select the Azure Function mode. |
 | `costQueryScope` | Defaults to `subscription`. Use `resourceGroup` for separate grants or `resourceGroupManaged` to create scoped custom roles; review [permissions and migration](costs.md#configure-resource-group-query-mode). |
 
 **Add** `param enablePtuAlerts = false` to the file: PTU alerts otherwise default to enabled. Turn them on later, after [discovering the metrics](setup.md#metric-discovery).
@@ -372,7 +372,7 @@ Replace the example values:
 | `monitored_accounts` | The full account resource IDs and actual provisioned deployment names. Use `ptu_deployments = []` for accounts without PTUs; list a shared Foundry/PTU account only once. |
 | `enable_agent_alerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enable_cost_pipeline` | Leave `false`, or set `true` after reviewing the [cost permissions and charges](costs.md). The Grafana stage has a separate switch for the cost and business dashboards. |
-| `cost_collector_mode`, `cost_github_oidc_subject` | The example selects `githubOidc`; supply the exact repository main-branch subject and complete [GitHub setup](costs.md#function-free-github-actions-collector) before enabling costs. Use `function` for the existing Function mode. |
+| `cost_collector_mode`, `cost_github_oidc_subject` | `githubOidc` (Function-free) is the default and the example states it; supply the exact repository main-branch subject and complete [GitHub setup](costs.md#function-free-github-actions-collector) before enabling costs. Use `function` for the Azure Function mode; existing Function stacks must set it explicitly. |
 | `cost_query_scope` | Defaults to `subscription`. Use `resourceGroup` for separate grants or `resourceGroupManaged` to create scoped custom roles; review [permissions and migration](costs.md#configure-resource-group-query-mode). |
 
 Add `enable_ptu_alerts = false` to the file; the default is `true`. If one account is used for both Foundry and PTUs, the account map can look like this:
@@ -411,7 +411,7 @@ If the plan is correct and you accept the charges, apply it and type `yes` only 
 terraform "-chdir=$azureStage" apply -var-file=local.tfvars
 ```
 
-In Function mode the optional cost Function is packaged and published during this apply; the machine running Terraform needs PowerShell 7, Azure CLI authentication, network access, and publishing permissions. GitHub mode instead requires the separate [workflow configuration](costs.md#function-free-github-actions-collector). If apply fails, resolve the error and reapply rather than assuming it rolled back.
+By default the Function-free collector requires the separate [workflow configuration](costs.md#function-free-github-actions-collector); in Function mode the optional cost Function is packaged and published during this apply, so the machine running Terraform needs PowerShell 7, Azure CLI authentication, network access, and publishing permissions. If apply fails, resolve the error and reapply rather than assuming it rolled back.
 
 Print the two outputs needed by the next stage:
 
@@ -466,7 +466,7 @@ If a command fails or you stop before the last line, remove the token with `Remo
 3. Generate or observe known traffic on an existing account. Confirm that supported request, token, and PTU utilization metrics appear for the intended resource and deployment. An empty graph can mean no traffic, an unsupported metric/dimension, a wrong filter, or missing access; it does not prove zero usage.
 4. Configure your Foundry agent or application to send real traces to Application Insights, then run a known agent request. Creating Application Insights alone does not instrument agents or create evaluation events. Follow the [telemetry guide](telemetry.md) and check the actual attributes and workspace.
 5. Before enabling PTU alerts, inspect the account's [metric definitions and dimensions](setup.md#metric-discovery). Then change `enablePtuAlerts` or `enable_ptu_alerts` to `true`, review the new deployment/plan, and deploy again. Enable agent alerts only after verifying the telemetry schema, sampling, and expected traffic.
-6. If costs are enabled, check the Function invocation or GitHub Actions run, cost dashboard, and business overview after the first collection. Function mode runs at **06:00 UTC**; GitHub mode requests **06:17 UTC** and can be dispatched manually but its schedule is not guaranteed. Billing data can lag or be revised. The cost dashboard shows actual and amortized account-attributed pretax costs; the business overview shows actual costs only. Neither reports invoice totals or per-deployment PTU prices, and actual and amortized costs are alternatives, not amounts to add together.
+6. If costs are enabled, check the scheduled collector run (or the Function invocation in Function mode), the cost dashboard, and the business overview after the first collection. The default Function-free job requests **06:17 UTC**, can be dispatched manually, and its schedule is not guaranteed; Function mode runs at **06:00 UTC**. Billing data can lag or be revised. The cost dashboard shows actual and amortized account-attributed pretax costs; the business overview shows actual costs only. Neither reports invoice totals or per-deployment PTU prices, and actual and amortized costs are alternatives, not amounts to add together.
 7. Ask a member of the configured Viewer group to sign in and confirm access. Review what the Grafana identity can query before sharing dashboards. Test alert delivery in nonproduction.
 
 Use the full [acceptance checklist](setup.md#acceptance-checklist) before relying on the dashboards. Offline validation cannot prove live Azure permissions, metric availability, queries, costs, or notification delivery.

@@ -9,7 +9,7 @@ param costQueryScope string
 param lookbackDays int
 param retentionInDays int
 @allowed(['function', 'githubOidc'])
-param collectorMode string = 'function'
+param collectorMode string = 'githubOidc'
 param githubOidcSubject string = ''
 
 var suffix = take(uniqueString(subscription().id, resourceGroup().id, namePrefix), 12)
