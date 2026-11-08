@@ -195,12 +195,24 @@ function global:Invoke-RestMethod {
         }
 
         $next = $null
-        if ($Scenario -in @('pagination', 'null-rows-after-page', 'duplicate-column-after-page') -and
+        if ($Scenario -in @('pagination', 'null-rows-after-page', 'duplicate-column-after-page',
+                'invalid-next-array-after-page') -and
             -not $global:Paged -and $query.type -eq 'ActualCost') {
             $global:Paged = $true
             $next = $Uri + '&$skiptoken=next'
         }
         switch ($Scenario) {
+            'invalid-next-empty-array' { $next = @() }
+            'invalid-next-empty-object' { $next = [pscustomobject]@{} }
+            'invalid-next-single-array' {
+                if (-not $Uri.Contains('$skiptoken=')) { $next = @($Uri + '&$skiptoken=next') }
+            }
+            'invalid-next-boolean' { $next = $false }
+            'invalid-next-number' { $next = 0 }
+            'invalid-next-array-after-page' {
+                if ($Uri.Contains('$skiptoken=')) { $next = @() }
+            }
+            'empty-next-string' { $next = '' }
             'bad-next' {
                 $next = 'https://evil.example.invalid/steal'
             }
@@ -237,9 +249,16 @@ function global:Invoke-RestMethod {
                 }
             }
         }
-        return [pscustomobject]@{
-            properties = [pscustomobject]@{ columns = $columns; rows = $rows; nextLink = $next }
+        $properties = [ordered]@{ columns = $columns; rows = $rows }
+        if ($Scenario -ne 'missing-next-property') {
+            $properties.nextLink = $next
         }
+        $result = [pscustomobject]@{ properties = [pscustomobject] $properties }
+        if ($Scenario -like 'invalid-next-*') {
+            $json = ConvertTo-Json -InputObject $result -Depth 10 -Compress
+            return ConvertFrom-Json -InputObject $json
+        }
+        return $result
     }
 
     if ($Uri -like 'https://*.ingest.monitor.azure.com/*') {

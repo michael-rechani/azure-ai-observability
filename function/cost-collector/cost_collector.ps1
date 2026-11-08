@@ -251,7 +251,13 @@ function Get-CostRows {
             }
         }
         $nextProperty = $properties.PSObject.Properties['nextLink']
-        $next = if ($null -ne $nextProperty) { [string] $nextProperty.Value } else { '' }
+        $next = ''
+        if ($null -ne $nextProperty -and $null -ne $nextProperty.Value) {
+            if ($nextProperty.Value -isnot [string]) {
+                throw 'Cost Management returned an invalid continuation URL.'
+            }
+            $next = $nextProperty.Value
+        }
     }
 }
 

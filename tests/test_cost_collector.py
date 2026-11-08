@@ -28,6 +28,7 @@ class CostCollectorTests(unittest.TestCase):
             check=True,
             capture_output=True,
             text=True,
+            timeout=60,
         )
         result = next(line[7:] for line in process.stdout.splitlines() if line.startswith("RESULT="))
         return json.loads(result)
@@ -397,6 +398,30 @@ class CostCollectorTests(unittest.TestCase):
                     [entry["Uri"] for entry in rejected["CostRequests"]],
                 )
                 self.assertEqual(rejected["Ingestions"], [])
+
+    def test_rejects_non_string_continuation_metadata_without_publishing(self):
+        for scenario, expected_requests in (
+            ("invalid-next-empty-array", 1),
+            ("invalid-next-empty-object", 1),
+            ("invalid-next-single-array", 1),
+            ("invalid-next-boolean", 1),
+            ("invalid-next-number", 1),
+            ("invalid-next-array-after-page", 2),
+        ):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertFalse(result["Success"])
+                self.assertIn("invalid continuation URL", result["Error"])
+                self.assertEqual(len(result["CostRequests"]), expected_requests)
+                self.assertEqual(result["Ingestions"], [])
+
+    def test_missing_null_or_empty_string_continuation_ends_pagination(self):
+        for scenario in ("missing-next-property", "normal", "empty-next-string"):
+            with self.subTest(scenario=scenario):
+                result = self.run_collector(scenario)
+                self.assertTrue(result["Success"], result["Error"])
+                self.assertEqual(len(result["CostRequests"]), 6)
+                self.assertEqual(self.records(result)[-1]["ExpectedRows"], 6)
 
     def test_deduplicates_identical_rows_but_rejects_conflicts(self):
         result = self.run_collector("duplicate")
