@@ -43,7 +43,7 @@ function Get-ManagedToken {
     $identityResponse = Invoke-RestMethod -Method Get -Uri $uri -Headers @{
         'X-IDENTITY-HEADER' = $env:IDENTITY_HEADER
         Metadata            = 'true'
-    }
+    } -MaximumRedirection 0
     if (-not $identityResponse.access_token) {
         throw 'Azure Functions managed identity returned no access token.'
     }

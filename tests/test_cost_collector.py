@@ -376,6 +376,102 @@ class CostCollectorTests(unittest.TestCase):
                     self.assertFalse(by_case[f"redirect-{kind}-{status}"]["Success"])
         self.assertEqual(redirected_requests, [])
 
+    def test_managed_identity_requests_do_not_follow_redirects(self):
+        requests = []
+        redirected_requests = []
+
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                redirected_requests.append(self.headers.get("X-IDENTITY-HEADER"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"access_token":"unexpected-token"}')
+
+        redirect_server = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        redirect_thread = threading.Thread(target=redirect_server.serve_forever, daemon=True)
+        redirect_thread.start()
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                requests.append((self.path, self.headers.get("X-IDENTITY-HEADER")))
+                case = self.path.split("?", 1)[0].rsplit("/", 1)[-1]
+                status = 200 if case == "valid" else int(case)
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                if status != 200:
+                    self.send_header("Location", f"http://127.0.0.1:{redirect_server.server_port}/target")
+                self.end_headers()
+                if status == 200:
+                    self.wfile.write(b'{"access_token":"mock-token"}')
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        env = os.environ.copy()
+        for key in list(env):
+            if key.lower() in ("http_proxy", "https_proxy", "all_proxy"):
+                env.pop(key)
+        env["COST_COLLECTOR_SOURCE"] = str(ROOT / "function" / "cost-collector" / "cost_collector.ps1")
+        env["COST_COLLECTOR_TEST_URL"] = f"http://127.0.0.1:{server.server_port}"
+        script = r"""
+            $errors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                $env:COST_COLLECTOR_SOURCE, [ref] $tokens, [ref] $errors
+            )
+            if ($errors.Count -gt 0) { throw 'Unable to parse the collector.' }
+            $definition = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq 'Get-ManagedToken'
+            }, $true)
+            if ($null -eq $definition) { throw 'Managed identity function not found.' }
+            . ([ScriptBlock]::Create($definition.Extent.Text))
+            $IdentityClientId = 'synthetic-client-id'
+            $env:IDENTITY_HEADER = 'synthetic-identity-header'
+            $results = @(foreach ($case in @('valid', '301', '302', '303', '307', '308')) {
+                $env:IDENTITY_ENDPOINT = $env:COST_COLLECTOR_TEST_URL + '/' + $case
+                try {
+                    $value = Get-ManagedToken -Resource 'https://management.azure.com/'
+                    [pscustomobject]@{ Case = $case; Success = $true; IsExpected = $value -eq 'mock-token' }
+                }
+                catch {
+                    [pscustomobject]@{ Case = $case; Success = $false }
+                }
+            })
+            Write-Output ('RESULT=' + (ConvertTo-Json -InputObject $results -Compress))
+        """
+        try:
+            process = subprocess.run(
+                [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                capture_output=True, text=True, env=env, timeout=30, check=False,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+            redirect_server.shutdown()
+            redirect_server.server_close()
+            redirect_thread.join()
+        self.assertEqual(process.returncode, 0, process.stderr)
+        result = json.loads(next(line[7:] for line in process.stdout.splitlines() if line.startswith("RESULT=")))
+        by_case = {entry["Case"]: entry for entry in result}
+        self.assertTrue(by_case["valid"]["Success"])
+        self.assertTrue(by_case["valid"]["IsExpected"])
+        for status in (301, 302, 303, 307, 308):
+            with self.subTest(status=status):
+                self.assertFalse(by_case[str(status)]["Success"])
+        self.assertEqual(len(requests), 6)
+        self.assertTrue(all(header == "synthetic-identity-header" for _, header in requests))
+        self.assertEqual(redirected_requests, [])
+
     def test_follows_safe_pagination_and_rejects_unsafe_continuations(self):
         result = self.run_collector("pagination")
         self.assertTrue(result["Success"], result["Error"])

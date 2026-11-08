@@ -46,8 +46,9 @@ function global:Invoke-RestMethod {
     if ($Uri -like 'https://identity.example.invalid/*') {
         if ($Uri -notmatch 'api-version=2019-08-01' -or
             $Uri -notmatch 'client_id=00000000-0000-0000-0000-000000000003' -or
-            $Headers['X-IDENTITY-HEADER'] -ne 'mock-identity-header') {
-            throw 'Managed identity request omitted its version or identity.'
+            $Headers['X-IDENTITY-HEADER'] -ne 'mock-identity-header' -or
+            $null -eq $MaximumRedirection -or $MaximumRedirection -ne 0) {
+            throw 'Managed identity request omitted required parameters or allowed redirects.'
         }
         return [pscustomobject]@{ access_token = 'mock-token' }
     }
