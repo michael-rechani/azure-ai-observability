@@ -84,7 +84,11 @@ Resolve any errors before proceeding. The examples below assume the same PowerSh
 
 ## 2. Sign in and collect your Azure details
 
-Sign in as the user who will deploy and administer Grafana. If browser sign-in is unavailable, use `az login --use-device-code` instead.
+This walkthrough uses an interactive user to deploy and administer Grafana. That login is separate from the managed identities used by the running Grafana Azure Monitor data source and cost collector; those components do not need a browser login, MFA, or a client secret.
+
+An unattended deployment can instead use a separately configured workload identity, such as a service principal or user-assigned managed identity authenticated through [GitHub Actions OIDC](https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure-openid-connect). It still needs the required Azure deployment and role-assignment permissions and Grafana Admin access. This repository does not provision that deployment identity or supply a validated end-to-end OIDC workflow. For a service principal or managed identity, use its **service-principal object ID**, not its client ID, for the Grafana admin, and set `grafana_admin_principal_type = "ServicePrincipal"` in Terraform or `grafanaAdminPrincipalType = 'ServicePrincipal'` in Bicep. The signed-in-user lookup below applies only to a user.
+
+To follow this interactive walkthrough, sign in as the user who will deploy and administer Grafana. If browser sign-in is unavailable, use `az login --use-device-code` instead.
 
 ```powershell
 az login

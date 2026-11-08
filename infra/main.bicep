@@ -7,7 +7,7 @@ param location string = resourceGroup().location
 @maxLength(20)
 param namePrefix string = 'ai-observe'
 
-@description('Microsoft Entra object ID of the user/group receiving Grafana Admin access.')
+@description('Microsoft Entra object ID of the user, group, or service principal receiving Grafana Admin access.')
 @minLength(36)
 @maxLength(36)
 param grafanaAdminObjectId string
