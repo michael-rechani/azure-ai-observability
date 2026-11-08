@@ -64,6 +64,15 @@ Set-Location azure-ai-observability
 $repo = (Get-Location).Path
 ```
 
+Cloning checks out the repository's default branch. If you are following this
+guide on a different branch, switch to that same branch before continuing so
+the deployment files match the instructions. For the current cost-observability
+work-in-progress branch:
+
+```powershell
+git switch --track origin/wip/foundry-cost-observability
+```
+
 For **Bicep**, install the Bicep CLI through Azure CLI:
 
 ```powershell
