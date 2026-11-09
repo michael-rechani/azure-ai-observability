@@ -213,11 +213,18 @@ def build(config):
         ("Cost details", "azure-ai-costs", ()),
     ))
     ptu["panels"].append(panel(
-        11, "Provisioned deployment capacity (current)",
-        resource_graph("ptu-deployments.kql", "$subscription"), kind="table",
-        description="Current deployed PTUs from Azure Resource Graph; this is allocated deployment capacity, "
-        "not regional quota or available capacity.",
+        11, "Provisioned deployments reporting utilization",
+        metric("AzureOpenAIProvisionedManagedUtilizationV2", "Maximum"), "percent", kind="table",
+        description="Deployments that reported PTU utilization in the selected period, with last, maximum and "
+        "mean of the per-interval maximum utilization. Follows the deployment variable; use * to list all. "
+        "Only provisioned deployments emit this metric. "
+        "Neither Azure Monitor nor Azure Resource Graph exposes allocated PTUs or regional quota; read those "
+        "from the deployment (portal, CLI or ARM) and Azure Quotas.",
     ))
+    ptu["panels"][-1]["transformations"] = [{
+        "id": "reduce",
+        "options": {"mode": "seriesToRows", "reducers": ["lastNotNull", "max", "mean"]},
+    }]
     ptu["panels"].append({
         "id": 12, "type": "text", "title": "Cost and quota",
         "description": "Use Azure Cost Management for actual billed and amortized reservation costs.",

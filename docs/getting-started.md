@@ -4,7 +4,7 @@ This walkthrough takes you from an existing Azure AI account to dashboards in Az
 
 **Jump to:** [Preparation](#1-install-the-tools-and-get-the-repository) · [Bicep](#3a-deploy-with-bicep) · [Terraform](#3b-deploy-with-terraform) · [Verify](#4-open-and-verify-the-dashboards) · [Troubleshooting](#troubleshooting-and-cleanup)
 
-> **Before you start:** The complete deployment has not yet been validated in a live Azure subscription. Isolated lab tests covered the Bicep cost Function module and scoped role modules separately; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
+> **Before you start:** Both the Bicep and the Terraform path were deployed in an isolated Lab subscription and read live Foundry metrics, PTU metrics and agent traces. Publishing the optional cost Function was blocked there by a tenant storage policy, and real billed-cost values were not yet available, so the cost pipeline is the least-proven part; see [cost collection](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use simulated data; this deployment uses real Azure data.
 
 ## What you need and what will be created
 

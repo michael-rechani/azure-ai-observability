@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1744" viewBox="0 0 1800 1744" role="img" aria-labelledby="title description" style="max-width:100%;height:auto">
   <title id="title">Azure AI Observatory architecture at a glance</title>
-  <desc id="description">A logical Azure architecture with five numbered flows. Existing Foundry agents and applications use app-configured OpenTelemetry instrumentation and an exporter to send traces to Application Insights and Log Analytics. Evaluation events are optional. No OpenTelemetry Collector is deployed. Azure OpenAI and PTU metrics come directly from Azure Monitor. Azure Resource Graph supplies RBAC-filtered inventory and allocated capacity. Azure Managed Grafana queries these sources using its managed identity. An optional scheduled collector reads account-attributed costs from Cost Management and sends actual and amortized snapshots through a data collection endpoint and rule to the monitoring workspace. The collector is an Azure Function in the subscription that uses a user-assigned managed identity with no client secret. Azure Monitor alerts and an optional account-filtered budget notify an action group. Terraform or Bicep deploys the observability resources; existing AI accounts are not created or resized. The tenant outline is logical, not a network boundary or live resource inventory.</desc>
+  <desc id="description">A logical Azure architecture with five numbered flows. Existing Foundry agents and applications use app-configured OpenTelemetry instrumentation and an exporter to send traces to Application Insights and Log Analytics. Evaluation events are optional. No OpenTelemetry Collector is deployed. Azure OpenAI and PTU metrics come directly from Azure Monitor. Azure Resource Graph supplies RBAC-filtered inventory of accounts, projects and ML workspaces. Azure Managed Grafana queries these sources using its managed identity. An optional scheduled collector reads account-attributed costs from Cost Management and sends actual and amortized snapshots through a data collection endpoint and rule to the monitoring workspace. The collector is an Azure Function in the subscription that uses a user-assigned managed identity with no client secret. Azure Monitor alerts and an optional account-filtered budget notify an action group. Terraform or Bicep deploys the observability resources; existing AI accounts are not created or resized. The tenant outline is logical, not a network boundary or live resource inventory.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4aa8ff"/></marker>
     <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3cc3ae"/></marker>
@@ -86,17 +86,17 @@
 
   <!-- Inventory -->
   <circle cx="79" cy="607" r="15" fill="#1683d8"/><text x="79" y="613" class="num">3</text>
-  <text x="105" y="614" class="section">Inventory + PTU capacity</text>
+  <text x="105" y="614" class="section">Inventory</text>
   <rect x="66" y="635" width="270" height="106" rx="10" class="box"/>
   <text x="84" y="665" class="name">Azure resources</text>
-  <text x="84" y="691" class="body">Accounts, ML workspaces</text>
-  <text x="84" y="716" class="body">and model deployments</text>
+  <text x="84" y="691" class="body">Accounts, projects</text>
+  <text x="84" y="716" class="body">and ML workspaces</text>
   <rect x="402" y="635" width="270" height="106" rx="10" class="box"/>
   <!-- Azure icon: resource-graph -->
   <svg id="azure-icon-5-a5043521-e54b-4e71-96d7-f0f67d7a7413" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" x="420" y="643" width="28" height="28" aria-hidden="true"><defs><linearGradient id="azure-icon-5-aaf70b12-8383-43d3-8674-d08878f903d1" x1="2.63" y1="5.99" x2="2.63" y2="1.75" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#773adc" /><stop offset="1" stop-color="#b77af4" /></linearGradient><linearGradient id="azure-icon-5-ac810344-4e2d-4dad-99ba-9567b44e7523" x1="14.76" y1="6.31" x2="14.76" y2="0.85" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#773adc" /><stop offset="1" stop-color="#b77af4" /></linearGradient><linearGradient id="azure-icon-5-b4b36432-ae36-466e-9abd-a30eb14585d3" x1="11.92" y1="17.27" x2="11.92" y2="7.71" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#773adc" /><stop offset="1" stop-color="#b77af4" /></linearGradient></defs><path d="M11.56,14.24,1.79,4.35A.77.77,0,0,1,2.34,3H14.76V4.58H4.19l8.47,8.58Z" fill="#b796f9" /><ellipse cx="2.63" cy="3.87" rx="2.13" ry="2.12" fill="url(#azure-icon-5-aaf70b12-8383-43d3-8674-d08878f903d1)" /><ellipse cx="14.76" cy="3.58" rx="2.74" ry="2.73" fill="url(#azure-icon-5-ac810344-4e2d-4dad-99ba-9567b44e7523)" /><ellipse cx="11.92" cy="13.69" rx="3.47" ry="3.46" fill="url(#azure-icon-5-b4b36432-ae36-466e-9abd-a30eb14585d3)" /></svg>
   <text x="458" y="665" class="name">Azure Resource Graph</text>
   <text x="420" y="691" class="body">RBAC-filtered inventory</text>
-  <text x="420" y="716" class="body">and allocated PTU capacity</text>
+  <text x="420" y="716" class="body">of those resources</text>
   <path d="M336 688H399" class="data"/><path d="M672 688H1118" class="data"/>
 
   <!-- Grafana and access -->

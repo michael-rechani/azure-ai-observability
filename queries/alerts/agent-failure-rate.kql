@@ -1,4 +1,4 @@
-AppRequests
+union AppRequests, AppDependencies
 | where TimeGenerated > ago(10m)
 | where tostring(Properties["gen_ai.operation.name"]) == "invoke_agent"
 | extend Agent = iff(isempty(tostring(Properties["gen_ai.agent.name"])),
