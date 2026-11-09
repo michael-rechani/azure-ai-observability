@@ -142,6 +142,12 @@ An end-to-end Lab deployment of both stages surfaced two Terraform defects, now 
 
 If a policy forces the cost storage account's `publicNetworkAccess` off, expect a standing plan difference on `public_network_access_enabled`. That is the policy rewriting the account, not drift you can remove; see [tenants that force storage public access off](costs.md#tenants-that-force-storage-public-access-off).
 
+**Destroy stops at a Terraform-created resource group.** The Lab `terraform destroy` removed every managed resource, then failed on the resource group itself (`create_resource_group = true`). Azure creates a *Failure Anomalies* smart-detector alert rule in the group when Application Insights is created. Terraform does not manage it, so the `azurerm` provider's `prevent_deletion_if_contains_resources` check refuses to delete the group. That check is a safeguard, so the configuration leaves it on. Delete the group yourself once you have confirmed nothing else you care about lives in it:
+
+```powershell
+az group delete --name <resource-group> --yes
+```
+
 ## Validation and lifecycle
 
 Without logging in to Azure or deploying:
