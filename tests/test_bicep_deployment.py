@@ -80,7 +80,8 @@ class BicepDeploymentTests(unittest.TestCase):
             if item["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials"
         ])
 
-    def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True):
+    def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True,
+                    fail_function=False):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             parameter_data = parameters() if values is None else values
@@ -105,6 +106,7 @@ class BicepDeploymentTests(unittest.TestCase):
                 "TEST_LOG": str(log),
                 "TEST_WHAT_IF": str(what_if).lower(),
                 "TEST_COST_DASHBOARD": str(cost_dashboard).lower(),
+                "TEST_FAIL_FUNCTION": str(fail_function).lower(),
             })
             result = subprocess.run(
                 [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "tests" / "bicep_harness.ps1")],
@@ -276,11 +278,19 @@ class BicepDeploymentTests(unittest.TestCase):
         result, calls = self.run_harness("deploy")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls["cli"][1][:3], ["deployment", "group", "create"])
-        self.assertEqual(calls["cli"][2][:3], ["functionapp", "deployment", "source"])
+        commands = [command[:3] for command in calls["cli"]]
+        publish = commands.index(["functionapp", "deployment", "source"])
+        self.assertLess(commands.index(["account", "get-access-token", "--subscription"]), publish)
+        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
         self.assertIn("host.json", calls["zipEntries"])
         self.assertIn("CollectCost/function.json", [name.replace("\\", "/") for name in calls["zipEntries"]])
         self.assertFalse(Path(calls["parameterTemp"]).exists())
+
+    def test_function_publish_failure_still_provisions_grafana(self):
+        result, calls = self.run_harness("deploy", fail_function=True)
+        self.assertNotEqual(result.returncode, 0)
         self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
+        self.assertFalse(Path(calls["parameterTemp"]).exists())
 
     def test_deploy_without_cost_pipeline_publishes_no_function(self):
         values = parameters()
