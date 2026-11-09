@@ -127,6 +127,99 @@ def cost_logs(filename, table=False, workspace="workspaceResourceId"):
     return target
 
 
+def token_cost_panel(number):
+    """Estimated pay-as-you-go cost: token metrics x a list-price table, joined in Grafana."""
+    model_dimension = [{"dimension": "ModelName", "operator": "eq", "filters": ["*"]}]
+    input_tokens = metric("InputTokens", "Total", model_dimension)
+    output_tokens = metric("OutputTokens", "Total", model_dimension)
+    output_tokens["refId"] = "B"
+    prices = logs("model-prices.kql", table=True)
+    prices["refId"] = "C"
+    prices["azureLogAnalytics"]["dashboardTime"] = False
+
+    def calculate(alias, left, operator, right):
+        side = lambda name: {"matcher": {"id": "byName", "options": name}}
+        return {"id": "calculateField", "options": {
+            "mode": "binary", "alias": alias,
+            "binary": {
+                "left": side(left), "operator": operator,
+                "right": {"fixed": right} if right.isdigit() else side(right),
+            },
+        }}
+
+    def positive(field):
+        return {"fieldName": field, "config": {"id": "greater", "options": {"value": 0}}}
+
+    transformations = [
+        {"id": "labelsToFields", "options": {"mode": "columns"}},
+        {"id": "merge", "options": {}},
+        {"id": "groupBy", "options": {"fields": {
+            "modelname": {"aggregations": [], "operation": "groupby"},
+            "Input Tokens": {"aggregations": ["sum"], "operation": "aggregate"},
+            "Output Tokens": {"aggregations": ["sum"], "operation": "aggregate"},
+            "InputPer1M": {"aggregations": ["max"], "operation": "aggregate"},
+            "OutputPer1M": {"aggregations": ["max"], "operation": "aggregate"},
+        }}},
+        {"id": "filterByValue", "options": {
+            "type": "include", "match": "any",
+            "filters": [positive("Input Tokens (sum)"), positive("Output Tokens (sum)")],
+        }},
+        calculate("inputUsd", "Input Tokens (sum)", "*", "InputPer1M (max)"),
+        calculate("outputUsd", "Output Tokens (sum)", "*", "OutputPer1M (max)"),
+        calculate("totalMicroUsd", "inputUsd", "+", "outputUsd"),
+        calculate("Estimated cost", "totalMicroUsd", "/", "1000000"),
+        {"id": "organize", "options": {
+            "excludeByName": {"inputUsd": True, "outputUsd": True, "totalMicroUsd": True},
+            "indexByName": {
+                "modelname": 0, "Input Tokens (sum)": 1, "Output Tokens (sum)": 2,
+                "InputPer1M (max)": 3, "OutputPer1M (max)": 4, "Estimated cost": 5,
+            },
+            "renameByName": {
+                "modelname": "Model",
+                "Input Tokens (sum)": "Input tokens",
+                "Output Tokens (sum)": "Output tokens",
+                "InputPer1M (max)": "Input price/1M",
+                "OutputPer1M (max)": "Output price/1M",
+                "Estimated cost": "Est. cost (USD)",
+            },
+        }},
+    ]
+    item = panel(
+        number, "Estimated pay-as-you-go token cost by model (list price, not billed)", input_tokens,
+        kind="table",
+        description=(
+            "An estimate, not billed cost. Tokens in the selected time range (Azure Monitor InputTokens "
+            "and OutputTokens for every model on the selected account) multiplied by the Global Standard "
+            "list prices in queries/model-prices.kql. Input tokens are priced as uncached, so a workload "
+            "with heavy prompt caching is overstated. Batch, Flex, Priority, regional and data-zone "
+            "pricing, hosted-agent compute, PTU hourly charges and tax are not covered; tokens served by "
+            "a PTU deployment are priced as if pay-as-you-go. A model missing from the price table shows "
+            "'no list price' and is left out of the cost total in the footer (its tokens are still "
+            "counted). Costs are rounded to cents. Use the cost collector and the "
+            "Costs dashboard for billed cost."
+        ),
+    )
+    item["targets"] = [input_tokens, output_tokens, prices]
+    item["gridPos"] = {"h": 10, "w": 24, "x": 0, "y": ((number - 1) // 2) * 8}
+    item["transformations"] = transformations
+    item["fieldConfig"]["defaults"]["unit"] = "short"
+    item["options"].update({
+        "sortBy": [{"displayName": "Est. cost (USD)", "desc": True}],
+        "footer": {
+            "show": True, "reducer": ["sum"], "countRows": False,
+            "fields": ["Input tokens", "Output tokens", "Est. cost (USD)"],
+        },
+    })
+    override(item, "/^(Input|Output) price\\/1M$/", {
+        "unit": "currencyUSD", "decimals": 2, "noValue": "not listed",
+    })
+    override(item, "/^Est\\. cost \\(USD\\)$/", {
+        "unit": "currencyUSD", "decimals": 2,
+        "mappings": [{"type": "value", "options": {"0": {"text": "no list price", "index": 0}}}],
+    })
+    return item
+
+
 def resource_graph(filename, subscription):
     return {
         "refId": "A", "datasource": DS, "queryType": "Azure Resource Graph",
@@ -352,6 +445,7 @@ def build(config):
     ))
     for item in foundry["panels"][2:]:
         item["description"] = "OpenAI-specific metric on the selected account; not a universal metric for every Foundry model."
+    foundry["panels"].append(token_cost_panel(5))
     cost_panels = [{
         "id": 1, "type": "text", "title": "Understand these costs",
         "datasource": DS, "targets": [],

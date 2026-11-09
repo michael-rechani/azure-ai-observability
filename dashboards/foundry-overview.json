@@ -303,6 +303,373 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "id": 5,
+      "title": "Estimated pay-as-you-go token cost by model (list price, not billed)",
+      "type": "table",
+      "description": "An estimate, not billed cost. Tokens in the selected time range (Azure Monitor InputTokens and OutputTokens for every model on the selected account) multiplied by the Global Standard list prices in queries/model-prices.kql. Input tokens are priced as uncached, so a workload with heavy prompt caching is overstated. Batch, Flex, Priority, regional and data-zone pricing, hosted-agent compute, PTU hourly charges and tax are not covered; tokens served by a PTU deployment are priced as if pay-as-you-go. A model missing from the price table shows 'no list price' and is left out of the cost total in the footer (its tokens are still counted). Costs are rounded to cents. Use the cost collector and the Costs dashboard for billed cost.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resourceGroup",
+                "resourceName": "$account",
+                "region": "$region",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "InputTokens",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelName",
+                "operator": "eq",
+                "filters": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resourceGroup",
+                "resourceName": "$account",
+                "region": "$region",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "OutputTokens",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelName",
+                "operator": "eq",
+                "filters": [
+                  "*"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "// List prices used by the Foundry overview \"Estimated pay-as-you-go token cost\" panel.\n// Unit: USD per 1M tokens (Global Standard, pay-as-you-go, eastus2), from the Azure Retail Prices API.\n// The panel joins this table to the InputTokens/OutputTokens metrics by model name (column \"modelname\").\n// A model that is not listed shows \"no list price\" in the panel. It is not silently dropped.\n// Not covered: Batch, Flex, Priority, Data Zone and regional pricing, long-context tiers, and PTU hourly billing.\n// Edit a price here, then run: python scripts/build_dashboards.py\n// gpt-4o is priced for model versions 2024-08-06 and later; version 2024-05-13 was 5.0 / 15.0.\n// The two null columns make sure the token fields exist even when one metric returns no series.\ndatatable(modelname: string, InputPer1M: real, OutputPer1M: real) [\n    \"gpt-5\", 1.25, 10.0,\n    \"gpt-5-mini\", 0.25, 2.0,\n    \"gpt-5-nano\", 0.05, 0.4,\n    \"gpt-5.1\", 1.25, 10.0,\n    \"gpt-5.2\", 1.75, 14.0,\n    \"gpt-5.4\", 2.5, 15.0,\n    \"gpt-5.4-mini\", 0.75, 4.5,\n    \"gpt-5.4-nano\", 0.2, 1.25,\n    \"gpt-4.1\", 2.0, 8.0,\n    \"gpt-4.1-mini\", 0.4, 1.6,\n    \"gpt-4.1-nano\", 0.1, 0.4,\n    \"gpt-4o\", 2.5, 10.0,\n    \"gpt-4o-mini\", 0.15, 0.6,\n    \"o3\", 2.0, 8.0,\n    \"o4-mini\", 1.1, 4.4,\n    \"text-embedding-3-large\", 0.13, 0.0,\n    \"text-embedding-3-small\", 0.02, 0.0\n]\n| extend ['Input Tokens'] = real(null), ['Output Tokens'] = real(null)\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": false
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^(Input|Output) price\\/1M$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "noValue",
+                "value": "not listed"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^Est\\. cost \\(USD\\)$/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "no list price",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Est. cost (USD)",
+            "desc": true
+          }
+        ],
+        "footer": {
+          "show": true,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": [
+            "Input tokens",
+            "Output tokens",
+            "Est. cost (USD)"
+          ]
+        }
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "modelname": {
+                "aggregations": [],
+                "operation": "groupby"
+              },
+              "Input Tokens": {
+                "aggregations": [
+                  "sum"
+                ],
+                "operation": "aggregate"
+              },
+              "Output Tokens": {
+                "aggregations": [
+                  "sum"
+                ],
+                "operation": "aggregate"
+              },
+              "InputPer1M": {
+                "aggregations": [
+                  "max"
+                ],
+                "operation": "aggregate"
+              },
+              "OutputPer1M": {
+                "aggregations": [
+                  "max"
+                ],
+                "operation": "aggregate"
+              }
+            }
+          }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "include",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "Input Tokens (sum)",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              },
+              {
+                "fieldName": "Output Tokens (sum)",
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "inputUsd",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Input Tokens (sum)"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "InputPer1M (max)"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "outputUsd",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Output Tokens (sum)"
+                }
+              },
+              "operator": "*",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "OutputPer1M (max)"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "totalMicroUsd",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "inputUsd"
+                }
+              },
+              "operator": "+",
+              "right": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "outputUsd"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "alias": "Estimated cost",
+            "binary": {
+              "left": {
+                "matcher": {
+                  "id": "byName",
+                  "options": "totalMicroUsd"
+                }
+              },
+              "operator": "/",
+              "right": {
+                "fixed": "1000000"
+              }
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "inputUsd": true,
+              "outputUsd": true,
+              "totalMicroUsd": true
+            },
+            "indexByName": {
+              "modelname": 0,
+              "Input Tokens (sum)": 1,
+              "Output Tokens (sum)": 2,
+              "InputPer1M (max)": 3,
+              "OutputPer1M (max)": 4,
+              "Estimated cost": 5
+            },
+            "renameByName": {
+              "modelname": "Model",
+              "Input Tokens (sum)": "Input tokens",
+              "Output Tokens (sum)": "Output tokens",
+              "InputPer1M (max)": "Input price/1M",
+              "OutputPer1M (max)": "Output price/1M",
+              "Estimated cost": "Est. cost (USD)"
+            }
+          }
+        }
+      ]
     }
   ],
   "templating": {

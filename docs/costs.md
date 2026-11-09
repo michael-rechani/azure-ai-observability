@@ -84,7 +84,29 @@ Grafana's managed identity can already read per-model token metrics (`InputToken
 - **Prompt caching breaks the input side.** `InputTokens` includes cached tokens, which bill at a much lower rate. For the largest model about three quarters of input tokens were cached. No usable per-model cached-token metric was found: `cacheReadInputTokens` had no data and the cache-match-rate average did not match the billed split. Pricing all input as uncached overstated total cost by roughly 30–50% on those days.
 - **Not covered:** provisioned (PTU) hourly charges, hosted-agent compute, negotiated or discounted rates, tax, and later price changes.
 
-A tokens × price table panel would therefore be a native, secretless **upper-bound estimate** for pay-as-you-go token spend, not billed cost. It is not implemented in the dashboards; the collector stays the source of billed cost. This is one account over a few days, so repeat the comparison on your own accounts before relying on it.
+The Foundry overview dashboard now has a table built on exactly this: **Estimated pay-as-you-go token cost by model (list price, not billed)**. It is a native, secretless **estimate**. The collector and the Costs dashboard stay the source of billed cost. The reconciliation above is one account over a few days, so repeat the comparison on your own accounts before relying on the panel.
+
+#### How the panel works
+
+- **Tokens.** `InputTokens` and `OutputTokens` (Total) split by the `ModelName` dimension for the account selected on the dashboard, read by Grafana's managed identity through the Azure Monitor datasource.
+- **Prices.** A `datatable` in [`queries/model-prices.kql`](../queries/model-prices.kql): USD per 1M tokens, Global Standard, `eastus2`, from the Azure Retail Prices API. It is read through the Azure Monitor datasource's Log Analytics query against the dashboard's **Telemetry workspace ARM ID**, so that variable must hold a workspace Grafana can query. The query reads no tables.
+- **Join.** Grafana transformations join tokens to prices on the model name and multiply. There is no collector, secret or extra resource.
+
+#### Keep the price table current
+
+Prices change and your agreement may differ. To update them, edit `queries/model-prices.kql`, run `python scripts/build_dashboards.py`, then re-import or redeploy the dashboards. A model missing from the table is not dropped: it shows `not listed` for prices and `no list price` for cost, and its tokens are still counted. The footer's cost total leaves it out. Costs are rounded to cents, so a low-volume model can show `$0.00`.
+
+#### What it does not cover
+
+- **Prompt caching.** All input tokens are priced as uncached, so a workload with heavy caching is overstated (see the comparison above).
+- Batch, Flex, Priority, data-zone and regional pricing, long-context tiers (`gpt-5.5` and later are not in the table), hosted-agent compute, negotiated or discounted rates, and tax.
+- **PTU.** Tokens served by a provisioned deployment are priced as if pay-as-you-go. That is a pay-as-you-go equivalent, not the PTU hourly bill.
+- The panel relies on the metric names `Input Tokens` and `Output Tokens` and the `ModelName` dimension. If Azure changes them the panel visibly breaks rather than showing wrong numbers.
+
+#### What was and was not validated
+
+- **Validated live.** A throwaway Managed Grafana (Bicep deployment) read a Foundry account through its managed identity. Token totals in the panel matched the usage the API reported for the test calls. A priced model, a second priced model and an unpriced embedding model all rendered correctly in a browser on Grafana 12.4, with sorting, the footer and the `no list price` path. A repeat deployment updated the dashboards cleanly. The real queries, frames and transformations were exercised, not only synthetic data.
+- **Not validated.** The dollar figure against an invoice for those calls (the amounts were too small and billing lags), PTU deployments, accounts with their own negotiated rates, other Grafana versions, and prices for regions other than `eastus2`.
 
 ## What the numbers mean
 

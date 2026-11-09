@@ -1,0 +1,28 @@
+// List prices used by the Foundry overview "Estimated pay-as-you-go token cost" panel.
+// Unit: USD per 1M tokens (Global Standard, pay-as-you-go, eastus2), from the Azure Retail Prices API.
+// The panel joins this table to the InputTokens/OutputTokens metrics by model name (column "modelname").
+// A model that is not listed shows "no list price" in the panel. It is not silently dropped.
+// Not covered: Batch, Flex, Priority, Data Zone and regional pricing, long-context tiers, and PTU hourly billing.
+// Edit a price here, then run: python scripts/build_dashboards.py
+// gpt-4o is priced for model versions 2024-08-06 and later; version 2024-05-13 was 5.0 / 15.0.
+// The two null columns make sure the token fields exist even when one metric returns no series.
+datatable(modelname: string, InputPer1M: real, OutputPer1M: real) [
+    "gpt-5", 1.25, 10.0,
+    "gpt-5-mini", 0.25, 2.0,
+    "gpt-5-nano", 0.05, 0.4,
+    "gpt-5.1", 1.25, 10.0,
+    "gpt-5.2", 1.75, 14.0,
+    "gpt-5.4", 2.5, 15.0,
+    "gpt-5.4-mini", 0.75, 4.5,
+    "gpt-5.4-nano", 0.2, 1.25,
+    "gpt-4.1", 2.0, 8.0,
+    "gpt-4.1-mini", 0.4, 1.6,
+    "gpt-4.1-nano", 0.1, 0.4,
+    "gpt-4o", 2.5, 10.0,
+    "gpt-4o-mini", 0.15, 0.6,
+    "o3", 2.0, 8.0,
+    "o4-mini", 1.1, 4.4,
+    "text-embedding-3-large", 0.13, 0.0,
+    "text-embedding-3-small", 0.02, 0.0
+]
+| extend ['Input Tokens'] = real(null), ['Output Tokens'] = real(null)
