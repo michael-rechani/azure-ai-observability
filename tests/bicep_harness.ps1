@@ -27,6 +27,10 @@ $configuration = @{
     enableCostExportDashboard = $env:TEST_COST_EXPORT -eq 'true'
     costExportClusterUri = if ($env:TEST_COST_EXPORT_URI) { $env:TEST_COST_EXPORT_URI } else { 'https://adx.eastus.kusto.windows.net' }
     costExportDatabase = 'costs'
+    enableCostInfinityDashboard = $env:TEST_COST_INFINITY -eq 'true'
+    costInfinityTenantId = '55555555-5555-5555-5555-555555555555'
+    costInfinityClientId = if ($env:TEST_INFINITY_CLIENT_ID) { $env:TEST_INFINITY_CLIENT_ID } else { '66666666-6666-6666-6666-666666666666' }
+    costInfinityScope = if ($env:TEST_INFINITY_SCOPE) { $env:TEST_INFINITY_SCOPE } else { "/subscriptions/$subscription" }
 }
 
 function global:az {
@@ -92,20 +96,31 @@ function global:Invoke-WebRequest {
     elseif ($mode -eq 'redirect') {
         $status = 302
     }
+    elseif ($Method -eq 'Get' -and $path -like '/api/plugins/*/settings') {
+        if ($env:TEST_PLUGIN_MISSING -eq 'true') {
+            $status = 404
+        }
+        else {
+            $content = @{ id = $path.Split('/')[3]; signature = 'valid' }
+        }
+    }
     elseif ($Method -eq 'Get' -and $path -like '/api/datasources/uid/*') {
         if ($mode -eq 'new') {
             $status = 404
         }
         else {
-            $isAdx = $path.EndsWith('/ai-observability-azure-data-explorer')
+            $uid = $path.Split('/')[-1]
+            $isAdx = $uid -eq 'ai-observability-azure-data-explorer'
+            $isInfinity = $uid -eq 'ai-observability-cost-infinity'
+            $unmanaged = $mode -eq 'unmanaged-source' -or ($isAdx -and $mode -eq 'unmanaged-adx-source') -or ($isInfinity -and $mode -eq 'unmanaged-infinity-source')
             $content = @{
-                id = if ($isAdx) { 5 } else { 4 }
-                version = if ($isAdx) { 3 } else { 7 }
-                uid = $path.Split('/')[-1]
-                name = if ($isAdx) { 'AI observability - Azure Data Explorer' } else { 'AI observability - Azure Monitor' }
-                type = if ($isAdx) { 'grafana-azure-data-explorer-datasource' } else { 'grafana-azure-monitor-datasource' }
+                id = if ($isInfinity) { 6 } elseif ($isAdx) { 5 } else { 4 }
+                version = if ($isInfinity) { 2 } elseif ($isAdx) { 3 } else { 7 }
+                uid = $uid
+                name = if ($isInfinity) { 'AI observability - Cost Management (Infinity)' } elseif ($isAdx) { 'AI observability - Azure Data Explorer' } else { 'AI observability - Azure Monitor' }
+                type = if ($isInfinity) { 'yesoreyeram-infinity-datasource' } elseif ($isAdx) { 'grafana-azure-data-explorer-datasource' } else { 'grafana-azure-monitor-datasource' }
                 readOnly = $false
-                jsonData = if ($mode -eq 'unmanaged-source' -or ($isAdx -and $mode -eq 'unmanaged-adx-source')) { @{} } else { @{ aiObservabilityOwner = 'azure-ai-observability-bicep-v1' } }
+                jsonData = if ($unmanaged) { @{} } else { @{ aiObservabilityOwner = 'azure-ai-observability-bicep-v1' } }
             }
         }
     }
@@ -151,8 +166,15 @@ try {
             Test-BicepDeploymentParameters -Parameters $parameters -SubscriptionId $subscription
         }
         'grafana' {
-            & (Join-Path $root 'scripts' 'provision_grafana.ps1') `
-                -Endpoint $env:TEST_ENDPOINT -SubscriptionId $subscription -DashboardConfiguration $configuration
+            $grafanaArguments = @{
+                Endpoint = $env:TEST_ENDPOINT
+                SubscriptionId = $subscription
+                DashboardConfiguration = $configuration
+            }
+            if ($env:TEST_INFINITY_SECRET_PARAMETER -eq 'true') {
+                $grafanaArguments['CostInfinityClientSecret'] = ConvertTo-SecureString -String 'test-secret-value' -AsPlainText -Force
+            }
+            & (Join-Path $root 'scripts' 'provision_grafana.ps1') @grafanaArguments
         }
         'deploy' {
             $arguments = @{
@@ -162,6 +184,9 @@ try {
             }
             if ($env:TEST_WHAT_IF -eq 'true') {
                 $arguments['WhatIf'] = $true
+            }
+            if ($env:TEST_INFINITY_SECRET_PARAMETER -eq 'true') {
+                $arguments['CostInfinityClientSecret'] = ConvertTo-SecureString -String 'test-secret-value' -AsPlainText -Force
             }
             & (Join-Path $root 'scripts' 'deploy_bicep.ps1') @arguments
         }

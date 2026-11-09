@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)]
     [string] $SubscriptionId,
     [Parameter(Mandatory)]
-    [System.Collections.IDictionary] $DashboardConfiguration
+    [System.Collections.IDictionary] $DashboardConfiguration,
+    [System.Security.SecureString] $CostInfinityClientSecret
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,6 +32,9 @@ $sourceUid = 'ai-observability-azure-monitor'
 $sourceName = 'AI observability - Azure Monitor'
 $adxSourceUid = 'ai-observability-azure-data-explorer'
 $adxSourceName = 'AI observability - Azure Data Explorer'
+$infinityUid = 'ai-observability-cost-infinity'
+$infinityName = 'AI observability - Cost Management (Infinity)'
+$infinityPluginId = 'yesoreyeram-infinity-datasource'
 $owner = 'azure-ai-observability-bicep-v1'
 $ownerTag = 'managed-by-azure-ai-observability-bicep'
 $root = Split-Path -Parent $PSScriptRoot
@@ -55,6 +59,32 @@ if ($DashboardConfiguration.enableCostExportDashboard) {
         throw 'costExportDatabase must be a simple Azure Data Explorer database name.'
     }
     $files['azure-ai-costs-native.json'] = 'native'
+}
+$infinityTenantId = $null
+$infinityClientId = $null
+$infinityScope = $null
+$infinitySecret = $null
+if ($DashboardConfiguration.enableCostInfinityDashboard) {
+    $infinityTenantId = [string]$DashboardConfiguration.costInfinityTenantId
+    $infinityClientId = [string]$DashboardConfiguration.costInfinityClientId
+    $infinityScope = [string]$DashboardConfiguration.costInfinityScope
+    $parsedGuid = [guid]::Empty
+    foreach ($pair in @(@($infinityTenantId, 'costInfinityTenantId'), @($infinityClientId, 'costInfinityClientId'))) {
+        if (-not [guid]::TryParse($pair[0], [ref] $parsedGuid) -or $parsedGuid -eq [guid]::Empty) {
+            throw "$($pair[1]) must be a nonzero GUID."
+        }
+    }
+    if ($infinityScope -notmatch '^/subscriptions/[0-9A-Fa-f-]{36}(/resourceGroups/[A-Za-z0-9._()-]+)?$') {
+        throw 'costInfinityScope must be /subscriptions/<id> or /subscriptions/<id>/resourceGroups/<name>.'
+    }
+    if ($null -eq $CostInfinityClientSecret -and $env:AI_OBSERVABILITY_COST_CLIENT_SECRET) {
+        $CostInfinityClientSecret = ConvertTo-SecureString -String $env:AI_OBSERVABILITY_COST_CLIENT_SECRET -AsPlainText -Force
+    }
+    if ($null -eq $CostInfinityClientSecret -or $CostInfinityClientSecret.Length -eq 0) {
+        throw 'The Infinity cost dashboard needs the service principal client secret. Pass -CostInfinityClientSecret or set AI_OBSERVABILITY_COST_CLIENT_SECRET; it is never stored in the Bicep parameters.'
+    }
+    $infinitySecret = [System.Net.NetworkCredential]::new('', $CostInfinityClientSecret).Password
+    $files['azure-ai-costs-infinity.json'] = 'infinity'
 }
 
 function Get-AccountDefaults {
@@ -105,7 +135,7 @@ function Set-DashboardDefaults {
 $prepared = [System.Collections.Generic.List[object]]::new()
 foreach ($entry in $files.GetEnumerator()) {
     $path = Join-Path $root 'dashboards' $entry.Key
-    $content = [IO.File]::ReadAllText($path).Replace('${DS_AZURE_MONITOR}', $sourceUid).Replace('${DS_AZURE_DATA_EXPLORER}', $adxSourceUid)
+    $content = [IO.File]::ReadAllText($path).Replace('${DS_AZURE_MONITOR}', $sourceUid).Replace('${DS_AZURE_DATA_EXPLORER}', $adxSourceUid).Replace('${DS_COST_INFINITY}', $infinityUid)
     $dashboard = $content | ConvertFrom-Json -AsHashtable -Depth 100
     if ($dashboard.uid -notmatch '^[A-Za-z0-9_-]+$') {
         throw "Dashboard '$($entry.Key)' has an invalid UID."
@@ -120,6 +150,7 @@ foreach ($entry in $files.GetEnumerator()) {
         'ptu' { Get-AccountDefaults $DashboardConfiguration.ptuAccount }
         'cost' { @{ workspaceResourceId = $DashboardConfiguration.monitoringWorkspaceResourceId } }
         'native' { @{} }
+        'infinity' { @{ costScope = $infinityScope } }
         'business' {
             $values = @{
                 workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId
@@ -234,6 +265,15 @@ if ($adxClusterUri) {
     $existingAdxSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$adxSourceUid" -AllowNotFound
     Assert-OwnedDataSource -Existing $existingAdxSource -Uid $adxSourceUid -Name $adxSourceName -Type 'grafana-azure-data-explorer-datasource'
 }
+$existingInfinitySource = $null
+if ($infinitySecret) {
+    $plugin = Invoke-GrafanaApi -Method 'Get' -Path "/api/plugins/$infinityPluginId/settings" -AllowNotFound
+    if ($null -eq $plugin) {
+        throw "The Infinity plugin ($infinityPluginId) is not installed on this Grafana workspace. Redeploy with enableCostInfinity = true, or install it from the Grafana plugin catalog, and rerun."
+    }
+    $existingInfinitySource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$infinityUid" -AllowNotFound
+    Assert-OwnedDataSource -Existing $existingInfinitySource -Uid $infinityUid -Name $infinityName -Type $infinityPluginId
+}
 foreach ($item in $prepared) {
     $current = Invoke-GrafanaApi -Method 'Get' -Path "/api/dashboards/uid/$($item.dashboard.uid)" -AllowNotFound
     if ($null -ne $current) {
@@ -272,6 +312,31 @@ if ($adxClusterUri) {
             dataConsistency = 'strong'
             azureCredentials = @{ authType = 'msi' }
             aiObservabilityOwner = $owner
+        }
+    }
+}
+if ($infinitySecret) {
+    Save-DataSource -Existing $existingInfinitySource -Source @{
+        uid = $infinityUid
+        name = $infinityName
+        type = $infinityPluginId
+        access = 'proxy'
+        jsonData = @{
+            auth_method = 'oauth2'
+            oauthPassThru = $false
+            allowedHosts = @('https://management.azure.com')
+            oauth2 = @{
+                oauth2_type = 'client_credentials'
+                client_id = $infinityClientId
+                token_url = "https://login.microsoftonline.com/$infinityTenantId/oauth2/token"
+                authStyle = 1
+            }
+            oauth2EndPointParamsName1 = 'resource'
+            aiObservabilityOwner = $owner
+        }
+        secureJsonData = @{
+            oauth2ClientSecret = $infinitySecret
+            oauth2EndPointParamsValue1 = 'https://management.azure.com/'
         }
     }
 }

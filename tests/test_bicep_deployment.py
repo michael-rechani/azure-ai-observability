@@ -12,6 +12,9 @@ PWSH = shutil.which("pwsh")
 AZ = shutil.which("az")
 SUBSCRIPTION = "11111111-1111-1111-1111-111111111111"
 OTHER_SUBSCRIPTION = "33333333-3333-3333-3333-333333333333"
+INFINITY_SECRET = "test-secret-value"
+INFINITY_CLIENT_ID = "66666666-6666-6666-6666-666666666666"
+INFINITY_OBJECT_ID = "77777777-7777-7777-7777-777777777777"
 ACCOUNT = {
     "subscriptionId": SUBSCRIPTION,
     "resourceGroup": "foundry-rg",
@@ -81,7 +84,8 @@ class BicepDeploymentTests(unittest.TestCase):
         ])
 
     def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True,
-                    fail_function=False, cost_export=False, cost_export_uri=None):
+                    fail_function=False, cost_export=False, cost_export_uri=None, cost_infinity=False,
+                    infinity_secret=None, plugin_missing=False, infinity_scope=None):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             parameter_data = parameters() if values is None else values
@@ -109,7 +113,14 @@ class BicepDeploymentTests(unittest.TestCase):
                 "TEST_FAIL_FUNCTION": str(fail_function).lower(),
                 "TEST_COST_EXPORT": str(cost_export).lower(),
                 "TEST_COST_EXPORT_URI": cost_export_uri or "",
+                "TEST_COST_INFINITY": str(cost_infinity).lower(),
+                "TEST_PLUGIN_MISSING": str(plugin_missing).lower(),
+                "TEST_INFINITY_SCOPE": infinity_scope or "",
+                "TEST_INFINITY_SECRET_PARAMETER": str(infinity_secret == "parameter").lower(),
             })
+            environment.pop("AI_OBSERVABILITY_COST_CLIENT_SECRET", None)
+            if infinity_secret == "env":
+                environment["AI_OBSERVABILITY_COST_CLIENT_SECRET"] = INFINITY_SECRET
             result = subprocess.run(
                 [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "tests" / "bicep_harness.ps1")],
                 env=environment, capture_output=True, text=True,
@@ -308,6 +319,186 @@ class BicepDeploymentTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("costExportClusterUri", result.stderr)
                 self.assertEqual(calls["http"], [])
+
+    def infinity_parameters(self, scope="subscription"):
+        values = parameters()
+        values["enableCostInfinity"] = {"value": True}
+        values["costInfinityClientId"] = {"value": INFINITY_CLIENT_ID}
+        values["costInfinityServicePrincipalObjectId"] = {"value": INFINITY_OBJECT_ID}
+        values["costInfinityScope"] = {"value": scope}
+        return values
+
+    def test_infinity_requires_real_principal_ids_and_a_valid_scope(self):
+        result, _ = self.run_harness("validate", self.infinity_parameters())
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        for name in ("costInfinityClientId", "costInfinityServicePrincipalObjectId"):
+            with self.subTest(name=name):
+                for bad in ("", "not-a-guid", "00000000-0000-0000-0000-000000000000"):
+                    values = self.infinity_parameters()
+                    values[name] = {"value": bad}
+                    result, _ = self.run_harness("validate", values)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(name, result.stderr)
+
+        bad_scope = self.infinity_parameters("resourceGroup")
+        result, _ = self.run_harness("validate", bad_scope)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("costInfinityScope", result.stderr)
+
+        disabled = parameters()
+        result, _ = self.run_harness("validate", disabled)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_infinity_resource_group_scope_needs_monitored_accounts_in_this_subscription(self):
+        ok = self.infinity_parameters("resourceGroupManaged")
+        result, _ = self.run_harness("validate", ok)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        none = self.infinity_parameters("resourceGroupManaged")
+        none["monitoredAccounts"]["value"] = []
+        result, _ = self.run_harness("validate", none)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("monitored account", result.stderr)
+
+        cross = self.infinity_parameters("resourceGroupManaged")
+        cross["monitoredAccounts"]["value"][0]["subscriptionId"] = OTHER_SUBSCRIPTION
+        cross["enableCostPipeline"]["value"] = False
+        result, _ = self.run_harness("validate", cross)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("monitoring subscription", result.stderr)
+
+    def test_grafana_provisions_infinity_source_with_the_secret_only_in_secure_data(self):
+        for how in ("env", "parameter"):
+            with self.subTest(secret=how):
+                result, calls = self.run_harness("grafana", cost_infinity=True, infinity_secret=how)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn(INFINITY_SECRET, result.stdout + result.stderr)
+                posts = [call for call in calls["http"] if call["method"] == "Post"]
+                sources = [call["body"] for call in posts if call["path"] == "/api/datasources"]
+                infinity = next(body for body in sources if body["type"] == "yesoreyeram-infinity-datasource")
+                self.assertEqual(infinity["uid"], "ai-observability-cost-infinity")
+                self.assertEqual(infinity["jsonData"]["auth_method"], "oauth2")
+                self.assertFalse(infinity["jsonData"]["oauthPassThru"])
+                self.assertEqual(infinity["jsonData"]["allowedHosts"], ["https://management.azure.com"])
+                self.assertEqual(infinity["jsonData"]["oauth2"]["oauth2_type"], "client_credentials")
+                self.assertEqual(infinity["jsonData"]["oauth2"]["client_id"], INFINITY_CLIENT_ID)
+                self.assertEqual(
+                    infinity["jsonData"]["oauth2"]["token_url"],
+                    "https://login.microsoftonline.com/55555555-5555-5555-5555-555555555555/oauth2/token",
+                )
+                self.assertEqual(infinity["secureJsonData"]["oauth2ClientSecret"], INFINITY_SECRET)
+                self.assertNotIn(INFINITY_SECRET, json.dumps(infinity["jsonData"]))
+                for call in calls["http"]:
+                    if call["body"] is not None and call["path"] != "/api/datasources":
+                        self.assertNotIn(INFINITY_SECRET, json.dumps(call["body"]))
+                dashboards = {
+                    call["body"]["dashboard"]["uid"]: call["body"]["dashboard"]
+                    for call in posts if call["path"] == "/api/dashboards/db"
+                }
+                self.assertEqual(len(dashboards), 6)
+                dashboard = dashboards["azure-ai-costs-infinity"]
+                self.assertNotIn("${DS_COST_INFINITY}", json.dumps(dashboard))
+                self.assertIn("ai-observability-cost-infinity", json.dumps(dashboard))
+                scope = next(item for item in dashboard["templating"]["list"] if item["name"] == "costScope")
+                self.assertEqual(scope["current"]["value"], f"/subscriptions/{SUBSCRIPTION}")
+
+    def test_grafana_scopes_the_infinity_dashboard_to_the_configured_resource_group(self):
+        scope = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/foundry-rg"
+        result, calls = self.run_harness(
+            "grafana", cost_infinity=True, infinity_secret="env", infinity_scope=scope,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        dashboard = next(
+            call["body"]["dashboard"] for call in calls["http"]
+            if call["path"] == "/api/dashboards/db" and call["body"]["dashboard"]["uid"] == "azure-ai-costs-infinity"
+        )
+        variable = next(item for item in dashboard["templating"]["list"] if item["name"] == "costScope")
+        self.assertEqual(variable["current"]["value"], scope)
+
+    def test_grafana_rejects_an_untrusted_infinity_scope(self):
+        for scope in (
+            "/subscriptions/not-a-guid",
+            f"/subscriptions/{SUBSCRIPTION}/providers/Microsoft.Authorization",
+            f"/subscriptions/{SUBSCRIPTION}/resourceGroups/a/../b",
+        ):
+            with self.subTest(scope=scope):
+                result, calls = self.run_harness(
+                    "grafana", cost_infinity=True, infinity_secret="env", infinity_scope=scope,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("costInfinityScope", result.stderr)
+                self.assertEqual(calls["http"], [])
+
+    def test_grafana_requires_the_infinity_secret_and_plugin_before_changing_anything(self):
+        result, calls = self.run_harness("grafana", cost_infinity=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("client secret", result.stderr)
+        self.assertEqual(calls["http"], [])
+
+        result, calls = self.run_harness("grafana", cost_infinity=True, infinity_secret="env", plugin_missing=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not installed", result.stderr)
+        self.assertNotIn(INFINITY_SECRET, result.stdout + result.stderr)
+        self.assertFalse(any(call["method"] in ("Post", "Put") for call in calls["http"]))
+
+    def test_grafana_rotates_an_owned_infinity_source_and_rejects_an_unowned_one(self):
+        result, calls = self.run_harness("grafana", mode="existing", cost_infinity=True, infinity_secret="env")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        update = next(
+            call for call in calls["http"]
+            if call["method"] == "Put" and call["path"].endswith("ai-observability-cost-infinity")
+        )
+        self.assertEqual(update["body"]["version"], 2)
+        self.assertEqual(update["body"]["secureJsonData"]["oauth2ClientSecret"], INFINITY_SECRET)
+
+        result, calls = self.run_harness(
+            "grafana", mode="unmanaged-infinity-source", cost_infinity=True, infinity_secret="env",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not managed", result.stderr)
+        self.assertFalse(any(call["method"] in ("Post", "Put") for call in calls["http"]))
+
+    def test_grafana_omits_infinity_by_default(self):
+        result, calls = self.run_harness("grafana", infinity_secret="env")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(
+            call["body"] and call["body"].get("type") == "yesoreyeram-infinity-datasource"
+            for call in calls["http"] if call["path"] == "/api/datasources"
+        ))
+        self.assertFalse(any(call["path"].startswith("/api/plugins/") for call in calls["http"]))
+        self.assertFalse(any(
+            call["body"]["dashboard"]["uid"] == "azure-ai-costs-infinity"
+            for call in calls["http"] if call["path"] == "/api/dashboards/db"
+        ))
+
+    def test_deploy_stops_before_azure_when_the_infinity_secret_is_missing(self):
+        result, calls = self.run_harness("deploy", self.infinity_parameters())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("client secret", result.stderr)
+        self.assertFalse(any(command[0] == "deployment" for command in calls["cli"]))
+        self.assertEqual(calls["http"], [])
+
+    def test_deploy_passes_the_infinity_secret_to_grafana_provisioning(self):
+        values = self.infinity_parameters()
+        values["enableCostPipeline"]["value"] = False
+        result, calls = self.run_harness(
+            "deploy", values, cost_infinity=True, infinity_secret="parameter",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(INFINITY_SECRET, result.stdout + result.stderr)
+        self.assertFalse(INFINITY_SECRET in json.dumps(calls["cli"]))
+        infinity = next(
+            call["body"] for call in calls["http"]
+            if call["path"] == "/api/datasources" and call["body"]["type"] == "yesoreyeram-infinity-datasource"
+        )
+        self.assertEqual(infinity["secureJsonData"]["oauth2ClientSecret"], INFINITY_SECRET)
+        self.assertFalse(Path(calls["parameterTemp"]).exists())
+
+    def test_what_if_does_not_need_the_infinity_secret(self):
+        result, calls = self.run_harness("deploy", self.infinity_parameters(), what_if=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls["http"], [])
 
     def test_grafana_updates_owned_resources_with_versions(self):
         result, calls = self.run_harness("grafana", mode="existing")
@@ -527,6 +718,57 @@ class BicepTemplateTests(unittest.TestCase):
             cluster["properties"]["publicNetworkAccess"],
             "[if(equals(parameters('grafanaAccess'), 'privateOnly'), 'Disabled', 'Enabled')]",
         )
+    def test_infinity_is_opt_in_installs_the_plugin_and_grants_only_cost_query(self):
+        result = subprocess.run(
+            [AZ, "bicep", "build", "--file", str(ROOT / "infra" / "main.bicep"), "--stdout"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        template = json.loads(result.stdout)
+        parameters_ = template["parameters"]
+        self.assertFalse(parameters_["enableCostInfinity"]["defaultValue"])
+        self.assertEqual(parameters_["costInfinityScope"]["allowedValues"], ["subscription", "resourceGroupManaged"])
+        self.assertFalse(any("secret" in name.lower() for name in parameters_), "the client secret must never be a template parameter")
+        self.assertEqual(parameters_["costInfinityConfigured"]["allowedValues"], [True])
+        resources = template["resources"]
+        resources = list(resources.values()) if isinstance(resources, dict) else resources
+        grafana = next(r for r in resources if r["type"].lower() == "microsoft.dashboard/grafana")
+        self.assertEqual(
+            grafana["properties"]["grafanaPlugins"],
+            "[if(parameters('enableCostInfinity'), createObject('yesoreyeram-infinity-datasource', createObject()), null())]",
+        )
+        deployments = [r for r in resources if r["type"].lower() == "microsoft.resources/deployments"]
+        reader = next(r for r in deployments if "-cost-infinity-reader" in r["name"])
+        self.assertEqual(
+            reader["condition"],
+            "[and(parameters('enableCostInfinity'), equals(parameters('costInfinityScope'), 'subscription'))]",
+        )
+        self.assertEqual(
+            reader["properties"]["parameters"]["principalId"]["value"],
+            "[parameters('costInfinityServicePrincipalObjectId')]",
+        )
+        group = next(r for r in deployments if "-cost-infinity-rg-" in r["name"])
+        self.assertEqual(group["properties"]["parameters"]["roleLabel"]["value"], "infinity-cost")
+        self.assertIn("resourceGroupManaged", group["condition"])
+        for output in ("enableCostInfinityDashboard", "costInfinityTenantId", "costInfinityClientId", "costInfinityScope"):
+            self.assertIn(output, template["outputs"]["dashboardConfiguration"]["value"])
+        self.assertNotIn("secret", json.dumps(template["outputs"]).lower())
+
+    def test_default_group_cost_role_names_are_unchanged_by_the_role_label(self):
+        result = subprocess.run(
+            [AZ, "bicep", "build", "--file", str(ROOT / "infra" / "modules" / "cost-group-reader.bicep"), "--stdout"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        template = json.loads(result.stdout)
+        self.assertEqual(template["parameters"]["roleLabel"]["defaultValue"], "cost-query")
+        role = next(
+            r for r in (template["resources"].values() if isinstance(template["resources"], dict) else template["resources"])
+            if r["type"].lower() == "microsoft.authorization/roledefinitions"
+        )
+        self.assertIn("variables('roleKey')", role["properties"]["roleName"])
+        self.assertIn("parameters('roleLabel')", role["name"])
+        self.assertIn("uniqueString(subscription().id, variables('groupScope'), parameters('stackResourceGroupId'), parameters('namePrefix'))", template["variables"]["roleKey"])
 
 
 if __name__ == "__main__":

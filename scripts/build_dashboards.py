@@ -9,8 +9,24 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 DS = {"type": "grafana-azure-monitor-datasource", "uid": "${DS_AZURE_MONITOR}"}
 DS_ADX = {"type": "grafana-azure-data-explorer-datasource", "uid": "${DS_AZURE_DATA_EXPLORER}"}
+DS_INFINITY = {"type": "yesoreyeram-infinity-datasource", "uid": "${DS_COST_INFINITY}"}
 ADX_DATABASE = "costs"
 NAMESPACE = "Microsoft.CognitiveServices/accounts"
+COST_QUERY_URL = "https://management.azure.com${costScope}/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+# Rows become one object per row keyed by column name, so the panels never depend on column order.
+# A continuation link fails the query instead of silently showing a partial total.
+COST_ROWS_JQ = (
+    'if .properties.nextLink then error("incomplete_cost_response") else '
+    '.properties as $p | ($p.columns | map(.name)) as $c | '
+    '[$p.rows[] | . as $r | reduce range(0; ($c | length)) as $i ({}; .[$c[$i]] = $r[$i])] end'
+)
+COST_DATE_JQ = (
+    ' | map(if has("UsageDate") then .UsageDate = ((.UsageDate | tostring) as $d | '
+    '$d[0:4] + "-" + $d[4:6] + "-" + $d[6:8]) else . end)'
+)
+COST_ACCOUNT_JQ = (
+    ' | map(.Account = (.ResourceId | split("/") | .[-1]) | .ResourceGroup = (.ResourceId | split("/") | .[4]))'
+)
 
 
 def validate_config(config):
@@ -239,6 +255,40 @@ def adx_query(filename, table=False):
         "database": ADX_DATABASE,
         "query": (ROOT / "queries" / filename).read_text(encoding="utf-8"),
         "resultFormat": "table" if table else "time_series",
+    }
+
+
+def infinity_cost_query(columns, *, month_to_date=False, daily=False, grouping=(), quantity=False, extra_jq=""):
+    """Cost Management Query API call made by the Infinity data source, filtered to AI accounts."""
+    aggregation = {"totalCost": {"name": "PreTaxCost", "function": "Sum"}}
+    if quantity:
+        aggregation["totalQuantity"] = {"name": "UsageQuantity", "function": "Sum"}
+    dataset = {
+        "granularity": "Daily" if daily else "None",
+        "aggregation": aggregation,
+        "filter": {"dimensions": {
+            "name": "ResourceType", "operator": "In", "values": [NAMESPACE.lower()],
+        }},
+    }
+    if grouping:
+        dataset["grouping"] = [{"type": "Dimension", "name": name} for name in grouping]
+    body = {"type": "ActualCost"}
+    if month_to_date:
+        body["timeframe"] = "MonthToDate"
+    else:
+        body["timeframe"] = "Custom"
+        body["timePeriod"] = {"from": "${__from:date:iso}", "to": "${__to:date:iso}"}
+    body["dataset"] = dataset
+    return {
+        "refId": "A", "datasource": DS_INFINITY, "type": "json", "source": "url",
+        "format": "table", "parser": "jq-backend",
+        "url": COST_QUERY_URL, "root_selector": COST_ROWS_JQ + extra_jq,
+        "columns": [{"selector": selector, "text": text, "type": kind} for selector, text, kind in columns],
+        "url_options": {
+            "method": "POST", "body_type": "raw", "body_content_type": "application/json",
+            "data": json.dumps(body, separators=(",", ":")),
+            "headers": [{"key": "ClientType", "value": "AzureAiObservability"}],
+        },
     }
 
 
@@ -733,11 +783,88 @@ def build(config):
     native["timezone"] = "utc"
     native["refresh"] = "1h"
     native["time"] = {"from": "now-30d", "to": "now"}
+
+    infinity_panels = [
+        panel(
+            1, "Month-to-date actual cost by currency",
+            infinity_cost_query(
+                [("PreTaxCost", "Cost", "number"), ("Currency", "Currency", "string")],
+                month_to_date=True,
+            ),
+            unit="none", kind="table",
+            description="Actual cost of Foundry and Azure OpenAI accounts since the start of the UTC month, read "
+            "from the Cost Management Query API. Billing can be revised or delayed.",
+        ),
+        panel(
+            2, "Daily actual cost",
+            infinity_cost_query(
+                [("UsageDate", "Date", "timestamp"), ("PreTaxCost", "Cost", "number"),
+                 ("Currency", "Currency", "string")],
+                daily=True, extra_jq=COST_DATE_JQ,
+            ),
+            unit="none",
+            description="Daily actual cost per billing currency for the selected period. The Query API allows at "
+            "most 31 days of daily data, so a longer dashboard range fails instead of being truncated.",
+        ),
+        panel(
+            3, "Cost by account",
+            infinity_cost_query(
+                [("Account", "Account", "string"), ("ResourceGroup", "Resource group", "string"),
+                 ("PreTaxCost", "Cost", "number"), ("Currency", "Currency", "string")],
+                grouping=("ResourceId",), extra_jq=COST_ACCOUNT_JQ,
+            ),
+            unit="none", kind="table",
+            description="Actual cost by Foundry or Azure OpenAI account for the selected period.",
+        ),
+        panel(
+            4, "Cost by meter",
+            infinity_cost_query(
+                [("Meter", "Meter", "string"), ("UsageQuantity", "Quantity", "number"),
+                 ("PreTaxCost", "Cost", "number"), ("Currency", "Currency", "string")],
+                grouping=("Meter",), quantity=True,
+            ),
+            unit="none", kind="table",
+            description="Actual cost and quantity by meter, which separates input, output and provisioned charges.",
+        ),
+    ]
+    for item in infinity_panels:
+        item["datasource"] = DS_INFINITY
+    infinity_panels[1]["transformations"] = [{
+        "id": "partitionByValues",
+        "options": {"fields": ["Currency"], "keepFields": False, "naming": {"asLabels": False}},
+    }]
+    for item, position in zip(infinity_panels, (
+        {"h": 6, "w": 24, "x": 0, "y": 0},
+        {"h": 9, "w": 24, "x": 0, "y": 6},
+        {"h": 9, "w": 12, "x": 0, "y": 15},
+        {"h": 9, "w": 12, "x": 12, "y": 15},
+    ), strict=True):
+        item["gridPos"] = position
+    infinity = dashboard(
+        "azure-ai-costs-infinity", "Azure AI - Cost visibility (direct Cost Management query)",
+        [textbox("costScope", f"/subscriptions/{config['subscription']}", "Cost query scope")],
+        infinity_panels,
+        inputs=[{
+            "name": "DS_COST_INFINITY", "label": "Cost Management (Infinity)",
+            "type": "datasource", "pluginId": "yesoreyeram-infinity-datasource",
+            "pluginName": "Infinity",
+        }],
+    )
+    infinity["description"] = (
+        "Actual cost of Azure AI resources queried directly from the Cost Management Query API through the "
+        "Infinity data source, with no export, Function or Data Explorer cluster. The data source uses a "
+        "service principal client secret that you must rotate, and every user who can edit its queries "
+        "inherits that principal's cost access. No data can mean billing has not caught up, not zero cost."
+    )
+    infinity["timezone"] = "utc"
+    infinity["refresh"] = "1h"
+    infinity["time"] = {"from": "now-30d", "to": "now"}
     return {
         "foundry-overview.json": foundry, "foundry-agents.json": agents,
         "openai-ptu.json": ptu, "azure-ai-costs.json": costs,
         "business-overview.json": business,
         "azure-ai-costs-native.json": native,
+        "azure-ai-costs-infinity.json": infinity,
     }
 
 

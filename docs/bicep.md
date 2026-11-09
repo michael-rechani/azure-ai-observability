@@ -54,6 +54,23 @@ The helper rejects combinations exceeding 30 minutes of minimum Cost Management 
 
 For an optional monthly account-filtered budget, set a positive whole-number `monthlyAiCostBudgetAmount` in subscription billing currency and set `costBudgetStartDate` and `costBudgetEndDate` as UTC `YYYY-MM-DDT00:00:00Z` values. The start must be the first of a month and the end later. Tune `costBudgetThresholdPercent` (default 80). This is an alert, not a spending cap; costs may arrive late.
 
+### Optional direct cost queries with Infinity
+
+Set `enableCostInfinity = true` for the cheapest billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin. It adds no cluster, Function or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret, which Grafana stores and you must rotate. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first: the secret, a shared identity that any query editor inherits, API throttling and the 31-day daily limit.
+
+Create the service principal with the `az ad` commands in [Set it up](costs.md#set-it-up), keep its secret in `AI_OBSERVABILITY_COST_CLIENT_SECRET`, then set:
+
+```bicep
+param enableCostInfinity = true
+param costInfinityClientId = '00000000-0000-0000-0000-000000000000'              // $app.appId
+param costInfinityServicePrincipalObjectId = '00000000-0000-0000-0000-000000000000' // $sp.id, the enterprise application's object ID
+param costInfinityScope = 'subscription' // Or 'resourceGroupManaged' (needs monitoredAccounts and role-definition permissions)
+```
+
+The template installs the Infinity plugin on the Grafana workspace (`grafanaPlugins`, a preview property) and grants the principal either **Cost Management Reader** on the subscription or a one-action `Microsoft.CostManagement/query/read` role on each monitored resource group. The secret is **never** a Bicep parameter or output. `scripts\deploy_bicep.ps1` stops before calling Azure when it is missing, and passes it only to `scripts\provision_grafana.ps1`, which stores it in the Infinity data source's secure data (uid `ai-observability-cost-infinity`) and imports the `azure-ai-costs-infinity` dashboard. `-WhatIf` does not need the secret. On a rerun the helper updates only a data source it created, which is how a rotated secret is applied; it refuses an unrelated data source with the same UID.
+
+Setting the switch back to false does not remove the principal, role assignments, plugin, data source or dashboard. See [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret).
+
 ### Optional cost export to Azure Data Explorer
 
 Set `enableCostExport = true` to get billed cost without the Function. The template deploys a private storage account, two subscription-scoped Cost Management exports (daily month-to-date and monthly last-month), an Azure Data Explorer cluster and database with external tables, and the role assignments that let the exports write, ADX read, and Grafana query, all by managed identity. The helper then provisions an Azure Data Explorer data source (uid `ai-observability-azure-data-explorer`, managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. It is independent of `enableCostPipeline`, needs no Function publish and no monitored accounts, and both can be enabled together.

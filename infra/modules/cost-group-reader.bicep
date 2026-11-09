@@ -6,6 +6,11 @@ param namePrefix string
 param principalId string
 param subscriptionMatches bool = true
 
+@description('Distinguishes the role definition and assignment deployment when several consumers need the same permission at one group.')
+@minLength(1)
+@maxLength(24)
+param roleLabel string = 'cost-query'
+
 @description('Reject invalid or cross-subscription group targets before creating a role.')
 @allowed([true])
 // URI-encoded control bytes are %00-%1F and %7F.
@@ -13,12 +18,13 @@ param subscriptionMatches bool = true
 param scopeIsValid bool = any(subscriptionMatches && !empty(resourceGroupName) && !contains(['.', '..'], resourceGroupName) && !contains(resourceGroupName, '%') && !contains(resourceGroupName, '\\') && !contains(resourceGroupName, '/') && !contains(resourceGroupName, '?') && !contains(resourceGroupName, '#') && !contains(toUpper(uriComponent(resourceGroupName)), '%0') && !contains(toUpper(uriComponent(resourceGroupName)), '%1') && !contains(toUpper(uriComponent(resourceGroupName)), '%7F'))
 
 var groupScope = scopeIsValid ? '${subscription().id}/resourceGroups/${resourceGroupName}' : ''
-var roleKey = uniqueString(subscription().id, groupScope, stackResourceGroupId, namePrefix)
+var defaultLabel = roleLabel == 'cost-query'
+var roleKey = defaultLabel ? uniqueString(subscription().id, groupScope, stackResourceGroupId, namePrefix) : uniqueString(subscription().id, groupScope, stackResourceGroupId, namePrefix, roleLabel)
 
 resource costQueryRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
-  name: guid(subscription().id, groupScope, stackResourceGroupId, namePrefix, 'cost-query')
+  name: guid(subscription().id, groupScope, stackResourceGroupId, namePrefix, roleLabel)
   properties: {
-    roleName: 'AI Observatory Cost Query ${roleKey}'
+    roleName: defaultLabel ? 'AI Observatory Cost Query ${roleKey}' : 'AI Observatory Cost Query ${roleLabel} ${roleKey}'
     description: 'Query Cost Management at one monitored resource group.'
     type: 'CustomRole'
     permissions: [

@@ -26,18 +26,74 @@ class DashboardTests(unittest.TestCase):
     def test_panel_ids_and_template_references(self):
         for dashboard in self.dashboards.values():
             variables = {v["name"] for v in dashboard["templating"]["list"]}
-            variables |= {"DS_AZURE_MONITOR", "DS_AZURE_DATA_EXPLORER", "__interval"}
+            variables |= {"DS_AZURE_MONITOR", "DS_AZURE_DATA_EXPLORER", "DS_COST_INFINITY", "__interval"}
             self.assertEqual(len({p["id"] for p in dashboard["panels"]}), len(dashboard["panels"]))
             for panel in dashboard["panels"]:
                 if panel["type"] == "text":
                     continue
-                references = re.findall(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))", json.dumps(panel))
+                scanned = copy.deepcopy(panel)
+                for target in scanned["targets"]:
+                    target.pop("root_selector", None)  # jq variables such as $p are not dashboard variables
+                references = re.findall(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))", json.dumps(scanned))
                 for braced, plain in references:
                     name = braced or plain
                     if not name.startswith("__"):
                         self.assertIn(name, variables)
-                expected = builder.DS_ADX if dashboard["uid"] == "azure-ai-costs-native" else builder.DS
+                expected = {
+                    "azure-ai-costs-native": builder.DS_ADX,
+                    "azure-ai-costs-infinity": builder.DS_INFINITY,
+                }.get(dashboard["uid"], builder.DS)
                 self.assertEqual(panel["targets"][0]["datasource"], expected)
+
+    def test_infinity_cost_dashboard_queries_only_ai_accounts_with_a_bounded_scope(self):
+        dashboard = self.dashboards["azure-ai-costs-infinity.json"]
+        self.assertEqual(
+            dashboard["__inputs"],
+            [{
+                "name": "DS_COST_INFINITY", "label": "Cost Management (Infinity)", "type": "datasource",
+                "pluginId": "yesoreyeram-infinity-datasource", "pluginName": "Infinity",
+            }],
+        )
+        self.assertEqual(dashboard["timezone"], "utc")
+        self.assertIn("not zero cost", dashboard["description"])
+        self.assertIn("rotate", dashboard["description"])
+        scope = next(v for v in dashboard["templating"]["list"] if v["name"] == "costScope")
+        self.assertEqual(scope["query"], f"/subscriptions/{self.config['subscription']}")
+        for panel in dashboard["panels"]:
+            target = panel["targets"][0]
+            self.assertEqual(panel["datasource"], builder.DS_INFINITY)
+            self.assertEqual(target["datasource"], builder.DS_INFINITY)
+            self.assertEqual(
+                target["url"],
+                "https://management.azure.com${costScope}/providers/Microsoft.CostManagement/query"
+                "?api-version=2023-11-01",
+            )
+            self.assertEqual(target["url_options"]["method"], "POST")
+            self.assertEqual(target["parser"], "jq-backend")
+            self.assertIn("incomplete_cost_response", target["root_selector"])
+            body = self.cost_body(target)
+            self.assertEqual(body["type"], "ActualCost")
+            self.assertEqual(
+                body["dataset"]["filter"],
+                {"dimensions": {
+                    "name": "ResourceType", "operator": "In",
+                    "values": ["microsoft.cognitiveservices/accounts"],
+                }},
+            )
+            self.assertEqual(body["dataset"]["aggregation"]["totalCost"]["name"], "PreTaxCost")
+            self.assertIn("Currency", [column["selector"] for column in target["columns"]])
+        total = next(p for p in dashboard["panels"] if p["title"].startswith("Month-to-date"))
+        self.assertEqual(self.cost_body(total["targets"][0])["timeframe"], "MonthToDate")
+        daily = next(p for p in dashboard["panels"] if p["title"] == "Daily actual cost")
+        daily_body = self.cost_body(daily["targets"][0])
+        self.assertEqual(daily_body["dataset"]["granularity"], "Daily")
+        self.assertEqual(daily_body["timeframe"], "Custom")
+        self.assertEqual(daily["transformations"][0]["options"]["fields"], ["Currency"])
+
+    @staticmethod
+    def cost_body(target):
+        data = target["url_options"]["data"]
+        return json.loads(data.replace("${__from:date:iso}", "from").replace("${__to:date:iso}", "to"))
 
     def test_native_cost_dashboard_reads_only_the_export_through_data_explorer(self):
         dashboard = self.dashboards["azure-ai-costs-native.json"]
@@ -96,7 +152,7 @@ class DashboardTests(unittest.TestCase):
                 if panel["type"] == "text":
                     continue
                 target = panel["targets"][0]
-                if target["queryType"] == "Azure Log Analytics":
+                if target.get("queryType") == "Azure Log Analytics":
                     query = target["azureLogAnalytics"]
                     expected_workspace = (
                         "$monitoringWorkspaceResourceId"

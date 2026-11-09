@@ -343,6 +343,50 @@ variable "cost_export_grafana_access" {
   }
 }
 
+variable "enable_cost_infinity" {
+  description = "Opt in to direct Cost Management queries through the Grafana Infinity plugin: installs the plugin and grants cost query access to a service principal that you create. Adds no cluster, Function or storage, but is NOT secretless: Infinity signs in with that principal's client secret, which you rotate and supply only to the Grafana stage."
+  type        = bool
+  default     = false
+}
+
+variable "cost_infinity_client_id" {
+  description = "Application (client) ID of the service principal Infinity signs in with. Required with enable_cost_infinity. Create it with the az ad commands in docs/costs.md."
+  type        = string
+  default     = null
+  validation {
+    condition = !var.enable_cost_infinity || (
+      var.cost_infinity_client_id != null &&
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.cost_infinity_client_id)) &&
+      var.cost_infinity_client_id != "00000000-0000-0000-0000-000000000000"
+    )
+    error_message = "enable_cost_infinity needs cost_infinity_client_id set to the real application (client) ID, not the all-zero placeholder."
+  }
+}
+
+variable "cost_infinity_service_principal_object_id" {
+  description = "Object ID of that service principal's enterprise application (az ad sp show --id <client id> --query id), which receives the cost query role. This is not the application object ID. Required with enable_cost_infinity."
+  type        = string
+  default     = null
+  validation {
+    condition = !var.enable_cost_infinity || (
+      var.cost_infinity_service_principal_object_id != null &&
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.cost_infinity_service_principal_object_id)) &&
+      var.cost_infinity_service_principal_object_id != "00000000-0000-0000-0000-000000000000"
+    )
+    error_message = "enable_cost_infinity needs cost_infinity_service_principal_object_id set to the real service principal object ID, not the all-zero placeholder."
+  }
+}
+
+variable "cost_infinity_scope" {
+  description = "Cost access granted to the Infinity service principal: subscription (Cost Management Reader) or resourceGroupManaged (a query-only custom role on each monitored account's resource group)."
+  type        = string
+  default     = "subscription"
+  validation {
+    condition     = contains(["subscription", "resourceGroupManaged"], var.cost_infinity_scope)
+    error_message = "cost_infinity_scope must be subscription or resourceGroupManaged."
+  }
+}
+
 variable "cost_export_start_date" {
   description = "UTC date (YYYY-MM-DD) the export schedule starts. Required when enable_cost_export is true. Keep it unchanged on later applies, because changing it rewrites the schedule."
   type        = string
