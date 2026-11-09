@@ -66,6 +66,12 @@ try {
         throw 'Azure deployment did not return the required Grafana endpoint and dashboard configuration.'
     }
 
+    # Provision Grafana first: the dashboards and managed-identity data sources do not depend on the
+    # optional cost Function, so a Function publishing failure must not leave Grafana unconfigured.
+    & (Join-Path $PSScriptRoot 'provision_grafana.ps1') `
+        -Endpoint $outputs.grafanaEndpoint.value -SubscriptionId $SubscriptionId `
+        -DashboardConfiguration $outputs.dashboardConfiguration.value
+
     $costEnabled = [bool](Get-BicepParameter $compiledParameters.parameters 'enableCostPipeline' $false)
     if ($costEnabled) {
         $functionName = [string]$outputs.costFunctionName.value
@@ -87,9 +93,6 @@ try {
         }
     }
 
-    & (Join-Path $PSScriptRoot 'provision_grafana.ps1') `
-        -Endpoint $outputs.grafanaEndpoint.value -SubscriptionId $SubscriptionId `
-        -DashboardConfiguration $outputs.dashboardConfiguration.value
     Write-Host "Azure resources and Grafana dashboards deployed. Grafana: $($outputs.grafanaEndpoint.value)"
 }
 finally {

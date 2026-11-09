@@ -60,6 +60,9 @@ function global:az {
         finally {
             $archive.Dispose()
         }
+        if ($env:TEST_FAIL_FUNCTION -eq 'true') {
+            $global:LASTEXITCODE = 1
+        }
         return
     }
     throw "Unexpected mocked Azure CLI command: $($arguments[0])"
