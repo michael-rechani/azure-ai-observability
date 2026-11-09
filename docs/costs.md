@@ -151,7 +151,7 @@ This is the cheapest and simplest billed-cost path, and the only one that is **n
 
 ### Rotate or remove the secret
 
-Rotate before the expiry you chose. Create a new secret with `az ad app credential reset --append`, put it in `AI_OBSERVABILITY_COST_CLIENT_SECRET` (Bicep helper) or `TF_VAR_cost_infinity_client_secret` (Terraform), redeploy to update the data source, confirm the dashboard still returns data, then delete the old secret with `az ad app credential delete --id <appId> --key-id <old-key-id>`.
+Rotate before the expiry you chose. Create a new secret with `az ad app credential reset --append`, put it in `AI_OBSERVABILITY_COST_CLIENT_SECRET` (Bicep helper) or `TF_VAR_cost_infinity_client_secret` (Terraform), redeploy to update the data source, confirm the dashboard still returns data (look at the panels, not the data source's **Save & test**), then delete the old secret with `az ad app credential delete --id <appId> --key-id <old-key-id>`. The Bicep helper rerun took about 72 seconds in testing. After the update, the first query may still fail once with `AADSTS7000215`; reload after a few seconds.
 
 To remove the feature, set the switch to false and redeploy, then clean up explicitly because Bicep is incremental and Grafana resources are never deleted by the helper:
 
@@ -166,7 +166,8 @@ Delete the Infinity data source and dashboard in Grafana if you no longer want t
 
 - **It is a shared identity, not per-viewer access.** Every viewer of the dashboard sees what the principal can read. Anyone who can edit queries on the Infinity data source (Grafana Editor and Admin) can run any Cost Management query the principal's role allows, so use `resourceGroupManaged` where you can and restrict those roles.
 - **The secret lives in Grafana, and in Terraform state.** Grafana never returns it through its API, but the Terraform Grafana stage records it in state. Supply it as `TF_VAR_cost_infinity_client_secret`, never in a `.tfvars` file, and protect the state like a credential. The Bicep path keeps it out of the parameters: the helper reads it from `AI_OBSERVABILITY_COST_CLIENT_SECRET` or `-CostInfinityClientSecret` and sends it only to Grafana.
-- **Expiry silently breaks the panels.** Nothing alerts you when the secret expires; the dashboard starts returning authentication errors.
+- **Expiry silently breaks the panels, and the health check will not tell you.** Nothing alerts you when the secret expires or is revoked. The panels fail with an authentication error (`AADSTS7000222` expired, `AADSTS7000215` wrong or revoked), but the data source's **Save & test** keeps reporting "Health check successful" with a wrong, revoked or expired secret, so it cannot be used to check the secret. Check the panels, and set a calendar reminder or an alert on the credential's end date.
+- **A cached token can hide a bad secret for up to an hour.** Grafana keeps using the access token it already has after the secret is revoked or expires. The failure appears when the token expires (about an hour) or when the data source is updated, so a rotation can look fine until later. Always confirm after you update the data source.
 - **The Query API is throttled.** It returns HTTP 429 often. Infinity does not retry, so a panel can fail intermittently on refresh. Reload after a short wait. The daily panel is capped at 31 days per query (the API's limit for daily granularity), so the dashboard's time range should stay within a month.
 - **It is live, not historical storage.** Nothing is kept outside Cost Management. If you need long history or alerting on cost data, use the export or the Function.
 - **A continuation link fails the query** instead of silently showing a partial total.
@@ -178,6 +179,7 @@ Checked for a secretless option on 2026-11; none was found at lower cost:
 
 - **Resource Graph `costresources`.** Tested live; the table is rejected (`DisallowedLogicalTableName`).
 - **Infinity with managed identity or workload identity.** Infinity 4.1.6, the latest release at the time, has neither, and its documented Azure example uses a client secret.
+- **Will federation arrive?** Not visibly planned, and no timeline exists. The Infinity maintainer's pull request for Azure managed and workload identity ([#785](https://github.com/grafana/grafana-infinity-datasource/pull/785)) was closed unmerged in 2026-03, as was a generic OAuth2 token-exchange request ([#1569](https://github.com/grafana/grafana-infinity-datasource/pull/1569)). Infinity 4.1.0 did add AWS IAM role authentication, so cloud identity is possible, but only for AWS so far, and there are no open Azure issues or pull requests. Grafana's Azure SDK has managed- and workload-identity credentials, but Grafana only forwards its `[azure]` settings to a listed set of plugins (Azure Monitor, Data Explorer, Prometheus, MSSQL, Databricks), and Infinity is not one of them. A secretless Infinity on Azure would need Infinity to add Azure authentication, Grafana to forward the settings to it, and Azure Managed Grafana to enable that. [Issue #4](https://github.com/michael-rechani/azure-ai-observability/issues/4) stays open to revisit it.
 - **Log Analytics `externaldata`.** Managed-identity access is documented only for ADX and Fabric, and Log Analytics cannot reach private storage.
 - **ADX free cluster.** No external tables, managed identities or VNet support.
 - **Cost export to Log Analytics.** Exports go only to Storage (or Fabric).
@@ -199,12 +201,20 @@ A throwaway deployment in a sandbox subscription used the real `scripts\deploy_b
 - Against a resource group with real billed cost (the resource-type filter swapped to storage accounts, because the sandbox has no billed Azure AI cost), all four panels returned correctly shaped rows: month-to-date total, 31 daily rows with the date converted to a time field, account and resource group extracted from the resource ID, and meter with quantity. This checks the column mapping, the `ResourceType` `In` filter and the retry on HTTP 429, which occurred once.
 - Removing and re-adding the plugin with `PATCH` on `Microsoft.Dashboard/grafana` (`null` removes, `{}` installs, api-version `2025-08-01`) works, and a data source survives it. ARM rejects plugin IDs it does not know. This is the mechanism the Terraform stage uses.
 
+**Secret lifecycle, verified live** in a second throwaway deployment with the Bicep helper:
+
+- **Rotation.** A new secret was created with `--append` and the helper rerun (72 seconds). All panels recovered, including from a deliberately wrong secret. Deleting the old secret in Entra afterwards broke nothing.
+- **Wrong or revoked secret.** Every panel failed with `AADSTS7000215: Invalid client secret provided`. **The data source health check still said it was healthy.**
+- **Expired secret.** After a secret passed its end date, Entra kept accepting it for about five more minutes, then rejected it with `AADSTS7000222`. Once Grafana had to request a new token (after the data source was updated), every panel failed with that error. Again the health check still said it was healthy.
+- **Cached token.** Until the data source was updated, panels kept working with the token Grafana already held, even after Entra rejected the secret. A token lasts about an hour; the observed behavior was only until the update, not through a full token lifetime.
+- **Propagation.** After a secret change, an occasional single panel query failed with `AADSTS7000215` before succeeding on the next one. It was also seen once with no change in between. Treat a one-off failure right after a rotation as transient; repeated failures are not.
+
 **Not verified:**
 
 - Rows for `microsoft.cognitiveservices/accounts`. The sandbox has no billed Azure AI cost, so the monitored group returned HTTP 200 with zero rows, which matched direct API calls.
 - How the panels render in a browser, including the daily time series.
 - A full `terraform apply` of the Infinity path. The Terraform stages are covered by mock-provider tests only, and whether an in-place update of the workspace by the azurerm provider keeps installed plugins is untested. The Terraform stage replaces the plugin when the workspace is replaced.
-- Secret rotation and expiry behavior.
+- How long Grafana keeps a cached token beyond the update that was tested (the token lifetime is about an hour).
 
 ## Direct Grafana queries and per-viewer access
 
