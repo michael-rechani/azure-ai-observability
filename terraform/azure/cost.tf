@@ -15,8 +15,7 @@ locals {
     WindowEnd     = "dateTime"
   }
   cost_deployment_script = "${path.module}/../../scripts/deploy_cost_function.ps1"
-  cost_function_enabled  = var.enable_cost_pipeline && var.cost_collector_mode == "function"
-  cost_github_enabled    = var.enable_cost_pipeline && var.cost_collector_mode == "githubOidc"
+  cost_function_enabled  = var.enable_cost_pipeline
   cost_managed_group_scopes = var.enable_cost_pipeline && var.cost_query_scope == "resourceGroupManaged" ? toset([
     for account in values(var.monitored_accounts) :
     lower(join("/", slice(split("/", account.resource_id), 0, 5)))
@@ -90,10 +89,6 @@ resource "azurerm_monitor_data_collection_rule" "cost" {
       condition     = length(var.monitored_accounts) * ceil(var.cost_lookback_days / 27) * 2 * 16 <= 1800
       error_message = "The account count and lookback require more than 30 minutes of minimum API pacing. Reduce either or split the deployment."
     }
-    precondition {
-      condition     = var.cost_collector_mode != "githubOidc" || can(regex("^repo:[A-Za-z0-9_.@-]+/[A-Za-z0-9_.@-]+:ref:refs/heads/main$", var.cost_github_oidc_subject))
-      error_message = "cost_github_oidc_subject must be the exact GitHub repository main-branch subject."
-    }
   }
 
   depends_on = [azurerm_log_analytics_workspace_table_custom_log.cost]
@@ -104,15 +99,6 @@ resource "azurerm_user_assigned_identity" "cost" {
   name                = "ai-cost-${local.cost_suffix}"
   resource_group_name = local.resource_group_name
   location            = var.location
-}
-
-resource "azurerm_federated_identity_credential" "cost_github" {
-  count                     = local.cost_github_enabled ? 1 : 0
-  name                      = "github-main"
-  user_assigned_identity_id = azurerm_user_assigned_identity.cost[0].id
-  issuer                    = "https://token.actions.githubusercontent.com"
-  subject                   = var.cost_github_oidc_subject
-  audience                  = ["api://AzureADTokenExchange"]
 }
 
 resource "azurerm_storage_account" "cost" {

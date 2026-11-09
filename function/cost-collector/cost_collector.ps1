@@ -18,13 +18,6 @@ param(
     [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
     [string] $IdentityClientId,
 
-    [ValidateSet('function', 'accessTokens')]
-    [string] $IdentityProvider = 'function',
-
-    [string] $ArmAccessToken = '',
-
-    [string] $IngestionAccessToken = '',
-
     [ValidateSet('subscription', 'resourceGroup')]
     [string] $CostQueryScope = 'subscription',
 
@@ -35,25 +28,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-if ($IdentityProvider -eq 'accessTokens' -and (
-        [string]::IsNullOrWhiteSpace($ArmAccessToken) -or
-        [string]::IsNullOrWhiteSpace($IngestionAccessToken))) {
-    throw 'Both ARM and Logs Ingestion access tokens are required.'
-}
-
 $script:LastCostRequest = $null
 $script:InvariantCulture = [System.Globalization.CultureInfo]::InvariantCulture
 
 function Get-ManagedToken {
     param([string] $Resource)
-
-    if ($IdentityProvider -eq 'accessTokens') {
-        switch -CaseSensitive ($Resource) {
-            'https://management.azure.com/' { return $ArmAccessToken }
-            'https://monitor.azure.com/' { return $IngestionAccessToken }
-            default { throw 'Unsupported access-token audience.' }
-        }
-    }
 
     if (-not $env:IDENTITY_ENDPOINT -or -not $env:IDENTITY_HEADER) {
         throw 'Azure Functions managed identity endpoint is unavailable.'

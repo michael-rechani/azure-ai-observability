@@ -276,25 +276,9 @@ variable "cost_budget_threshold_percent" {
 }
 
 variable "enable_cost_pipeline" {
-  description = "Deploy the optional account-attributed cost collection pipeline."
+  description = "Deploy the optional billed-cost pipeline: a Log Analytics table, a data collection endpoint and rule, and an in-Azure Function that writes daily snapshots with a managed identity. Managed Grafana's identity cannot read Cost Management, so this is the only part that needs a collector."
   type        = bool
   default     = false
-}
-
-variable "cost_collector_mode" {
-  description = "Cost collector runtime. githubOidc (default) is Function-free: no Function App, plan, or storage account is deployed and a scheduled GitHub Actions job federates to the managed identity through OIDC. function deploys the original Azure Function. Changing the mode on an existing deployment adds or removes those resources; stored snapshots in Log Analytics are kept."
-  type        = string
-  default     = "githubOidc"
-  validation {
-    condition     = contains(["function", "githubOidc"], var.cost_collector_mode)
-    error_message = "cost_collector_mode must be function or githubOidc."
-  }
-}
-
-variable "cost_github_oidc_subject" {
-  description = "Exact GitHub repository main-branch OIDC subject; required for githubOidc mode."
-  type        = string
-  default     = ""
 }
 
 variable "cost_query_scope" {
