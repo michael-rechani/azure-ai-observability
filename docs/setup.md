@@ -57,7 +57,7 @@ A read-only check of metric *definitions* on three real Foundry (AIServices) acc
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
 - A controlled failure appears in the trace table and the business overview failure-rate panel. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
-- If the cost pipeline is enabled, the scheduled collector produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. The default Function-free job requests 06:17 UTC and can be delayed or dropped; Function mode runs at 06:00 UTC. Billing data can lag.
+- If the cost pipeline is enabled, the scheduled collector produces a complete snapshot, the cost dashboard reports the expected account/currency data, and the business overview reports collection status and actual cost by currency. The Function runs at 06:00 UTC. Billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.
 
 The repository's offline CI cannot verify live data, KQL execution, model/SKU support, or notification delivery without your Azure environment.

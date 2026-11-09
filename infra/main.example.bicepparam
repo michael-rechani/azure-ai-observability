@@ -48,10 +48,6 @@ param enableAgentAlerts = false
 
 // Set true to deploy the cost pipeline and dashboard; all accounts must be in this subscription.
 param enableCostPipeline = false
-// GitHub Actions is a scheduled collector, not direct Grafana-to-Cost-Management access.
-param costCollectorMode = 'githubOidc'
-// Before enabling, replace with the exact OIDC subject for your repository's main branch.
-param costGithubOidcSubject = ''
 // Recommended when enabling costs: one query-only custom role per monitored resource group.
 // The deployer needs role-definition write/delete and role-assignment permissions.
 param costQueryScope = 'resourceGroupManaged'

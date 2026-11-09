@@ -16,10 +16,7 @@ PWSH = shutil.which("pwsh")
 
 @unittest.skipUnless(PWSH, "PowerShell 7 is required to exercise the Function collector")
 class CostCollectorTests(unittest.TestCase):
-    def run_collector(
-        self, scenario, now_utc=None, query_scope=None, use_timer=False,
-        use_access_tokens=False, use_github_runner=False,
-    ):
+    def run_collector(self, scenario, now_utc=None, query_scope=None, use_timer=False):
         command = [PWSH, "-NoLogo", "-NoProfile", "-File", str(ROOT / "tests" / "cost_collector_harness.ps1"), scenario]
         if now_utc:
             command.extend(["-NowUtc", now_utc])
@@ -27,10 +24,6 @@ class CostCollectorTests(unittest.TestCase):
             command.extend(["-CostQueryScope", query_scope])
         if use_timer:
             command.append("-UseTimer")
-        if use_access_tokens:
-            command.append("-UseAccessTokens")
-        if use_github_runner:
-            command.append("-UseGitHubRunner")
         process = subprocess.run(
             command,
             check=True,
@@ -44,41 +37,6 @@ class CostCollectorTests(unittest.TestCase):
     @staticmethod
     def records(result):
         return [record for batch in result["Ingestions"] for record in batch["Records"]]
-
-    def test_explicit_access_tokens_are_audience_scoped_and_required(self):
-        result = self.run_collector("normal", use_access_tokens=True)
-        self.assertTrue(result["Success"], result["Error"])
-        self.assertEqual(result["IdentityRequests"], 0)
-        self.assertEqual(self.records(result)[-1]["RecordType"], "Complete")
-
-        for scenario in ("missing-arm-token", "missing-ingestion-token"):
-            with self.subTest(scenario=scenario):
-                result = self.run_collector(scenario, use_access_tokens=True)
-                self.assertFalse(result["Success"])
-                self.assertIn("Both ARM and Logs Ingestion access tokens", result["Error"])
-                self.assertEqual(result["DataRequestUris"], [])
-                self.assertEqual(result["Ingestions"], [])
-
-    def test_github_runner_fetches_both_tokens_before_collecting(self):
-        result = self.run_collector("normal", use_github_runner=True)
-        self.assertTrue(result["Success"], result["Error"])
-        self.assertEqual(result["IdentityRequests"], 0)
-        self.assertEqual(
-            result["TokenRequests"],
-            ["https://management.azure.com/", "https://monitor.azure.com/"],
-        )
-        self.assertEqual(self.records(result)[-1]["RecordType"], "Complete")
-
-        for scenario in (
-            "github-cli-fail", "github-second-token-fail", "github-invalid-json",
-            "github-missing-expiry", "github-short-token",
-        ):
-            with self.subTest(scenario=scenario):
-                result = self.run_collector(scenario, use_github_runner=True)
-                self.assertFalse(result["Success"])
-                self.assertEqual(result["DataRequestUris"], [])
-                self.assertEqual(result["Ingestions"], [])
-                self.assertNotIn("mock-arm-token", result["Error"])
 
     def test_queries_are_daily_scoped_and_split_into_safe_27_day_windows(self):
         result = self.run_collector("normal")

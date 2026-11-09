@@ -27,7 +27,6 @@ def parameters():
         "monitoredAccounts": {"value": [copy.deepcopy(ACCOUNT)]},
         "existingTelemetryWorkspaces": {"value": []},
         "enableCostPipeline": {"value": True},
-        "costGithubOidcSubject": {"value": "repo:example/observability:ref:refs/heads/main"},
         "costLookbackDays": {"value": 90},
         "monthlyAiCostBudgetAmount": {"value": 0},
     }
@@ -70,26 +69,16 @@ class BicepDeploymentTests(unittest.TestCase):
         }
         for resource in resources:
             if resource["type"] in function_types:
-                self.assertEqual(
-                    resource["condition"], "[equals(parameters('collectorMode'), 'function')]"
-                )
-        conditional_roles = [
-            item for item in resources
-            if item["type"] == "Microsoft.Authorization/roleAssignments" and "condition" in item
+                self.assertNotIn("condition", resource)
+        role_assignments = [
+            item for item in resources if item["type"] == "Microsoft.Authorization/roleAssignments"
         ]
-        self.assertEqual(len(conditional_roles), 3)
-        self.assertTrue(all(
-            item["condition"] == "[equals(parameters('collectorMode'), 'function')]"
-            for item in conditional_roles
-        ))
-        federation = next(
+        self.assertTrue(role_assignments)
+        self.assertFalse([item for item in role_assignments if "condition" in item])
+        self.assertFalse([
             item for item in resources
             if item["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials"
-        )
-        self.assertEqual(federation["condition"], "[equals(parameters('collectorMode'), 'githubOidc')]")
-        self.assertEqual(federation["properties"]["issuer"], "https://token.actions.githubusercontent.com")
-        self.assertEqual(federation["properties"]["subject"], "[parameters('githubOidcSubject')]")
-        self.assertEqual(federation["properties"]["audiences"], ["api://AzureADTokenExchange"])
+        ])
 
     def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True):
         with tempfile.TemporaryDirectory() as directory:
@@ -183,35 +172,6 @@ class BicepDeploymentTests(unittest.TestCase):
                 scoped["costQueryScope"] = {"value": mode}
                 result, _ = self.run_harness("validate", scoped)
                 self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_github_oidc_requires_an_exact_main_branch_subject(self):
-        for subject in (
-            "repo:example/observability:ref:refs/heads/main",
-            "repo:example@123/observability@456:ref:refs/heads/main",
-        ):
-            with self.subTest(subject=subject):
-                values = parameters()
-                values["costCollectorMode"] = {"value": "githubOidc"}
-                values["costGithubOidcSubject"] = {"value": subject}
-                result, _ = self.run_harness("validate", values)
-                self.assertEqual(result.returncode, 0, result.stderr)
-        for subject in ("", "repo:example/observability:environment:production",
-                        "repo:example/observability:ref:refs/heads/feature"):
-            with self.subTest(subject=subject):
-                values = parameters()
-                values["costCollectorMode"] = {"value": "githubOidc"}
-                values["costGithubOidcSubject"] = {"value": subject}
-                result, _ = self.run_harness("validate", values)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn("costGithubOidcSubject", result.stderr)
-                self.assertIn("main-branch", result.stderr)
-
-        disabled = parameters()
-        disabled["enableCostPipeline"] = {"value": False}
-        disabled["costCollectorMode"] = {"value": "githubOidc"}
-        disabled["costGithubOidcSubject"] = {"value": ""}
-        result, _ = self.run_harness("validate", disabled)
-        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_account_group_names_cannot_escape_managed_cost_scope(self):
         for group in (".", "..", "foundry%2fother", "foundry?other", "foundry#other", "foundry\\other", "foundry/other", "foundry\x01other"):
@@ -312,10 +272,8 @@ class BicepDeploymentTests(unittest.TestCase):
                 self.assertEqual(calls["cli"], [])
                 self.assertEqual(calls["http"], [])
 
-    def test_function_mode_deploy_orchestrates_function_and_grafana_and_cleans_temporary_files(self):
-        values = parameters()
-        values["costCollectorMode"] = {"value": "function"}
-        result, calls = self.run_harness("deploy", values)
+    def test_deploy_publishes_function_and_provisions_grafana_and_cleans_temporary_files(self):
+        result, calls = self.run_harness("deploy")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls["cli"][1][:3], ["deployment", "group", "create"])
         self.assertEqual(calls["cli"][2][:3], ["functionapp", "deployment", "source"])
@@ -324,25 +282,14 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertFalse(Path(calls["parameterTemp"]).exists())
         self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
 
-    def test_default_deploy_is_function_free_and_provisions_grafana(self):
-        result, calls = self.run_harness("deploy")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(any(command[0] == "functionapp" for command in calls["cli"]))
-        self.assertEqual(calls["zipEntries"], [])
-        self.assertFalse(Path(calls["parameterTemp"]).exists())
-        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
-
-    def test_explicit_github_oidc_deploy_provisions_grafana_without_publishing_a_function(self):
+    def test_deploy_without_cost_pipeline_publishes_no_function(self):
         values = parameters()
-        values["costCollectorMode"] = {"value": "githubOidc"}
-        values["costGithubOidcSubject"] = {"value": "repo:example/observability:ref:refs/heads/main"}
+        values["enableCostPipeline"] = {"value": False}
         result, calls = self.run_harness("deploy", values)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(command[0] == "functionapp" for command in calls["cli"]))
         self.assertEqual(calls["zipEntries"], [])
         self.assertFalse(Path(calls["parameterTemp"]).exists())
-        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
-
     def test_what_if_performs_no_publishing_or_grafana_changes(self):
         result, calls = self.run_harness("deploy", what_if=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -367,7 +314,9 @@ class BicepTemplateTests(unittest.TestCase):
         template = json.loads(result.stdout)
         self.assertEqual(template["parameters"]["grafanaMajorVersion"]["defaultValue"], "12")
         self.assertEqual(template["parameters"]["costQueryScope"]["defaultValue"], "subscription")
-        self.assertEqual(template["parameters"]["costCollectorMode"]["defaultValue"], "githubOidc")
+        self.assertNotIn("costCollectorMode", template["parameters"])
+        self.assertNotIn("costGithubOidcSubject", template["parameters"])
+        self.assertNotIn("costCollectorConfiguration", template["outputs"])
         self.assertEqual(
             template["parameters"]["costQueryScope"]["allowedValues"],
             ["subscription", "resourceGroup", "resourceGroupManaged"],

@@ -67,8 +67,7 @@ try {
     }
 
     $costEnabled = [bool](Get-BicepParameter $compiledParameters.parameters 'enableCostPipeline' $false)
-    $costMode = [string](Get-BicepParameter $compiledParameters.parameters 'costCollectorMode' 'githubOidc')
-    if ($costEnabled -and $costMode -eq 'function') {
+    if ($costEnabled) {
         $functionName = [string]$outputs.costFunctionName.value
         if ([string]::IsNullOrWhiteSpace($functionName)) {
             throw 'Azure deployment did not return the cost Function name.'

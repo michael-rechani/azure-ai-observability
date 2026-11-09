@@ -101,16 +101,8 @@ param costBudgetEndDate string = ''
 @maxValue(100)
 param costBudgetThresholdPercent int = 80
 
-@description('Deploy the optional daily cost collector and its Log Analytics ingestion pipeline.')
+@description('Deploy the optional cost collector Function and its Log Analytics ingestion pipeline.')
 param enableCostPipeline bool = false
-
-@description('Cost collector runtime. githubOidc (default) is Function-free: no Function App, plan, or storage account is deployed and a scheduled GitHub Actions job federates to the managed identity through OIDC. function deploys the original Azure Function. Incremental redeployments never delete existing resources, so switching modes does not remove a previously deployed Function; stored snapshots in Log Analytics are kept.')
-@allowed(['function', 'githubOidc'])
-param costCollectorMode string = 'githubOidc'
-
-@description('Exact GitHub OIDC subject for this repository main branch; required for githubOidc mode.')
-@maxLength(600)
-param costGithubOidcSubject string = ''
 
 @description('Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles).')
 @allowed(['subscription', 'resourceGroup', 'resourceGroupManaged'])
@@ -359,8 +351,6 @@ module cost 'modules/cost.bicep' = if (enableCostPipeline) {
     costQueryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
     lookbackDays: costLookbackDays
     retentionInDays: retentionInDays
-    collectorMode: costCollectorMode
-    githubOidcSubject: costGithubOidcSubject
   }
 }
 
@@ -407,16 +397,6 @@ output applicationInsightsResourceId string = insights.id
 output actionGroupResourceId string = actionGroup.id
 output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName : ''
 output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
-output costCollectorConfiguration object = enableCostPipeline ? {
-  collectorMode: costCollectorMode
-  subscriptionId: subscription().subscriptionId
-  accountIds: monitoredAccountIds
-  queryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
-  ingestionEndpoint: cost!.outputs.ingestionEndpoint
-  dataCollectionRuleImmutableId: cost!.outputs.ruleImmutableId
-  identityClientId: cost!.outputs.clientId
-  lookbackDays: costLookbackDays
-} : {}
 output dashboardConfiguration object = {
   monitoringWorkspaceResourceId: workspace.id
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId
