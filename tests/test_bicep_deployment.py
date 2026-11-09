@@ -2,6 +2,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -125,6 +126,8 @@ class BicepDeploymentTests(unittest.TestCase):
                 [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "tests" / "bicep_harness.ps1")],
                 env=environment, capture_output=True, text=True,
             )
+            # PowerShell's error view wraps long messages at the terminal width, which differs by platform.
+            result.stderr = re.sub(r"\s*\n(?:\s*\|)?\s*", " ", re.sub(r"\x1b\[[0-9;]*m", "", result.stderr))
             calls = json.loads(log.read_text(encoding="utf-8-sig"))
             return result, calls
 
