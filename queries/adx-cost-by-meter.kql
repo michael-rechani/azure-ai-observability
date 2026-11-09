@@ -1,0 +1,5 @@
+AiCost()
+| where $__timeFilter(Date)
+| summarize BillingCost = round(sum(Cost), 2), CostUsd = round(sum(CostUsd), 2), Quantity = round(sum(Quantity), 2)
+    by MeterCategory, MeterSubCategory, MeterName, UnitOfMeasure, BillingCurrency
+| order by BillingCost desc

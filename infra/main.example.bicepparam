@@ -57,3 +57,16 @@ param costLookbackDays = 90
 param monthlyAiCostBudgetAmount = 0
 param costBudgetStartDate = ''
 param costBudgetEndDate = ''
+
+// Optional Function-free cost path: Cost Management export -> private storage -> Azure Data Explorer -> Grafana.
+// The ADX cluster bills continuously (roughly $95/month at retail) and the export holds the whole subscription's
+// cost rows. Register Microsoft.CostManagementExports first. See docs/costs.md.
+param enableCostExport = false
+// Required with enableCostExport: the deploying identity, granted AllDatabasesAdmin on the dedicated cost cluster
+// (az ad signed-in-user show --query id -o tsv). Use costExportDeployerPrincipalType = 'App' for a service principal.
+// param costExportDeployerObjectId = '00000000-0000-0000-0000-000000000000'
+// After the first deployment, set costExportStartDate to the value used then; the default (tomorrow, UTC) moves on every deployment.
+// param costExportStartDate = '2026-01-15'
+// Optional private path from Grafana to the cost cluster: 'privateEndpoint' (keeps public access) or 'privateOnly'.
+// The managed private endpoint stays Pending until scripts/approve_grafana_private_endpoint.ps1 runs. See docs/costs.md.
+// param costExportGrafanaAccess = 'privateEndpoint'

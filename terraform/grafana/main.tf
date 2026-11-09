@@ -8,6 +8,19 @@ resource "grafana_data_source" "azure_monitor" {
   })
 }
 
+resource "grafana_data_source" "azure_data_explorer" {
+  count = var.enable_cost_export_dashboard ? 1 : 0
+  type  = "grafana-azure-data-explorer-datasource"
+  name  = "AI observability - Azure Data Explorer"
+  uid   = "ai-observability-azure-data-explorer"
+  json_data_encoded = jsonencode({
+    clusterUrl       = var.cost_export_cluster_uri
+    defaultDatabase  = var.cost_export_database
+    dataConsistency  = "strong"
+    azureCredentials = { authType = "msi" }
+  })
+}
+
 locals {
   dashboard_files = merge({
     foundry_overview = "foundry-overview.json"
@@ -16,6 +29,8 @@ locals {
     }, var.enable_cost_dashboard ? {
     azure_ai_costs    = "azure-ai-costs.json"
     business_overview = "business-overview.json"
+    } : {}, var.enable_cost_export_dashboard ? {
+    azure_ai_costs_native = "azure-ai-costs-native.json"
   } : {})
 
   source_dashboards = {
@@ -55,10 +70,11 @@ locals {
     ptuDeployment    = var.dashboard_defaults.ptu_account.deployment
   })
   dashboard_default_values = {
-    foundry_overview = merge(local.foundry_defaults, local.telemetry_defaults)
-    foundry_agents   = local.telemetry_defaults
-    openai_ptu       = local.ptu_defaults
-    azure_ai_costs   = local.cost_defaults
+    foundry_overview      = merge(local.foundry_defaults, local.telemetry_defaults)
+    foundry_agents        = local.telemetry_defaults
+    openai_ptu            = local.ptu_defaults
+    azure_ai_costs        = local.cost_defaults
+    azure_ai_costs_native = tomap({})
     business_overview = merge(
       local.telemetry_defaults,
       local.business_cost_defaults,
@@ -70,26 +86,30 @@ locals {
 resource "grafana_dashboard" "monitoring" {
   for_each = local.dashboard_files
   config_json = replace(
-    jsonencode(merge(local.source_dashboards[each.key], {
-      links = [
-        for link in try(local.source_dashboards[each.key].links, []) :
-        link if contains(local.dashboard_uids, split("/", link.url)[2])
-      ]
-      templating = merge(local.source_dashboards[each.key].templating, {
-        list = [
-          for variable in local.source_dashboards[each.key].templating.list :
-          contains(keys(local.dashboard_default_values[each.key]), variable.name) ? merge(variable, {
-            query = local.dashboard_default_values[each.key][variable.name]
-            current = merge(try(variable.current, {}), {
-              text  = local.dashboard_default_values[each.key][variable.name]
-              value = local.dashboard_default_values[each.key][variable.name]
-            })
-          }) : variable
+    replace(
+      jsonencode(merge(local.source_dashboards[each.key], {
+        links = [
+          for link in try(local.source_dashboards[each.key].links, []) :
+          link if contains(local.dashboard_uids, split("/", link.url)[2])
         ]
-      })
-    })),
-    "$${DS_AZURE_MONITOR}",
-    grafana_data_source.azure_monitor.uid
+        templating = merge(local.source_dashboards[each.key].templating, {
+          list = [
+            for variable in local.source_dashboards[each.key].templating.list :
+            contains(keys(local.dashboard_default_values[each.key]), variable.name) ? merge(variable, {
+              query = local.dashboard_default_values[each.key][variable.name]
+              current = merge(try(variable.current, {}), {
+                text  = local.dashboard_default_values[each.key][variable.name]
+                value = local.dashboard_default_values[each.key][variable.name]
+              })
+            }) : variable
+          ]
+        })
+      })),
+      "$${DS_AZURE_MONITOR}",
+      grafana_data_source.azure_monitor.uid
+    ),
+    "$${DS_AZURE_DATA_EXPLORER}",
+    try(grafana_data_source.azure_data_explorer[0].uid, "")
   )
   overwrite = false
 
@@ -97,6 +117,10 @@ resource "grafana_dashboard" "monitoring" {
     precondition {
       condition     = !contains(["azure_ai_costs", "business_overview"], each.key) || var.dashboard_defaults.monitoring_workspace_resource_id != null
       error_message = "Set dashboard_defaults.monitoring_workspace_resource_id when enabling cost dashboards."
+    }
+    precondition {
+      condition     = each.key != "azure_ai_costs_native" || var.cost_export_cluster_uri != null
+      error_message = "Set cost_export_cluster_uri (the cost_export_adx_cluster_uri output of the Azure stage) when enabling the cost export dashboard."
     }
     precondition {
       condition = alltrue([

@@ -1,5 +1,17 @@
 # Azure AI cost collection
 
+There are two opt-in ways to get billed cost into Grafana. Neither is on by default, and they can coexist.
+
+| | [Cost Management export to Azure Data Explorer](#cost-management-export-to-azure-data-explorer-no-function) | [Function collector](#deploy-the-optional-function-collector) |
+| --- | --- | --- |
+| Switch | `enableCostExport` (Bicep), `enable_cost_export` (Terraform) | `enableCostPipeline`, `enable_cost_pipeline` |
+| Moving parts | A Cost Management export, a private storage account and an Azure Data Explorer (ADX) cluster | An Azure Function, a storage account, a data collection rule and a Log Analytics table |
+| Code you own | None | PowerShell collector |
+| Secrets | None | None |
+| Standing cost | **About $95 per month at retail for the smallest ADX cluster, plus storage.** Approximate; confirm in the Azure pricing calculator | Pennies |
+| Visibility | Whole-subscription cost rows are queryable by anyone who can edit queries on the ADX data source | Only the selected accounts are stored |
+| Dashboard | `azure-ai-costs-native` | `azure-ai-costs` and the business overview |
+
 You can deploy a cost collector, a detailed Grafana cost dashboard, and a business overview using `enable_cost_pipeline` plus `enable_cost_dashboard` in [Terraform](terraform.md#optional-cost-pipeline), or `enableCostPipeline` in [Bicep](bicep.md#optional-cost-collection-and-budget). **Only billed cost needs a collector.** Foundry, PTU, agent-trace and capacity panels are read directly by Azure Managed Grafana's managed identity. Cost Management is different: no Grafana data source tested here can query it with that identity (see [Direct Grafana queries](#direct-grafana-queries-and-per-viewer-access)), so the optional pipeline runs an **Azure Function inside your subscription** that writes daily snapshots to Log Analytics. It uses a managed identity; no GitHub, external scheduler, app registration or client secret is involved. The overview shows collection status, actual cost by currency, observed agent activity, and PTU signals without combining them into a health score. A separate lab probe verified a complete live snapshot with the Function module, and a later full Bicep deployment ran the same collector code under the stack's own managed identity and role (see [what has been validated](#operation-and-permissions)). The scheduled run of a Function published by the full stack is unverified, because a tenant policy blocked publishing it (see [tenants that force storage public access off](#tenants-that-force-storage-public-access-off)).
 
 | Part | Where it lives | Authentication |
@@ -13,6 +25,79 @@ You can deploy a cost collector, a detailed Grafana cost dashboard, and a busine
 The Terraform and Bicep cost-pipeline definitions create a **user-assigned managed identity** for the collector. The Function uses it directly to obtain short-lived Cost Management and Logs Ingestion tokens. The Azure Monitor data source uses a separate Grafana workspace managed identity to read the collected data. Neither requires a user's browser session, MFA, or a client secret. Infrastructure deployment still needs an authenticated principal with the necessary resource and role-assignment permissions; the deployment identity is separate from those runtime identities.
 
 These are shared workload identities, not per-viewer Azure authorization. A successful workload-identity test does not establish that each viewer can see only costs permitted by that viewer's own Azure roles.
+
+## Cost Management export to Azure Data Explorer (no Function)
+
+Grafana cannot read Cost Management or a private storage account directly without a stored secret (see [Direct Grafana queries](#direct-grafana-queries-and-per-viewer-access)). It **can** query Azure Data Explorer with its managed identity, and ADX can read a private storage account with its own managed identity. This path chains those together, so no Function, secret, GitHub or public storage access is involved:
+
+```
+Cost Management export -> private storage account -> ADX external table -> Grafana (ADX data source)
+```
+
+Everything authenticates with managed identities:
+
+| Hop | Identity and role |
+| --- | --- |
+| Export writes CSV files to storage | The export's system-assigned identity, **Storage Blob Data Contributor** on the account |
+| ADX reads the files | The cluster's system-assigned identity, **Storage Blob Data Reader** on the account, plus a database `managed_identity` policy |
+| Grafana queries ADX | Grafana's managed identity, database **Viewer** |
+| Deployment sets up the database | The deploying identity, **AllDatabasesAdmin** on the dedicated cost cluster (only that role can set the `managed_identity` policy); removable after deployment |
+
+Enable it with `enableCostExport = true` ([Bicep](bicep.md#optional-cost-export-to-azure-data-explorer), which also provisions the Grafana data source and dashboard) or `enable_cost_export = true` plus `enable_cost_export_dashboard = true` in the Grafana stage ([Terraform](terraform.md#optional-cost-export-to-azure-data-explorer)). It deploys two exports into the deployment subscription: a daily month-to-date export (`cost-current`) and a monthly export of the previous month (`cost-closed`). Both set `OverwritePreviousReport`, so each period keeps one current file instead of accumulating duplicates. The ADX script defines external tables over both containers and an `AiCost()` function that keeps rows for `Microsoft.CognitiveServices` resources (Foundry, Azure OpenAI and Azure AI Services accounts) and, for a month present in both, uses only the closed-month file. The `azure-ai-costs-native` dashboard queries only `AiCost()`.
+
+### Before you enable it
+
+- **Register the provider.** The subscription needs `Microsoft.CostManagementExports` registered (`az provider register --namespace Microsoft.CostManagementExports`). Without it the export deployment fails.
+- **Set a start date for Terraform.** `cost_export_start_date` is required. In Bicep, `costExportStartDate` defaults to tomorrow (UTC) and therefore **changes on every redeploy**. To keep the same schedule, pass the value you first deployed. The end date defaults to about five years later; exports silently stop after it, so extend it before then.
+- **Plan for history.** Data starts when the export first runs, plus last month after the first closed-month run. It does not backfill older months. Only the deployment subscription is covered.
+- **Expect a delay.** A scheduled export first runs the day after deployment. To see data sooner, use **Run now** on each export in the portal or `POST .../providers/Microsoft.CostManagement/exports/<name>/run?api-version=2025-03-01`. Manual runs took about five to seventeen minutes. Billing data itself can lag by a day or more.
+- **Know what it costs.** The deployment creates an ADX cluster (the smallest Dev/Test SKU by default). It bills while it exists, whether or not anyone is querying it, and auto-stop is deliberately disabled because a stopped cluster would break dashboards. Treat the figure above as approximate.
+- **Know who can see what.** The export contains the **entire subscription's** cost rows, not only AI. Anyone who can use Explore or edit queries on the ADX data source can query `CostExportCurrent` and `CostExportClosed` directly, which is equivalent to Cost Management Reader on the subscription. Limit Grafana Editor and Admin roles accordingly. The Function path filters at the source instead.
+- **The CSV schema is positional.** The external tables map the 45 export columns by position. If Cost Management reorders or adds columns, values can silently misalign. Check the dashboard totals against the portal after any export format change, and compare `AiCost()` with a Cost Management query when you first deploy.
+- **Tenants with storage policies.** Some tenants force `publicNetworkAccess=Disabled` and `allowSharedKeyAccess=false` on storage accounts and revert manual changes. This design works under such a policy in the Lab: the export and ADX reach storage as trusted Azure services, and no shared key is used. Terraform may show the normalized setting as drift on later plans.
+
+### Private access from Grafana (optional)
+
+Grafana cannot reach Azure Storage privately: Storage is not a supported target for Managed Grafana managed private endpoints, and Grafana has no managed-identity blob data source. It does not need to. The only service Grafana talks to is ADX, which **is** a supported target. The export writes to storage and ADX reads from it as trusted Azure services, so neither hop needs a private endpoint of its own. Private access therefore applies to the **Grafana to ADX** hop only.
+
+`costExportGrafanaAccess` (Bicep) or `cost_export_grafana_access` (Terraform) chooses how Grafana reaches the cluster:
+
+| Value | Effect |
+| --- | --- |
+| `public` (default) | Grafana uses the cluster's public endpoint. |
+| `privateEndpoint` | Also creates a Grafana managed private endpoint (`mpe-cost-adx`) to the cluster. It stays **Pending** until approved. The public endpoint stays open. |
+| `privateOnly` | The same endpoint, and the cluster's public network access is **Disabled**. |
+
+Azure names the ADX side of the connection with a generated GUID, so Bicep and Terraform cannot approve it. Use the helper once after deployment:
+
+```powershell
+.\scripts\approve_grafana_private_endpoint.ps1 -ResourceGroupName "<monitoring-rg>" -ClusterName "<cluster-name>" -GrafanaName "<grafana-name>"
+```
+
+The cluster name is the `costExportAdxClusterName` Bicep output or the `cost_export_adx_cluster_name` Terraform output. The script approves the pending connection, asks Grafana to refresh its cached state and waits until Grafana reports **Approved**. It supports `-WhatIf`. The identity running it needs permission to approve private endpoint connections on the cluster and to read and refresh the Grafana workspace.
+
+- **Recommended order.** Deploy with `privateEndpoint`, approve, confirm the dashboard returns data, then redeploy with `privateOnly`. Going to `privateOnly` immediately leaves Grafana without ADX access until the approval finishes.
+- **Allow a few minutes, and more after a delete.** On a first deployment, panels returned data about 30 seconds after Grafana reported Approved. In one earlier test, an endpoint created shortly after deleting a different Grafana managed private endpoint carried no traffic for about 12 minutes even though both sides reported Approved; deleting and recreating it fixed it. The cause was not identified (stale Grafana state is the likely explanation). If you delete a managed private endpoint, wait about ten minutes before recreating it, and if a new one stays silent, delete and recreate it.
+- **What `privateOnly` removes.** The cluster is no longer reachable from the public internet, so the ADX web UI, Kusto Explorer and the repository's local KQL helper scripts work only from a network with private access. Check the dashboard instead. The ARM database script (Bicep and Terraform) still deploys with the public endpoint disabled.
+- **Requirements and cost.** The Grafana workspace must be on the Standard tier, which this repository always uses. Private endpoints add their own hourly and data-processing charges; confirm current pricing.
+- **Secretless.** The path still uses managed identities only; no key, token or firewall exemption is added.
+
+### What has been validated
+
+- **Live, with Bicep, in a Lab subscription:** the whole chain, from a clean resource group through a full `main.bicep` deployment, then a repeat deployment that succeeded unchanged. Manual runs of both exports wrote CSV files to a private storage account under the tenant policy above, ADX external tables read them with managed identity, and Grafana queried ADX with managed identity. The ADX total for the current month matched a Cost Management Query API request for the same window and filter. All five panels of the native dashboard returned data through Grafana, and `AiCost()` returned the closed month from `cost-closed` together with the current month from `cost-current`.
+- **Found and fixed during live validation:** the deployer needs cluster-level AllDatabasesAdmin to set the `managed_identity` policy; the export API rejects `partitionData = false`, so the property is omitted; and each export also writes a `manifest.json` beside its CSV, which breaks the external tables unless they set `fileExtension='.csv'`.
+- **Private access, live with Bicep:** with the cluster's public network access `Disabled`, all five dashboard panels still returned data through Grafana's managed identity, and the same panels failed with a connection timeout once the managed private endpoint was removed (negative control), so the private endpoint is what carries the traffic. The `privateOnly` Bicep deployment, including its ARM database script with public access disabled, succeeded and created the endpoint; after `scripts\approve_grafana_private_endpoint.ps1` approved it, all five panels returned data on the first attempt. Direct access to the cluster from outside timed out. The one failure seen (see the note on deleting an endpoint above) was resolved by recreating the endpoint.
+- **Not validated:** an **Active scheduled** export run (validation used manual runs, and the first scheduled run is the day after deployment), the month rollover from `cost-current` to `cost-closed`, a month that appears in both containers (the closed-month-wins logic is untested against real overlapping files), a deployment of the Terraform path including its managed private endpoint (it passes `terraform validate` and mock-provider tests only), switching an existing `privateEndpoint` deployment to `privateOnly`, and exports beyond the five-year end date.
+
+### Query the data
+
+```kusto
+AiCost()
+| where Date >= startofmonth(now())
+| summarize BillingCost = sum(Cost) by BillingCurrency
+```
+
+Amounts are in billing currency. `CostUsd` is also available, but sums across currencies are not meaningful, so the dashboard groups by `BillingCurrency`. An empty result means no AI charges have been exported yet, not zero cost.
 
 ## Deploy the optional Function collector
 
@@ -35,7 +120,7 @@ Earlier revisions offered a GitHub Actions OIDC collector (`costCollectorMode = 
 - If you configured the old workflow, delete its `COST_*` repository variables and disable it in GitHub. Stored snapshots in Log Analytics are kept.
 ## Direct Grafana queries and per-viewer access
 
-**Short version:** Grafana's managed identity reads Azure Monitor, Log Analytics and Resource Graph natively, which is why those panels need no collector. For Cost Management, the tested Infinity plugin offers no managed-identity or federated-credential authentication, and the Azure Monitor data source's managed-identity proxy rejected the Cost Management request. Until a Grafana data source can do that without a stored secret, the in-Azure Function above is the supported path.
+**Short version:** Grafana's managed identity reads Azure Monitor, Log Analytics and Resource Graph natively, which is why those panels need no collector. For Cost Management, the tested Infinity plugin offers no managed-identity or federated-credential authentication, and the Azure Monitor data source's managed-identity proxy rejected the Cost Management request. Until a Grafana data source can do that without a stored secret, use either the [export to ADX](#cost-management-export-to-azure-data-explorer-no-function) path (no code, higher standing cost) or the in-Azure Function below (pennies, one more component to run).
 
 Azure Managed Grafana can use a managed identity with [data sources that support it](https://learn.microsoft.com/en-us/azure/managed-grafana/how-to-authentication-permissions); that does not make the identity available to every REST plugin. A private workspace test used signed Infinity 4.0.0 on Grafana 12.4.13 with a temporary OAuth client-credentials service principal to query Cost Management directly, without the Function. One actual-cost row and one amortized-cost row matched separate API queries for one account. The principal had a single-action cost-query role at its resource group. A direct subscription-scope API request was denied with `RBACAccessDenied`, and the corresponding Grafana query reported an upstream HTTP 401. This was a **shared client-secret identity**, not Grafana managed identity or per-viewer authentication. The test did not establish complete historical coverage, continuation handling, or production readiness.
 

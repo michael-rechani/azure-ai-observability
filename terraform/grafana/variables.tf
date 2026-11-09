@@ -70,3 +70,25 @@ variable "enable_cost_dashboard" {
   type        = bool
   default     = false
 }
+
+variable "enable_cost_export_dashboard" {
+  description = "Provision the Azure Data Explorer data source and the cost export dashboard after enabling the Azure stage's cost export."
+  type        = bool
+  default     = false
+}
+
+variable "cost_export_cluster_uri" {
+  description = "Azure Data Explorer cluster URI, from the Azure stage's cost_export_adx_cluster_uri output. Required with enable_cost_export_dashboard."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.cost_export_cluster_uri == null || can(regex("(?i)^https://[a-z0-9][a-z0-9-]*\\.[a-z0-9]+\\.kusto\\.windows\\.net/?$", var.cost_export_cluster_uri))
+    error_message = "cost_export_cluster_uri must be an Azure Data Explorer HTTPS cluster URI such as https://name.region.kusto.windows.net."
+  }
+}
+
+variable "cost_export_database" {
+  description = "Azure Data Explorer database holding the cost export, from the Azure stage's cost_export_adx_database output."
+  type        = string
+  default     = "costs"
+}

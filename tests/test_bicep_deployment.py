@@ -81,7 +81,7 @@ class BicepDeploymentTests(unittest.TestCase):
         ])
 
     def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True,
-                    fail_function=False):
+                    fail_function=False, cost_export=False, cost_export_uri=None):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             parameter_data = parameters() if values is None else values
@@ -107,6 +107,8 @@ class BicepDeploymentTests(unittest.TestCase):
                 "TEST_WHAT_IF": str(what_if).lower(),
                 "TEST_COST_DASHBOARD": str(cost_dashboard).lower(),
                 "TEST_FAIL_FUNCTION": str(fail_function).lower(),
+                "TEST_COST_EXPORT": str(cost_export).lower(),
+                "TEST_COST_EXPORT_URI": cost_export_uri or "",
             })
             result = subprocess.run(
                 [PWSH, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(ROOT / "tests" / "bicep_harness.ps1")],
@@ -137,6 +139,21 @@ class BicepDeploymentTests(unittest.TestCase):
 
         cross["enableCostPipeline"]["value"] = False
         result, _ = self.run_harness("validate", cross)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cost_export_requires_a_real_deployer_object_id(self):
+        missing = parameters()
+        missing["enableCostExport"] = {"value": True}
+        result, _ = self.run_harness("validate", missing)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("costExportDeployerObjectId", result.stderr)
+
+        missing["costExportDeployerObjectId"] = {"value": "44444444-4444-4444-4444-444444444444"}
+        result, _ = self.run_harness("validate", missing)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        disabled = parameters()
+        result, _ = self.run_harness("validate", disabled)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_invalid_budget_workspace_duplicates_and_placeholders_fail(self):
@@ -228,6 +245,70 @@ class BicepDeploymentTests(unittest.TestCase):
             for link in dashboard.get("links", []):
                 self.assertIn(link["url"].split("/")[2], available_uids)
 
+    def test_grafana_provisions_data_explorer_source_and_native_cost_dashboard(self):
+        result, calls = self.run_harness("grafana", cost_export=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        posts = [call for call in calls["http"] if call["method"] == "Post"]
+        sources = [call["body"] for call in posts if call["path"] == "/api/datasources"]
+        self.assertEqual(len(sources), 2)
+        adx = next(body for body in sources if body["type"] == "grafana-azure-data-explorer-datasource")
+        self.assertEqual(adx["uid"], "ai-observability-azure-data-explorer")
+        self.assertEqual(adx["jsonData"]["azureCredentials"], {"authType": "msi"})
+        self.assertEqual(adx["jsonData"]["clusterUrl"], "https://adx.eastus.kusto.windows.net")
+        self.assertEqual(adx["jsonData"]["defaultDatabase"], "costs")
+        self.assertNotIn("password", json.dumps(adx).lower())
+        dashboards = {
+            call["body"]["dashboard"]["uid"]: call["body"]
+            for call in posts if call["path"] == "/api/dashboards/db"
+        }
+        self.assertEqual(len(dashboards), 6)
+        native = dashboards["azure-ai-costs-native"]
+        self.assertNotIn("${DS_AZURE_DATA_EXPLORER}", json.dumps(native))
+        self.assertIn("ai-observability-azure-data-explorer", json.dumps(native))
+
+    def test_grafana_omits_data_explorer_by_default(self):
+        result, calls = self.run_harness("grafana")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(
+            call["body"] and call["body"].get("type") == "grafana-azure-data-explorer-datasource"
+            for call in calls["http"] if call["path"] == "/api/datasources"
+        ))
+        self.assertFalse(any(
+            call["body"]["dashboard"]["uid"] == "azure-ai-costs-native"
+            for call in calls["http"] if call["path"] == "/api/dashboards/db"
+        ))
+
+    def test_grafana_updates_owned_data_explorer_source_and_rejects_unowned(self):
+        result, calls = self.run_harness("grafana", mode="existing", cost_export=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        updates = [call for call in calls["http"] if call["method"] == "Put"]
+        self.assertEqual(
+            {call["path"] for call in updates},
+            {
+                "/api/datasources/uid/ai-observability-azure-monitor",
+                "/api/datasources/uid/ai-observability-azure-data-explorer",
+            },
+        )
+        adx_update = next(call for call in updates if call["path"].endswith("azure-data-explorer"))
+        self.assertEqual(adx_update["body"]["version"], 3)
+
+        result, calls = self.run_harness("grafana", mode="unmanaged-adx-source", cost_export=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not managed", result.stderr)
+        self.assertFalse(any(call["method"] in ("Post", "Put") for call in calls["http"]))
+
+    def test_grafana_rejects_untrusted_data_explorer_cluster_uri(self):
+        for uri in (
+            "http://adx.eastus.kusto.windows.net",
+            "https://adx.eastus.kusto.windows.net.attacker.example",
+            "https://adx.eastus.kusto.windows.net/path",
+        ):
+            with self.subTest(uri=uri):
+                result, calls = self.run_harness("grafana", cost_export=True, cost_export_uri=uri)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("costExportClusterUri", result.stderr)
+                self.assertEqual(calls["http"], [])
+
     def test_grafana_updates_owned_resources_with_versions(self):
         result, calls = self.run_harness("grafana", mode="existing")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -307,6 +388,14 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertEqual(len(calls["cli"]), 2)
         self.assertEqual(calls["http"], [])
         self.assertFalse(Path(calls["parameterTemp"]).exists())
+
+
+class CostExportKqlTests(unittest.TestCase):
+    def test_external_tables_ignore_the_export_manifest(self):
+        kql = (ROOT / "infra" / "kusto" / "cost-export.kql").read_text(encoding="utf-8")
+        tables = kql.count(".create-or-alter external table")
+        self.assertEqual(tables, 2)
+        self.assertEqual(kql.count("fileExtension='.csv'"), tables)
 
 
 @unittest.skipUnless(AZ, "Azure CLI with Bicep is required to inspect compiled templates")
@@ -416,6 +505,28 @@ class BicepTemplateTests(unittest.TestCase):
         ))
         budget = next(r for r in resources_of(budget_template) if r["type"].lower() == "microsoft.consumption/budgets")
         self.assertEqual(budget["properties"]["filter"]["dimensions"]["name"], "ResourceId")
+
+    def test_cost_export_grafana_access_is_opt_in_and_private_only_closes_the_cluster(self):
+        result = subprocess.run(
+            [AZ, "bicep", "build", "--file", str(ROOT / "infra" / "modules" / "cost-export.bicep"), "--stdout"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        template = json.loads(result.stdout)
+        access = template["parameters"]["grafanaAccess"]
+        self.assertEqual(access["defaultValue"], "public")
+        self.assertEqual(access["allowedValues"], ["public", "privateEndpoint", "privateOnly"])
+        resources = template["resources"]
+        resources = list(resources.values()) if isinstance(resources, dict) else resources
+        endpoint = next(r for r in resources
+                        if r["type"].lower() == "microsoft.dashboard/grafana/managedprivateendpoints")
+        self.assertEqual(endpoint["condition"], "[not(equals(parameters('grafanaAccess'), 'public'))]")
+        self.assertEqual(endpoint["properties"]["groupIds"], ["cluster"])
+        cluster = next(r for r in resources if r["type"].lower() == "microsoft.kusto/clusters")
+        self.assertEqual(
+            cluster["properties"]["publicNetworkAccess"],
+            "[if(equals(parameters('grafanaAccess'), 'privateOnly'), 'Disabled', 'Enabled')]",
+        )
 
 
 if __name__ == "__main__":

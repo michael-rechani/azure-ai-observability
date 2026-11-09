@@ -1,0 +1,3 @@
+AiCost()
+| summarize FirstChargeDate = min(Date), LatestChargeDate = max(Date), Rows = count(), Accounts = dcount(ResourceId)
+| extend DaysBehind = datetime_diff('day', startofday(now()), LatestChargeDate)

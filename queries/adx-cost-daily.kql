@@ -1,0 +1,5 @@
+AiCost()
+| where $__timeFilter(Date)
+| extend Account = strcat(tostring(split(ResourceId, '/')[-1]), ' (', BillingCurrency, ')')
+| summarize Cost = sum(Cost) by Date, Account
+| order by Date asc

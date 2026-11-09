@@ -103,6 +103,10 @@ function Test-BicepDeploymentParameters {
         throw 'dashboardTelemetryWorkspaceResourceId must identify an entry in existingTelemetryWorkspaces; leave it empty to use the new workspace.'
     }
 
+    if ([bool](Get-BicepParameter $Parameters 'enableCostExport' $false)) {
+        Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costExportDeployerObjectId' '')) 'costExportDeployerObjectId (the deploying identity, required for enableCostExport)'
+    }
+
     $enableCost = [bool](Get-BicepParameter $Parameters 'enableCostPipeline' $false)
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
     $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)

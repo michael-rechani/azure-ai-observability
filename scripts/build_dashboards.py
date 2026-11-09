@@ -8,6 +8,8 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 DS = {"type": "grafana-azure-monitor-datasource", "uid": "${DS_AZURE_MONITOR}"}
+DS_ADX = {"type": "grafana-azure-data-explorer-datasource", "uid": "${DS_AZURE_DATA_EXPLORER}"}
+ADX_DATABASE = "costs"
 NAMESPACE = "Microsoft.CognitiveServices/accounts"
 
 
@@ -231,14 +233,23 @@ def resource_graph(filename, subscription):
     }
 
 
-def dashboard(uid, title, variables, panels, related=()):
+def adx_query(filename, table=False):
+    return {
+        "refId": "A", "datasource": DS_ADX, "queryType": "KQL", "querySource": "raw",
+        "database": ADX_DATABASE,
+        "query": (ROOT / "queries" / filename).read_text(encoding="utf-8"),
+        "resultFormat": "table" if table else "time_series",
+    }
+
+
+def dashboard(uid, title, variables, panels, related=(), inputs=None):
     result = {
         "uid": uid, "title": title, "schemaVersion": 39, "version": 1,
         "editable": True, "tags": ["azure", "ai-observability"],
         "timezone": "browser", "refresh": "1m",
         "time": {"from": "now-6h", "to": "now"}, "panels": panels,
         "templating": {"list": variables},
-        "__inputs": [{
+        "__inputs": inputs or [{
             "name": "DS_AZURE_MONITOR", "label": "Azure Monitor",
             "type": "datasource", "pluginId": "grafana-azure-monitor-datasource",
             "pluginName": "Azure Monitor",
@@ -659,10 +670,74 @@ def build(config):
     business["timezone"] = "utc"
     business["refresh"] = "1h"
     business["time"] = {"from": "now-7d", "to": "now"}
+
+    native_panels = [
+        panel(
+            1, "Actual cost by currency",
+            adx_query("adx-cost-total.kql", table=True),
+            unit="none", kind="table",
+            description="Actual AI cost in the selected UTC period, read from the Cost Management export. "
+            "Billing-currency cost and USD cost are separate columns. Billing can be revised or delayed.",
+        ),
+        panel(
+            2, "Export data freshness",
+            adx_query("adx-cost-freshness.kql", table=True),
+            unit="none", kind="table",
+            description="What the export holds, not when it last ran. A growing DaysBehind means the export is "
+            "stale or billing is delayed; missing days are not zero cost.",
+        ),
+        panel(
+            3, "Daily actual cost by account",
+            adx_query("adx-cost-daily.kql"),
+            unit="none",
+            description="Daily actual cost per Foundry or Azure OpenAI account in its billing currency. "
+            "Each currency is a separate series.",
+        ),
+        panel(
+            4, "Cost by account",
+            adx_query("adx-cost-by-account.kql", table=True),
+            unit="none", kind="table",
+            description="Actual cost by account and resource group for the selected period.",
+        ),
+        panel(
+            5, "Cost by meter",
+            adx_query("adx-cost-by-meter.kql", table=True),
+            unit="none", kind="table",
+            description="Actual cost and quantity by meter, which separates input, output and provisioned charges.",
+        ),
+    ]
+    for item in native_panels:
+        item["datasource"] = DS_ADX
+    for item, position in zip(native_panels, (
+        {"h": 6, "w": 12, "x": 0, "y": 0},
+        {"h": 6, "w": 12, "x": 12, "y": 0},
+        {"h": 9, "w": 24, "x": 0, "y": 6},
+        {"h": 9, "w": 12, "x": 0, "y": 15},
+        {"h": 9, "w": 12, "x": 12, "y": 15},
+    ), strict=True):
+        item["gridPos"] = position
+    native = dashboard(
+        "azure-ai-costs-native", "Azure AI - Cost visibility (Cost Management export)",
+        [], native_panels,
+        inputs=[{
+            "name": "DS_AZURE_DATA_EXPLORER", "label": "Azure Data Explorer",
+            "type": "datasource", "pluginId": "grafana-azure-data-explorer-datasource",
+            "pluginName": "Azure Data Explorer",
+        }],
+    )
+    native["description"] = (
+        "Actual cost of Azure AI resources from a Cost Management export read by Azure Data Explorer, "
+        "with no collector Function. The export covers one subscription and begins at deployment. "
+        "No data can mean the export has not run yet, not zero cost."
+    )
+    native["timezone"] = "utc"
+    native["refresh"] = "1h"
+    native["time"] = {"from": "now-30d", "to": "now"}
     return {
         "foundry-overview.json": foundry, "foundry-agents.json": agents,
         "openai-ptu.json": ptu, "azure-ai-costs.json": costs,
         "business-overview.json": business,
+        "azure-ai-costs-native.json": native,
     }
 
 

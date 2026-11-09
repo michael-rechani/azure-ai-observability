@@ -1,4 +1,33 @@
+mock_provider "azapi" {
+  mock_resource "azapi_resource" {
+    defaults = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.CostManagement/exports/cost"
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000011"
+        tenant_id    = "00000000-0000-0000-0000-000000000007"
+      }
+    }
+  }
+}
+
 mock_provider "azurerm" {
+  mock_resource "azurerm_kusto_cluster" {
+    defaults = {
+      id  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Kusto/clusters/adx"
+      uri = "https://adx.eastus.kusto.windows.net"
+      identity = {
+        type         = "SystemAssigned"
+        principal_id = "00000000-0000-0000-0000-000000000010"
+        tenant_id    = "00000000-0000-0000-0000-000000000007"
+      }
+    }
+  }
+  mock_resource "azurerm_kusto_database" {
+    defaults = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Kusto/clusters/adx/databases/costs"
+    }
+  }
   mock_data "azurerm_resource_group" {
     defaults = {
       id   = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring"
@@ -720,4 +749,172 @@ run "cost_scope_migration_to_managed_group_role" {
     )
     error_message = "Migrating to managed group mode must omit the old subscription assignment and create the group role and assignment."
   }
+}
+
+run "cost_export_is_opt_in" {
+  command = plan
+  assert {
+    condition = (
+      length(azurerm_storage_account.cost_export) == 0 &&
+      length(azurerm_kusto_cluster.cost_export) == 0 &&
+      length(azurerm_kusto_script.cost_export) == 0 &&
+      length(azapi_resource.cost_export) == 0 &&
+      length(azurerm_role_assignment.cost_export_writer) == 0
+    )
+    error_message = "The export storage, Azure Data Explorer cluster, and exports must be opt-in."
+  }
+}
+
+run "cost_export_is_secretless_end_to_end" {
+  command = plan
+  variables {
+    enable_cost_export     = true
+    cost_export_start_date = "2026-11-10"
+  }
+  assert {
+    condition = (
+      azurerm_storage_account.cost_export[0].shared_access_key_enabled == false &&
+      azurerm_storage_account.cost_export[0].network_rules[0].default_action == "Deny" &&
+      contains(azurerm_storage_account.cost_export[0].network_rules[0].bypass, "AzureServices") &&
+      length(azurerm_storage_container.cost_export) == 2
+    )
+    error_message = "Export storage must disable shared keys and admit only trusted Azure services."
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].identity[0].type == "SystemAssigned" &&
+      azurerm_kusto_cluster.cost_export[0].auto_stop_enabled == false &&
+      azurerm_kusto_cluster.cost_export[0].sku[0].name == "Dev(No SLA)_Standard_E2a_v4"
+    )
+    error_message = "The cluster must use a system identity, must not auto-stop, and must default to the smallest Dev/Test SKU."
+  }
+  assert {
+    condition = (
+      azurerm_role_assignment.cost_export_reader[0].role_definition_name == "Storage Blob Data Reader" &&
+      azurerm_kusto_database_principal_assignment.cost_export_grafana[0].role == "Viewer" &&
+      azurerm_kusto_database_principal_assignment.cost_export_grafana[0].principal_type == "App" &&
+      azurerm_kusto_database_principal_assignment.cost_export_grafana[0].database_name == "costs"
+    )
+    error_message = "The cluster must read storage and Grafana must be a database viewer, with nothing broader."
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster_principal_assignment.cost_export_deployer[0].role == "AllDatabasesAdmin" &&
+      azurerm_kusto_cluster_principal_assignment.cost_export_deployer[0].principal_type == "User"
+    )
+    error_message = "The deployer must be granted the cluster role that can set the managed-identity policy, so the database script can run."
+  }
+  assert {
+    condition = (
+      toset(keys(azapi_resource.cost_export)) == toset(["closed", "current"]) &&
+      toset(keys(azurerm_role_assignment.cost_export_writer)) == toset(["closed", "current"]) &&
+      alltrue([
+        for role in values(azurerm_role_assignment.cost_export_writer) :
+        role.role_definition_name == "Storage Blob Data Contributor"
+      ])
+    )
+    error_message = "Each export needs its own identity granted write access to the export storage."
+  }
+  assert {
+    condition = (
+      azapi_resource.cost_export["current"].body.properties.schedule.status == "Active" &&
+      azapi_resource.cost_export["current"].body.properties.schedule.recurrence == "Daily" &&
+      azapi_resource.cost_export["current"].body.properties.definition.timeframe == "MonthToDate" &&
+      azapi_resource.cost_export["closed"].body.properties.schedule.recurrence == "Monthly" &&
+      azapi_resource.cost_export["closed"].body.properties.definition.timeframe == "TheLastMonth" &&
+      azapi_resource.cost_export["closed"].body.properties.dataOverwriteBehavior == "OverwritePreviousReport"
+    )
+    error_message = "Exports must be active, with a daily month-to-date and a monthly closed-month schedule that overwrite previous reports."
+  }
+  assert {
+    condition = (
+      azapi_resource.cost_export["current"].body.properties.schedule.recurrencePeriod.from == "2026-11-10T00:00:00Z" &&
+      azapi_resource.cost_export["current"].body.properties.schedule.recurrencePeriod.to == "2031-11-09T00:00:00Z"
+    )
+    error_message = "The schedule must start on the configured date and default to about five years."
+  }
+}
+
+run "cost_export_requires_start_date" {
+  command = plan
+  variables {
+    enable_cost_export = true
+  }
+  expect_failures = [
+    azapi_resource.cost_export["current"],
+    azapi_resource.cost_export["closed"],
+  ]
+}
+
+run "cost_export_rejects_malformed_start_date" {
+  command = plan
+  variables {
+    cost_export_start_date = "11/10/2026"
+  }
+  expect_failures = [var.cost_export_start_date]
+}
+
+run "cost_export_rejects_unknown_deployer_principal_type" {
+  command = plan
+  variables {
+    cost_export_deployer_principal_type = "ServicePrincipal"
+  }
+  expect_failures = [var.cost_export_deployer_principal_type]
+}
+
+run "cost_export_grafana_access_defaults_to_public" {
+  command = plan
+  variables {
+    enable_cost_export     = true
+    cost_export_start_date = "2026-11-10"
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].public_network_access_enabled == true &&
+      length(azapi_resource.cost_export_grafana_private_endpoint) == 0
+    )
+    error_message = "By default Grafana uses the public endpoint and no managed private endpoint is created."
+  }
+}
+
+run "cost_export_private_endpoint_keeps_public_access" {
+  command = plan
+  variables {
+    enable_cost_export         = true
+    cost_export_start_date     = "2026-11-10"
+    cost_export_grafana_access = "privateEndpoint"
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].public_network_access_enabled == true &&
+      length(azapi_resource.cost_export_grafana_private_endpoint) == 1 &&
+      azapi_resource.cost_export_grafana_private_endpoint[0].type == "Microsoft.Dashboard/grafana/managedPrivateEndpoints@2024-10-01" &&
+      azapi_resource.cost_export_grafana_private_endpoint[0].body.properties.groupIds[0] == "cluster"
+    )
+    error_message = "privateEndpoint must add the Grafana managed private endpoint to the cluster group without closing the public endpoint."
+  }
+}
+
+run "cost_export_private_only_disables_public_access" {
+  command = plan
+  variables {
+    enable_cost_export         = true
+    cost_export_start_date     = "2026-11-10"
+    cost_export_grafana_access = "privateOnly"
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].public_network_access_enabled == false &&
+      length(azapi_resource.cost_export_grafana_private_endpoint) == 1
+    )
+    error_message = "privateOnly must create the managed private endpoint and disable the cluster public endpoint."
+  }
+}
+
+run "cost_export_rejects_unknown_grafana_access" {
+  command = plan
+  variables {
+    cost_export_grafana_access = "private"
+  }
+  expect_failures = [var.cost_export_grafana_access]
 }

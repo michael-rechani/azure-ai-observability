@@ -10,7 +10,16 @@ terraform {
       source  = "hashicorp/archive"
       version = "~> 2.7"
     }
+    # Cost Management exports need a managed identity, which azurerm cannot set on them.
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.4"
+    }
   }
+}
+
+provider "azapi" {
+  subscription_id = var.subscription_id
 }
 
 provider "azurerm" {
