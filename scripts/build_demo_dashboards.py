@@ -45,9 +45,9 @@ PTU_DATA = {
     9: [("Time between tokens", [21, 22, 21, 23, 24, 23, 25, 26, 27, 25, 26, 28, 25, 24, 25, 24, 23, 24, 23, 22])],
     10: [("Cache match rate", [41, 43, 42, 44, 45, 46, 44, 47, 49, 48, 46, 49, 50, 48, 47, 49, 48, 47, 46, 47])],
     11: (
-        "Deployment,Model,ModelVersion,ScaleType,AllocatedPTUs,Region\n"
-        "gpt-4o-prod,gpt-4o,2024-11-20,ProvisionedManaged,100,eastus\n"
-        "gpt-4o-mini-prod,gpt-4o-mini,2024-07-18,ProvisionedManaged,50,eastus\n"
+        "Field,Last *,Max,Mean\n"
+        "gpt-4o-prod,84,94,85.9\n"
+        "gpt-4o-mini-prod,52,71,58.4\n"
     ),
 }
 
@@ -160,6 +160,11 @@ def demo_dashboard(source, samples):
         if item["type"] == "text":
             continue
         sample = samples[item["id"]]
+        if isinstance(sample, str):
+            # The demo CSV is already in reduced form.
+            item["transformations"] = [t for t in item.get("transformations", []) if t["id"] != "reduce"]
+            if not item["transformations"]:
+                item.pop("transformations")
         item["targets"] = (
             [table(sample)] if isinstance(sample, str)
             else [series(name, values, chr(65 + index)) for index, (name, values) in enumerate(sample)]

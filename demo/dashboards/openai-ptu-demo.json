@@ -706,9 +706,9 @@
     },
     {
       "id": 11,
-      "title": "Provisioned deployment capacity (current)",
+      "title": "Provisioned deployments reporting utilization",
       "type": "table",
-      "description": "Current deployed PTUs from Azure Resource Graph; this is allocated deployment capacity, not regional quota or available capacity.",
+      "description": "Deployments that reported PTU utilization in the selected period, with last, maximum and mean of the per-interval maximum utilization. Follows the deployment variable; use * to list all. Only provisioned deployments emit this metric. Neither Azure Monitor nor Azure Resource Graph exposes allocated PTUs or regional quota; read those from the deployment (portal, CLI or ARM) and Azure Quotas.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -721,7 +721,7 @@
           },
           "refId": "A",
           "scenarioId": "csv_content",
-          "csvContent": "Deployment,Model,ModelVersion,ScaleType,AllocatedPTUs,Region\ngpt-4o-prod,gpt-4o,2024-11-20,ProvisionedManaged,100,eastus\ngpt-4o-mini-prod,gpt-4o-mini,2024-07-18,ProvisionedManaged,50,eastus\n"
+          "csvContent": "Field,Last *,Max,Mean\ngpt-4o-prod,84,94,85.9\ngpt-4o-mini-prod,52,71,58.4\n"
         }
       ],
       "gridPos": {
@@ -732,7 +732,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "percent",
           "noValue": "No data"
         },
         "overrides": []

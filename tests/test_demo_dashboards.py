@@ -99,7 +99,10 @@ class DemoDashboardTests(unittest.TestCase):
         self.assertEqual(observed[1], agent_runs)
         self.assertTrue(all(0 <= missing <= runs <= ai <= total for total, ai, runs, missing in zip(
             spans, genai, agent_runs, unnamed, strict=True)))
-        self.assertIn("AllocatedPTUs", demo_builder.PTU_DATA[11])
+        for row in csv.DictReader(io.StringIO(demo_builder.PTU_DATA[11])):
+            self.assertLessEqual(float(row["Mean"]), float(row["Max"]))
+            self.assertLessEqual(float(row["Last *"]), float(row["Max"]))
+        self.assertNotIn("AllocatedPTUs", demo_builder.PTU_DATA[11])
         self.assertIn("PassRatePercent", demo_builder.AGENT_DATA[7])
         for panel_id, values in ((3, demo_builder.COST_ACTUAL), (4, demo_builder.COST_AMORTIZED)):
             total = next(csv.DictReader(io.StringIO(demo_builder.COST_DATA[panel_id])))

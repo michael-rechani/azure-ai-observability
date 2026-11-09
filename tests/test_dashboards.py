@@ -238,9 +238,12 @@ class DashboardTests(unittest.TestCase):
 
     def test_token_query_avoids_parent_child_double_counting(self):
         query = (ROOT / "queries" / "model-tokens.kql").read_text()
-        self.assertIn('in ("chat", "text_completion")', query)
+        self.assertIn('"chat", "text_completion", "invoke_agent"', query)
         self.assertIn("MissingUsageSpans", query)
-        self.assertNotIn('"invoke_agent"', query)
+        # invoke_agent usage is counted only when no model span in the trace carries usage.
+        self.assertIn("OperationId !in (TracesWithModelUsage)", query)
+        self.assertIn('Operation in ("chat", "text_completion")', query)
+        self.assertIn("Success != false", query)
 
     def test_agent_table_duration_units(self):
         panels = self.dashboards["foundry-agents.json"]["panels"]
@@ -344,14 +347,18 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertIn("var-subscription=${ptuSubscription:percentencode}", business_ptu_link["url"])
 
-    def test_ptu_capacity_inventory_is_scoped_to_account(self):
+    def test_ptu_deployment_table_uses_metric_not_resource_graph(self):
         panel = self.dashboards["openai-ptu.json"]["panels"][10]
-        query = panel["targets"][0]["azureResourceGraph"]["query"]
-        self.assertIn('type =~ "microsoft.cognitiveservices/accounts/deployments"', query)
-        self.assertIn('resourceGroup =~ "$resourceGroup"', query)
-        self.assertIn('name startswith strcat("$account", "/")', query)
-        self.assertIn('sku.name =~ "ProvisionedManaged"', query)
-        self.assertIn("not regional quota", panel["description"])
+        self.assertEqual(panel["type"], "table")
+        target = panel["targets"][0]
+        self.assertNotIn("azureResourceGraph", target)
+        self.assertEqual(target["azureMonitor"]["metricName"], "AzureOpenAIProvisionedManagedUtilizationV2")
+        self.assertEqual(target["azureMonitor"]["aggregation"], "Maximum")
+        reduce = panel["transformations"][0]
+        self.assertEqual(reduce["id"], "reduce")
+        self.assertEqual(reduce["options"]["mode"], "seriesToRows")
+        self.assertIn("allocated PTUs", panel["description"])
+        self.assertFalse((ROOT / "queries" / "ptu-deployments.kql").exists())
 
     def test_agent_alert_queries_are_bounded_and_gated(self):
         failure = (ROOT / "queries" / "alerts" / "agent-failure-rate.kql").read_text()
@@ -359,7 +366,7 @@ class DashboardTests(unittest.TestCase):
         heartbeat = (ROOT / "queries" / "alerts" / "agent-heartbeat.kql").read_text()
         for query in (failure, latency, heartbeat):
             with self.subTest(query=query[:40]):
-                self.assertIn("AppRequests", query)
+                self.assertIn("union AppRequests, AppDependencies", query)
                 self.assertIn("ago(", query)
                 self.assertNotIn("$__timeFilter", query)
         self.assertIn("${minimum_agent_runs}", failure)
