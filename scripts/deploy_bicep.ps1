@@ -6,6 +6,7 @@ param(
     [string] $ResourceGroup,
     [Parameter(Mandatory)]
     [string] $ParametersFile,
+    [System.Security.SecureString] $CostInfinityClientSecret,
     [switch] $WhatIf
 )
 
@@ -36,6 +37,10 @@ if (-not $bundle.parametersJson) {
 $compiledParameters = $bundle.parametersJson | ConvertFrom-Json -AsHashtable -Depth 100
 Test-BicepDeploymentParameters -Parameters $compiledParameters.parameters -SubscriptionId $SubscriptionId
 
+$infinityEnabled = [bool](Get-BicepParameter $compiledParameters.parameters 'enableCostInfinity' $false)
+if ($infinityEnabled -and -not $WhatIf -and $null -eq $CostInfinityClientSecret -and -not $env:AI_OBSERVABILITY_COST_CLIENT_SECRET) {
+    throw 'enableCostInfinity needs the service principal client secret before anything is deployed. Pass -CostInfinityClientSecret or set AI_OBSERVABILITY_COST_CLIENT_SECRET; it is never read from the Bicep parameters.'
+}
 $parameterTemp = [IO.Path]::Combine([IO.Path]::GetTempPath(), "ai-observability-$([guid]::NewGuid().ToString('N')).parameters.json")
 try {
     [IO.File]::WriteAllText($parameterTemp, $bundle.parametersJson, [Text.UTF8Encoding]::new($false))
@@ -68,9 +73,15 @@ try {
 
     # Provision Grafana first: the dashboards and managed-identity data sources do not depend on the
     # optional cost Function, so a Function publishing failure must not leave Grafana unconfigured.
-    & (Join-Path $PSScriptRoot 'provision_grafana.ps1') `
-        -Endpoint $outputs.grafanaEndpoint.value -SubscriptionId $SubscriptionId `
-        -DashboardConfiguration $outputs.dashboardConfiguration.value
+    $provisionArguments = @{
+        Endpoint = $outputs.grafanaEndpoint.value
+        SubscriptionId = $SubscriptionId
+        DashboardConfiguration = $outputs.dashboardConfiguration.value
+    }
+    if ($null -ne $CostInfinityClientSecret) {
+        $provisionArguments['CostInfinityClientSecret'] = $CostInfinityClientSecret
+    }
+    & (Join-Path $PSScriptRoot 'provision_grafana.ps1') @provisionArguments
 
     $costEnabled = [bool](Get-BicepParameter $compiledParameters.parameters 'enableCostPipeline' $false)
     if ($costEnabled) {

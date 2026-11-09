@@ -36,6 +36,23 @@ output "cost_identity_principal_id" {
   value       = try(azurerm_user_assigned_identity.cost[0].principal_id, null)
 }
 
+output "cost_infinity_tenant_id" {
+  description = "Tenant ID for the Grafana stage's cost_infinity_tenant_id, or null when Infinity is disabled."
+  value       = var.enable_cost_infinity ? azurerm_dashboard_grafana.monitoring.identity[0].tenant_id : null
+}
+
+output "cost_infinity_client_id" {
+  description = "Client ID for the Grafana stage's cost_infinity_client_id, or null when Infinity is disabled."
+  value       = var.enable_cost_infinity ? var.cost_infinity_client_id : null
+}
+
+output "cost_infinity_scope" {
+  description = "Default cost scope for the Grafana stage's cost_infinity_scope: the subscription, or the first monitored resource group, or null when Infinity is disabled."
+  value = !var.enable_cost_infinity ? null : (
+    var.cost_infinity_scope == "subscription" ? "/subscriptions/${var.subscription_id}" : try(sort(values(local.cost_infinity_group_scopes))[0], null)
+  )
+}
+
 output "cost_export_storage_account_name" {
   description = "Storage account receiving the Cost Management exports, or null when the export path is disabled."
   value       = try(azurerm_storage_account.cost_export[0].name, null)

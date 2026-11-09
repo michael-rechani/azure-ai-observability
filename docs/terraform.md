@@ -104,6 +104,32 @@ To let Grafana reach the cluster over a managed private endpoint, set `cost_expo
 
 **This path passes `terraform validate` and mock-provider tests but has not been applied live**, including the managed private endpoint; the equivalent [Bicep deployment](bicep.md#optional-cost-export-to-azure-data-explorer) was. See [cost collection](costs.md#cost-management-export-to-azure-data-explorer-no-function) for the full caveats.
 
+### Optional direct cost queries with Infinity
+
+The cheapest billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin, with no cluster, Function or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret that Grafana stores and you must rotate, and **the Grafana stage's Terraform state will contain that secret**. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first.
+
+Create the service principal with the `az ad` commands in [Set it up](costs.md#set-it-up). In the Azure stage's `local.tfvars`:
+
+```hcl
+enable_cost_infinity                      = true
+cost_infinity_client_id                   = "00000000-0000-0000-0000-000000000000" # $app.appId
+cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-000000000000" # $sp.id, the enterprise application's object ID
+cost_infinity_scope                       = "resourceGroupManaged"                  # Or "subscription" (Cost Management Reader)
+```
+
+Terraform installs the Infinity plugin on the Grafana workspace through `azapi` (`grafanaPlugins`, a preview property) and grants the principal either **Cost Management Reader** on the subscription or a one-action `Microsoft.CostManagement/query/read` role on each monitored resource group. In the Grafana stage, enable the dashboard and pass the Azure stage's outputs. Give the secret through the environment, never a `.tfvars` file:
+
+```powershell
+$env:TF_VAR_cost_infinity_client_secret = $env:AI_OBSERVABILITY_COST_CLIENT_SECRET
+terraform -chdir=terraform\azure output -raw cost_infinity_tenant_id
+terraform -chdir=terraform\azure output -raw cost_infinity_client_id
+terraform -chdir=terraform\azure output -raw cost_infinity_scope
+```
+
+Set `enable_cost_infinity_dashboard = true`, `cost_infinity_tenant_id`, `cost_infinity_client_id` and (optionally) `cost_infinity_scope` in the Grafana stage's `local.tfvars`. Terraform then creates the Infinity data source (uid `ai-observability-cost-infinity`, client-credentials OAuth, the secret held only in the data source's secure data) and the `azure-ai-costs-infinity` dashboard. A missing tenant ID, client ID or secret fails the plan.
+
+**This path passes `terraform validate` and mock-provider tests but has not been applied live**, including the `azapi` plugin installation. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
+
 From the repository root in PowerShell:
 
 ```powershell

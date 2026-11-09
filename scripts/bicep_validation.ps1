@@ -107,6 +107,25 @@ function Test-BicepDeploymentParameters {
         Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costExportDeployerObjectId' '')) 'costExportDeployerObjectId (the deploying identity, required for enableCostExport)'
     }
 
+    if ([bool](Get-BicepParameter $Parameters 'enableCostInfinity' $false)) {
+        Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costInfinityClientId' '')) 'costInfinityClientId (the application ID of the Infinity service principal)'
+        Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costInfinityServicePrincipalObjectId' '')) 'costInfinityServicePrincipalObjectId (the object ID of the same principal in Enterprise applications)'
+        $infinityScope = [string](Get-BicepParameter $Parameters 'costInfinityScope' 'subscription')
+        if ($infinityScope -cnotin @('subscription', 'resourceGroupManaged')) {
+            throw 'costInfinityScope must be subscription or resourceGroupManaged.'
+        }
+        if ($infinityScope -ceq 'resourceGroupManaged') {
+            if ($accounts.Count -eq 0) {
+                throw 'costInfinityScope resourceGroupManaged needs at least one monitored account.'
+            }
+            foreach ($target in $accounts) {
+                if ($target.subscriptionId -ine $SubscriptionId) {
+                    throw 'costInfinityScope resourceGroupManaged requires all monitored accounts to be in the monitoring subscription.'
+                }
+            }
+        }
+    }
+
     $enableCost = [bool](Get-BicepParameter $Parameters 'enableCostPipeline' $false)
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
     $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)

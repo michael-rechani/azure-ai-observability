@@ -137,6 +137,23 @@ param costExportStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
 @description('Last scheduled export date (yyyy-MM-dd). Exports stop after this date.')
 param costExportEndDate string = dateTimeAdd(utcNow(), 'P5Y', 'yyyy-MM-dd')
 
+@description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. It needs no export, Function or cluster, but it is NOT secretless: Infinity supports only a service principal client secret, which you create, pass to the Grafana provisioning step (never to this template) and rotate.')
+param enableCostInfinity bool = false
+
+@description('Application (client) ID of the service principal Infinity signs in as. scripts/new_cost_infinity_principal.ps1 creates it.')
+param costInfinityClientId string = ''
+
+@description('Object ID of the same principal in Enterprise applications, used for the Cost Management role assignment.')
+param costInfinityServicePrincipalObjectId string = ''
+
+@description('Where Infinity may query cost: subscription (Cost Management Reader) or resourceGroupManaged (a query-only custom role per monitored resource group).')
+@allowed(['subscription', 'resourceGroupManaged'])
+param costInfinityScope string = 'subscription'
+
+@description('Reject incomplete Infinity settings before any role is created.')
+@allowed([true])
+param costInfinityConfigured bool = any(!enableCostInfinity || (length(costInfinityClientId) == 36 && length(costInfinityServicePrincipalObjectId) == 36 && (costInfinityScope == 'subscription' || length(monitoredAccounts) > 0)))
+
 @description('Initial account controls for the Foundry overview dashboard.')
 param foundryDashboardAccount DashboardAccount?
 
@@ -236,6 +253,9 @@ resource grafana 'Microsoft.Dashboard/grafana@2025-08-01' = {
     publicNetworkAccess: 'Enabled'
     deterministicOutboundIP: 'Disabled'
     zoneRedundancy: 'Disabled'
+    grafanaPlugins: enableCostInfinity ? {
+      'yesoreyeram-infinity-datasource': {}
+    } : null
     grafanaConfigurations: {
       snapshots: {
         externalEnabled: false
@@ -399,6 +419,27 @@ module costGroupReaders 'modules/cost-group-reader.bicep' = [for group in costAc
   }
 }]
 
+module costInfinityReader 'modules/cost-reader.bicep' = if (enableCostInfinity && costInfinityScope == 'subscription') {
+  name: '${namePrefix}-cost-infinity-reader'
+  scope: subscription()
+  params: {
+    principalId: costInfinityServicePrincipalObjectId
+  }
+}
+
+module costInfinityGroupReaders 'modules/cost-group-reader.bicep' = [for group in costAccountGroups: if (enableCostInfinity && costInfinityScope == 'resourceGroupManaged') {
+  name: '${namePrefix}-cost-infinity-rg-${uniqueString(resourceGroup().id, namePrefix, group.name)}'
+  scope: subscription()
+  params: {
+    resourceGroupName: group.name
+    stackResourceGroupId: resourceGroup().id
+    namePrefix: namePrefix
+    principalId: costInfinityServicePrincipalObjectId
+    subscriptionMatches: group.subscriptionId == toLower(subscription().subscriptionId)
+    roleLabel: 'infinity-cost'
+  }
+}]
+
 module costExport 'modules/cost-export.bicep' = if (enableCostExport) {
   name: '${namePrefix}-cost-export'
   params: {
@@ -472,4 +513,8 @@ output dashboardConfiguration object = {
   enableCostExportDashboard: enableCostExport
   costExportClusterUri: enableCostExport ? costExport!.outputs.clusterUri : ''
   costExportDatabase: enableCostExport ? costExport!.outputs.databaseName : ''
+  enableCostInfinityDashboard: enableCostInfinity
+  costInfinityTenantId: enableCostInfinity ? tenant().tenantId : ''
+  costInfinityClientId: enableCostInfinity && costInfinityConfigured ? costInfinityClientId : ''
+  costInfinityScope: enableCostInfinity ? (costInfinityScope == 'subscription' || length(monitoredAccounts) == 0 ? subscription().id : '${subscription().id}/resourceGroups/${monitoredAccounts[0].resourceGroup}') : ''
 }

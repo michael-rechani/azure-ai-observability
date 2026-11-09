@@ -92,3 +92,46 @@ variable "cost_export_database" {
   type        = string
   default     = "costs"
 }
+
+variable "enable_cost_infinity_dashboard" {
+  description = "Provision the Infinity data source and the direct Cost Management dashboard. Needs enable_cost_infinity in the Azure stage, which installs the plugin and grants the service principal cost access. NOT secretless: the service principal client secret is stored in Grafana and also lands in this stage's Terraform state, so keep the state private and rotate the secret."
+  type        = bool
+  default     = false
+}
+
+variable "cost_infinity_tenant_id" {
+  description = "Microsoft Entra tenant ID for the Infinity token request, from the Azure stage's cost_infinity_tenant_id output. Required with enable_cost_infinity_dashboard."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.cost_infinity_tenant_id == null || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.cost_infinity_tenant_id))
+    error_message = "cost_infinity_tenant_id must be a UUID."
+  }
+}
+
+variable "cost_infinity_client_id" {
+  description = "Client ID of the Infinity service principal, from the Azure stage's cost_infinity_client_id output. Required with enable_cost_infinity_dashboard."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.cost_infinity_client_id == null || can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.cost_infinity_client_id))
+    error_message = "cost_infinity_client_id must be a UUID."
+  }
+}
+
+variable "cost_infinity_client_secret" {
+  description = "Client secret of the Infinity service principal. Supply it through TF_VAR_cost_infinity_client_secret rather than a tfvars file. Required with enable_cost_infinity_dashboard."
+  type        = string
+  default     = null
+  sensitive   = true
+}
+
+variable "cost_infinity_scope" {
+  description = "Cost Management scope the dashboard queries by default: /subscriptions/<id> or /subscriptions/<id>/resourceGroups/<name>. Defaults to the subscription. Use the Azure stage's cost_infinity_scope output; it must match the access that stage granted."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.cost_infinity_scope == null || can(regex("^/subscriptions/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(/resourceGroups/[A-Za-z0-9._()-]+)?$", var.cost_infinity_scope))
+    error_message = "cost_infinity_scope must be /subscriptions/<id> or /subscriptions/<id>/resourceGroups/<name>."
+  }
+}

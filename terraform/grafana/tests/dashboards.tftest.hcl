@@ -188,6 +188,106 @@ run "reject_untrusted_cost_export_cluster_uri" {
   expect_failures = [var.cost_export_cluster_uri]
 }
 
+run "cost_infinity_dashboard_is_opt_in" {
+  command = plan
+  assert {
+    condition     = length(grafana_data_source.infinity) == 0 && !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_infinity")
+    error_message = "The Infinity data source and dashboard must be opt-in."
+  }
+}
+
+run "cost_infinity_dashboard_binds_the_secret_only_in_secure_data" {
+  command = plan
+  variables {
+    enable_cost_infinity_dashboard = true
+    cost_infinity_tenant_id        = "00000000-0000-0000-0000-0000000000b1"
+    cost_infinity_client_id        = "00000000-0000-0000-0000-0000000000b2"
+    cost_infinity_client_secret    = "unit-test-secret-value"
+  }
+  assert {
+    condition = (
+      jsondecode(grafana_data_source.infinity[0].json_data_encoded).auth_method == "oauth2" &&
+      jsondecode(grafana_data_source.infinity[0].json_data_encoded).oauthPassThru == false &&
+      jsondecode(grafana_data_source.infinity[0].json_data_encoded).allowedHosts == ["https://management.azure.com"] &&
+      jsondecode(grafana_data_source.infinity[0].json_data_encoded).oauth2.oauth2_type == "client_credentials" &&
+      jsondecode(grafana_data_source.infinity[0].json_data_encoded).oauth2.client_id == "00000000-0000-0000-0000-0000000000b2" &&
+      jsondecode(grafana_data_source.infinity[0].json_data_encoded).oauth2.token_url == "https://login.microsoftonline.com/00000000-0000-0000-0000-0000000000b1/oauth2/token"
+    )
+    error_message = "The Infinity data source must sign in with the client credentials flow against the supplied tenant and client."
+  }
+  assert {
+    condition = (
+      jsondecode(grafana_data_source.infinity[0].secure_json_data_encoded).oauth2ClientSecret == "unit-test-secret-value" &&
+      !strcontains(grafana_data_source.infinity[0].json_data_encoded, "unit-test-secret-value") &&
+      !strcontains(grafana_dashboard.monitoring["azure_ai_costs_infinity"].config_json, "unit-test-secret-value")
+    )
+    error_message = "The client secret must live only in the data source's secure data."
+  }
+  assert {
+    condition = (
+      contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_infinity") &&
+      !strcontains(grafana_dashboard.monitoring["azure_ai_costs_infinity"].config_json, "$${DS_COST_INFINITY}") &&
+      strcontains(grafana_dashboard.monitoring["azure_ai_costs_infinity"].config_json, "ai-observability-cost-infinity")
+    )
+    error_message = "The Infinity cost dashboard must use the provisioned Infinity data source."
+  }
+  assert {
+    condition = (
+      [for v in jsondecode(grafana_dashboard.monitoring["azure_ai_costs_infinity"].config_json).templating.list : v.current.value if v.name == "costScope"] ==
+      ["/subscriptions/00000000-0000-0000-0000-000000000000"]
+    )
+    error_message = "The cost scope must default to the subscription."
+  }
+}
+
+run "cost_infinity_dashboard_uses_the_configured_scope" {
+  command = plan
+  variables {
+    enable_cost_infinity_dashboard = true
+    cost_infinity_tenant_id        = "00000000-0000-0000-0000-0000000000b1"
+    cost_infinity_client_id        = "00000000-0000-0000-0000-0000000000b2"
+    cost_infinity_client_secret    = "unit-test-secret-value"
+    cost_infinity_scope            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg"
+  }
+  assert {
+    condition = (
+      [for v in jsondecode(grafana_dashboard.monitoring["azure_ai_costs_infinity"].config_json).templating.list : [v.query, v.current.text, v.current.value] if v.name == "costScope"] ==
+      [["/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg", "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg", "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg"]]
+    )
+    error_message = "The textbox query, displayed value and selected value must all be the configured scope."
+  }
+}
+
+run "cost_infinity_dashboard_requires_the_principal_and_secret" {
+  command = plan
+  variables {
+    enable_cost_infinity_dashboard = true
+  }
+  expect_failures = [
+    grafana_data_source.infinity[0],
+  ]
+}
+
+run "cost_infinity_rejects_untrusted_scope" {
+  command = plan
+  variables {
+    cost_infinity_scope = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/a/../b"
+  }
+  expect_failures = [var.cost_infinity_scope]
+}
+
+run "cost_infinity_rejects_malformed_ids" {
+  command = plan
+  variables {
+    cost_infinity_tenant_id = "not-a-guid"
+    cost_infinity_client_id = "not-a-guid"
+  }
+  expect_failures = [
+    var.cost_infinity_tenant_id,
+    var.cost_infinity_client_id,
+  ]
+}
+
 run "cost_dashboard_requires_monitoring_workspace" {
   command = plan
   variables {
