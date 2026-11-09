@@ -32,7 +32,7 @@ Customers deploy into their own Azure subscriptions. Grafana uses a managed iden
 
 ## Evidence on Hand
 
-The repository contains Grafana dashboard JSON, simulated preview screenshots, Terraform and Bicep deployment paths, offline tests, and CI. The preview screenshots are not evidence of a live Azure deployment.
+The repository contains Grafana dashboard JSON, simulated preview screenshots, Terraform and Bicep deployment paths, offline tests, and CI. The preview screenshots are not evidence of a live Azure deployment. Both deployment paths were also applied once in an isolated Lab subscription, where the Foundry, PTU and agent-trace panels and the PTU alerts returned or fired on real data; the cost Function's publish and real billed-cost values were not validated (see [cost collection](docs/costs.md)).
 
 ## Product Principles
 

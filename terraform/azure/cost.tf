@@ -16,11 +16,16 @@ locals {
   }
   cost_deployment_script = "${path.module}/../../scripts/deploy_cost_function.ps1"
   cost_function_enabled  = var.enable_cost_pipeline
-  cost_managed_group_scopes = var.enable_cost_pipeline && var.cost_query_scope == "resourceGroupManaged" ? toset([
+  cost_managed_group_candidates = var.enable_cost_pipeline && var.cost_query_scope == "resourceGroupManaged" ? {
     for account in values(var.monitored_accounts) :
-    lower(join("/", slice(split("/", account.resource_id), 0, 5)))
+    lower(join("/", slice(split("/", account.resource_id), 0, 5))) =>
+    "/subscriptions/${split("/", account.resource_id)[2]}/resourceGroups/${split("/", account.resource_id)[4]}"...
     if length(split("/", account.resource_id)) >= 5
-  ]) : toset([])
+  } : {}
+  # Keys are lowercase for deduplication and stable role names. Values use Azure's canonical
+  # "resourceGroups" casing; a lowercase assignment scope is read back differently and forces
+  # the role assignment to be replaced on every plan.
+  cost_managed_group_scopes = { for key, scopes in local.cost_managed_group_candidates : key => scopes[0] }
 }
 
 resource "azurerm_log_analytics_workspace_table_custom_log" "cost" {
@@ -173,7 +178,7 @@ resource "azurerm_role_assignment" "cost_reader" {
 
 resource "azurerm_role_definition" "cost_group_query" {
   for_each    = local.cost_managed_group_scopes
-  name        = "AI Observatory Cost Query ${substr(sha256("${local.cost_suffix}/${each.value}"), 0, 16)}"
+  name        = "AI Observatory Cost Query ${substr(sha256("${local.cost_suffix}/${each.key}"), 0, 16)}"
   scope       = "/subscriptions/${var.subscription_id}"
   description = "Query Cost Management at one monitored resource group."
 
@@ -184,7 +189,7 @@ resource "azurerm_role_definition" "cost_group_query" {
     not_data_actions = []
   }
 
-  assignable_scopes = [each.value]
+  assignable_scopes = [each.key]
 }
 
 resource "azurerm_role_assignment" "cost_group_query" {

@@ -934,9 +934,9 @@
     },
     {
       "id": 11,
-      "title": "Provisioned deployment capacity (current)",
+      "title": "Provisioned deployments reporting utilization",
       "type": "table",
-      "description": "Current deployed PTUs from Azure Resource Graph; this is allocated deployment capacity, not regional quota or available capacity.",
+      "description": "Deployments that reported PTU utilization in the selected period, with last, maximum and mean of the per-interval maximum utilization. Follows the deployment variable; use * to list all. Only provisioned deployments emit this metric. Neither Azure Monitor nor Azure Resource Graph exposes allocated PTUs or regional quota; read those from the deployment (portal, CLI or ARM) and Azure Quotas.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -948,14 +948,32 @@
             "type": "grafana-azure-monitor-datasource",
             "uid": "${DS_AZURE_MONITOR}"
           },
-          "queryType": "Azure Resource Graph",
-          "subscriptions": [
-            "$subscription"
-          ],
-          "azureResourceGraph": {
-            "query": "Resources\n| where type =~ \"microsoft.cognitiveservices/accounts/deployments\"\n| where subscriptionId =~ \"$subscription\"\n| where resourceGroup =~ \"$resourceGroup\"\n| where name startswith strcat(\"$account\", \"/\")\n| extend Segments = split(name, \"/\")\n| extend Deployment = tostring(Segments[array_length(Segments) - 1])\n| extend Model = tostring(properties.model.name),\n    ModelVersion = tostring(properties.model.version),\n    ScaleType = tostring(properties.scaleSettings.scaleType),\n    AllocatedPTUs = tolong(sku.capacity)\n| where sku.name =~ \"ProvisionedManaged\" or ScaleType =~ \"ProvisionedManaged\"\n| project Deployment, Model, ModelVersion, ScaleType,\n    AllocatedPTUs, Region = location\n| order by Deployment asc\n",
-            "resultFormat": "table",
-            "scope": "subscription"
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resourceGroup",
+                "resourceName": "$account",
+                "region": "$region",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIProvisionedManagedUtilizationV2",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$deployment"
+                ]
+              }
+            ]
           }
         }
       ],
@@ -967,14 +985,27 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "percent",
           "noValue": "No data"
         },
         "overrides": []
       },
       "options": {
         "showHeader": true
-      }
+      },
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "mode": "seriesToRows",
+            "reducers": [
+              "lastNotNull",
+              "max",
+              "mean"
+            ]
+          }
+        }
+      ]
     },
     {
       "id": 12,

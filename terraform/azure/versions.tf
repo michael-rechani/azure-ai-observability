@@ -15,5 +15,11 @@ terraform {
 
 provider "azurerm" {
   subscription_id = var.subscription_id
-  features {}
+  features {
+    storage {
+      # Storage is managed through ARM only. The cost account disables shared keys, and tenants
+      # that force public network access off make the data plane unreachable from the deployer.
+      data_plane_available = false
+    }
+  }
 }

@@ -478,7 +478,10 @@ run "managed_resource_group_cost_roles_are_deduplicated_and_narrow" {
   assert {
     condition = alltrue([
       for scope, assignment in azurerm_role_assignment.cost_group_query :
-      assignment.scope == scope &&
+      assignment.scope == {
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry" = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Foundry"
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/openai"  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/openai"
+      }[scope] &&
       assignment.role_definition_id == azurerm_role_definition.cost_group_query[scope].role_definition_resource_id &&
       assignment.principal_id == azurerm_user_assigned_identity.cost[0].principal_id &&
       assignment.principal_type == "ServicePrincipal"
