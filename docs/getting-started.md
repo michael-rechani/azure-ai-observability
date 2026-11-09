@@ -170,6 +170,7 @@ Replace every example subscription ID, account name, account resource group, acc
 | `foundryDashboardAccount`, `ptuDashboardAccount` | Initial dashboard selections. Each non-null account must also appear in `monitoredAccounts`; use that account's actual region. |
 | `enableAgentAlerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enableCostPipeline` | Leave `false` for no cost collector, or set `true` after reviewing the permissions and charges in [cost collection](costs.md). This also enables the cost and business dashboards and deploys the cost Function. |
+| `enableCostExport` | Leave `false`, or set `true` for the [Function-free export to Azure Data Explorer](costs.md#cost-management-export-to-azure-data-explorer-no-function). It adds an Azure Data Explorer cluster that bills continuously (roughly $95 per month at retail), exposes whole-subscription cost rows to anyone who can edit ADX queries, and needs the `Microsoft.CostManagementExports` provider registered. Keep `costExportStartDate` unchanged on redeploys. Also set `costExportDeployerObjectId` to the deploying identity's object ID; it is granted AllDatabasesAdmin on the dedicated cost cluster. |
 | `costQueryScope` | Defaults to `subscription`. Use `resourceGroup` for separate grants or `resourceGroupManaged` to create scoped custom roles; review [permissions and migration](costs.md#configure-resource-group-query-mode). |
 
 **Add** `param enablePtuAlerts = false` to the file: PTU alerts otherwise default to enabled. Turn them on later, after [discovering the metrics](setup.md#metric-discovery).
@@ -371,6 +372,7 @@ Replace the example values:
 | `monitored_accounts` | The full account resource IDs and actual provisioned deployment names. Use `ptu_deployments = []` for accounts without PTUs; list a shared Foundry/PTU account only once. |
 | `enable_agent_alerts` | Leave `false` until real agent telemetry and expected traffic are verified. |
 | `enable_cost_pipeline` | Leave `false`, or set `true` after reviewing the [cost permissions and charges](costs.md). This deploys the cost Function. The Grafana stage has a separate switch for the cost and business dashboards. |
+| `enable_cost_export` | Leave `false`, or set `true` (with a required `cost_export_start_date`) for the [Function-free export to Azure Data Explorer](costs.md#cost-management-export-to-azure-data-explorer-no-function). It adds a continuously billed ADX cluster (roughly $95 per month at retail) and is not live-validated for Terraform. The Grafana stage has its own `enable_cost_export_dashboard` switch. |
 | `cost_query_scope` | Defaults to `subscription`. Use `resourceGroup` for separate grants or `resourceGroupManaged` to create scoped custom roles; review [permissions and migration](costs.md#configure-resource-group-query-mode). |
 
 Add `enable_ptu_alerts = false` to the file; the default is `true`. If one account is used for both Foundry and PTUs, the account map can look like this:

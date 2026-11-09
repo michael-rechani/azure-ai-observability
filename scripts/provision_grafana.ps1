@@ -29,6 +29,8 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 
 $sourceUid = 'ai-observability-azure-monitor'
 $sourceName = 'AI observability - Azure Monitor'
+$adxSourceUid = 'ai-observability-azure-data-explorer'
+$adxSourceName = 'AI observability - Azure Data Explorer'
 $owner = 'azure-ai-observability-bicep-v1'
 $ownerTag = 'managed-by-azure-ai-observability-bicep'
 $root = Split-Path -Parent $PSScriptRoot
@@ -40,6 +42,19 @@ $files = [ordered]@{
 if ($DashboardConfiguration.enableCostDashboard) {
     $files['azure-ai-costs.json'] = 'cost'
     $files['business-overview.json'] = 'business'
+}
+$adxClusterUri = $null
+$adxDatabase = $null
+if ($DashboardConfiguration.enableCostExportDashboard) {
+    $adxClusterUri = [string]$DashboardConfiguration.costExportClusterUri
+    $adxDatabase = [string]$DashboardConfiguration.costExportDatabase
+    if ($adxClusterUri -notmatch '^(?i)https://[a-z0-9][a-z0-9-]*\.[a-z0-9]+\.kusto\.windows\.net/?$') {
+        throw 'costExportClusterUri must be an Azure Data Explorer HTTPS cluster URI such as https://name.region.kusto.windows.net.'
+    }
+    if ($adxDatabase -notmatch '^[A-Za-z0-9_-]+$') {
+        throw 'costExportDatabase must be a simple Azure Data Explorer database name.'
+    }
+    $files['azure-ai-costs-native.json'] = 'native'
 }
 
 function Get-AccountDefaults {
@@ -90,7 +105,7 @@ function Set-DashboardDefaults {
 $prepared = [System.Collections.Generic.List[object]]::new()
 foreach ($entry in $files.GetEnumerator()) {
     $path = Join-Path $root 'dashboards' $entry.Key
-    $content = [IO.File]::ReadAllText($path).Replace('${DS_AZURE_MONITOR}', $sourceUid)
+    $content = [IO.File]::ReadAllText($path).Replace('${DS_AZURE_MONITOR}', $sourceUid).Replace('${DS_AZURE_DATA_EXPLORER}', $adxSourceUid)
     $dashboard = $content | ConvertFrom-Json -AsHashtable -Depth 100
     if ($dashboard.uid -notmatch '^[A-Za-z0-9_-]+$') {
         throw "Dashboard '$($entry.Key)' has an invalid UID."
@@ -104,6 +119,7 @@ foreach ($entry in $files.GetEnumerator()) {
         'agents' { @{ workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId } }
         'ptu' { Get-AccountDefaults $DashboardConfiguration.ptuAccount }
         'cost' { @{ workspaceResourceId = $DashboardConfiguration.monitoringWorkspaceResourceId } }
+        'native' { @{} }
         'business' {
             $values = @{
                 workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId
@@ -179,21 +195,44 @@ function Invoke-GrafanaApi {
     return $response.Content | ConvertFrom-Json -AsHashtable -Depth 100
 }
 
-$existingSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$sourceUid" -AllowNotFound
-if ($null -ne $existingSource) {
-    if (-not $existingSource.Contains('type') -or
-        $existingSource.type -ne 'grafana-azure-monitor-datasource' -or
-        -not $existingSource.Contains('name') -or
-        $existingSource.name -ne $sourceName -or
-        -not $existingSource.Contains('jsonData') -or
-        $null -eq $existingSource.jsonData -or
-        -not $existingSource.jsonData.Contains('aiObservabilityOwner') -or
-        $existingSource.jsonData.aiObservabilityOwner -ne $owner -or
-        ($existingSource.Contains('readOnly') -and $existingSource.readOnly) -or
-        -not $existingSource.Contains('id') -or
-        -not $existingSource.Contains('version')) {
-        throw "Grafana data source '$sourceUid' already exists but is not managed by this Bicep deployment. Resolve the ownership conflict before rerunning."
+function Assert-OwnedDataSource {
+    param($Existing, [string] $Uid, [string] $Name, [string] $Type)
+    if ($null -eq $Existing) {
+        return
     }
+    if (-not $Existing.Contains('type') -or
+        $Existing.type -ne $Type -or
+        -not $Existing.Contains('name') -or
+        $Existing.name -ne $Name -or
+        -not $Existing.Contains('jsonData') -or
+        $null -eq $Existing.jsonData -or
+        -not $Existing.jsonData.Contains('aiObservabilityOwner') -or
+        $Existing.jsonData.aiObservabilityOwner -ne $owner -or
+        ($Existing.Contains('readOnly') -and $Existing.readOnly) -or
+        -not $Existing.Contains('id') -or
+        -not $Existing.Contains('version')) {
+        throw "Grafana data source '$Uid' already exists but is not managed by this Bicep deployment. Resolve the ownership conflict before rerunning."
+    }
+}
+
+function Save-DataSource {
+    param($Existing, [hashtable] $Source)
+    if ($null -eq $Existing) {
+        [void](Invoke-GrafanaApi -Method 'Post' -Path '/api/datasources' -Body $Source)
+    }
+    else {
+        $Source['id'] = $Existing.id
+        $Source['version'] = $Existing.version
+        [void](Invoke-GrafanaApi -Method 'Put' -Path "/api/datasources/uid/$($Source.uid)" -Body $Source)
+    }
+}
+
+$existingSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$sourceUid" -AllowNotFound
+Assert-OwnedDataSource -Existing $existingSource -Uid $sourceUid -Name $sourceName -Type 'grafana-azure-monitor-datasource'
+$existingAdxSource = $null
+if ($adxClusterUri) {
+    $existingAdxSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$adxSourceUid" -AllowNotFound
+    Assert-OwnedDataSource -Existing $existingAdxSource -Uid $adxSourceUid -Name $adxSourceName -Type 'grafana-azure-data-explorer-datasource'
 }
 foreach ($item in $prepared) {
     $current = Invoke-GrafanaApi -Method 'Get' -Path "/api/dashboards/uid/$($item.dashboard.uid)" -AllowNotFound
@@ -220,13 +259,21 @@ $source = @{
         aiObservabilityOwner = $owner
     }
 }
-if ($null -eq $existingSource) {
-    [void](Invoke-GrafanaApi -Method 'Post' -Path '/api/datasources' -Body $source)
-}
-else {
-    $source['id'] = $existingSource.id
-    $source['version'] = $existingSource.version
-    [void](Invoke-GrafanaApi -Method 'Put' -Path "/api/datasources/uid/$sourceUid" -Body $source)
+Save-DataSource -Existing $existingSource -Source $source
+if ($adxClusterUri) {
+    Save-DataSource -Existing $existingAdxSource -Source @{
+        uid = $adxSourceUid
+        name = $adxSourceName
+        type = 'grafana-azure-data-explorer-datasource'
+        access = 'proxy'
+        jsonData = @{
+            clusterUrl = $adxClusterUri.TrimEnd('/')
+            defaultDatabase = $adxDatabase
+            dataConsistency = 'strong'
+            azureCredentials = @{ authType = 'msi' }
+            aiObservabilityOwner = $owner
+        }
+    }
 }
 
 foreach ($item in $prepared) {

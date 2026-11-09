@@ -26,7 +26,7 @@ class DashboardTests(unittest.TestCase):
     def test_panel_ids_and_template_references(self):
         for dashboard in self.dashboards.values():
             variables = {v["name"] for v in dashboard["templating"]["list"]}
-            variables |= {"DS_AZURE_MONITOR", "__interval"}
+            variables |= {"DS_AZURE_MONITOR", "DS_AZURE_DATA_EXPLORER", "__interval"}
             self.assertEqual(len({p["id"] for p in dashboard["panels"]}), len(dashboard["panels"]))
             for panel in dashboard["panels"]:
                 if panel["type"] == "text":
@@ -36,7 +36,37 @@ class DashboardTests(unittest.TestCase):
                     name = braced or plain
                     if not name.startswith("__"):
                         self.assertIn(name, variables)
-                self.assertEqual(panel["targets"][0]["datasource"], builder.DS)
+                expected = builder.DS_ADX if dashboard["uid"] == "azure-ai-costs-native" else builder.DS
+                self.assertEqual(panel["targets"][0]["datasource"], expected)
+
+    def test_native_cost_dashboard_reads_only_the_export_through_data_explorer(self):
+        dashboard = self.dashboards["azure-ai-costs-native.json"]
+        self.assertEqual(
+            dashboard["__inputs"],
+            [{
+                "name": "DS_AZURE_DATA_EXPLORER", "label": "Azure Data Explorer", "type": "datasource",
+                "pluginId": "grafana-azure-data-explorer-datasource", "pluginName": "Azure Data Explorer",
+            }],
+        )
+        self.assertEqual(dashboard["timezone"], "utc")
+        self.assertIn("not zero cost", dashboard["description"])
+        for panel in dashboard["panels"]:
+            self.assertEqual(panel["datasource"], builder.DS_ADX)
+            target = panel["targets"][0]
+            self.assertEqual(target["datasource"], builder.DS_ADX)
+            self.assertEqual(target["queryType"], "KQL")
+            self.assertEqual(target["database"], "costs")
+            self.assertEqual(target["querySource"], "raw")
+            self.assertTrue(target["query"].startswith("AiCost()"))
+            if panel["title"] != "Export data freshness":
+                self.assertIn("$__timeFilter(Date)", target["query"])
+        daily = next(p for p in dashboard["panels"] if p["title"].startswith("Daily actual cost"))
+        self.assertEqual(daily["targets"][0]["resultFormat"], "time_series")
+        for panel in dashboard["panels"]:
+            if panel is not daily:
+                self.assertEqual(panel["targets"][0]["resultFormat"], "table")
+        total = next(p for p in dashboard["panels"] if p["title"] == "Actual cost by currency")
+        self.assertIn("by BillingCurrency", total["targets"][0]["query"])
 
     def test_ptu_uses_v2_and_real_units(self):
         panels = self.dashboards["openai-ptu.json"]["panels"]

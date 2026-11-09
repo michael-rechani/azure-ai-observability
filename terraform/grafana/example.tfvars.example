@@ -2,6 +2,10 @@ grafana_endpoint      = "https://replace-with-grafana-endpoint.example.invalid"
 subscription_id       = "00000000-0000-0000-0000-000000000000"
 enable_cost_dashboard = false
 
+# Set with enable_cost_export in the Azure stage; use its cost_export_adx_cluster_uri output.
+enable_cost_export_dashboard = false
+# cost_export_cluster_uri = "https://replace-me.eastus.kusto.windows.net"
+
 dashboard_defaults = {
   # Use workspace_resource_id from the Azure Terraform stage.
   monitoring_workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"

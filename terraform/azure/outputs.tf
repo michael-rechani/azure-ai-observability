@@ -35,3 +35,18 @@ output "cost_identity_principal_id" {
   description = "Cost collector managed identity object ID, or null when the pipeline is disabled."
   value       = try(azurerm_user_assigned_identity.cost[0].principal_id, null)
 }
+
+output "cost_export_storage_account_name" {
+  description = "Storage account receiving the Cost Management exports, or null when the export path is disabled."
+  value       = try(azurerm_storage_account.cost_export[0].name, null)
+}
+
+output "cost_export_adx_cluster_uri" {
+  description = "Azure Data Explorer cluster URI for the Grafana data source, or null when the export path is disabled."
+  value       = try(azurerm_kusto_cluster.cost_export[0].uri, null)
+}
+
+output "cost_export_adx_database" {
+  description = "Azure Data Explorer database name for the Grafana data source, or null when the export path is disabled."
+  value       = try(azurerm_kusto_database.cost_export[0].name, null)
+}

@@ -300,3 +300,55 @@ variable "cost_lookback_days" {
     error_message = "cost_lookback_days must be an integer between 31 and 366."
   }
 }
+
+variable "enable_cost_export" {
+  description = "Deploy the Function-free cost path: Cost Management exports into private storage, read by an Azure Data Explorer cluster through its managed identity, queried by Managed Grafana through its managed identity. The cluster is a standing cost. The subscription must have the Microsoft.CostManagementExports resource provider registered."
+  type        = bool
+  default     = false
+}
+
+variable "cost_export_adx_sku_name" {
+  description = "Azure Data Explorer SKU for the cost export database. The default is the smallest Dev/Test SKU, which has no SLA."
+  type        = string
+  default     = "Dev(No SLA)_Standard_E2a_v4"
+}
+
+variable "cost_export_adx_capacity" {
+  description = "Azure Data Explorer instance count. Dev/Test SKUs support exactly one."
+  type        = number
+  default     = 1
+  validation {
+    condition     = var.cost_export_adx_capacity >= 1 && floor(var.cost_export_adx_capacity) == var.cost_export_adx_capacity
+    error_message = "cost_export_adx_capacity must be a positive integer."
+  }
+}
+
+variable "cost_export_deployer_principal_type" {
+  description = "Principal type of the identity running Terraform: User for a signed-in user, App for a service principal. That identity is granted AllDatabasesAdmin on the dedicated cost cluster, because only that role can set the managed-identity policy the export script needs."
+  type        = string
+  default     = "User"
+  validation {
+    condition     = contains(["User", "App", "Group"], var.cost_export_deployer_principal_type)
+    error_message = "cost_export_deployer_principal_type must be User, App, or Group."
+  }
+}
+
+variable "cost_export_start_date" {
+  description = "UTC date (YYYY-MM-DD) the export schedule starts. Required when enable_cost_export is true. Keep it unchanged on later applies, because changing it rewrites the schedule."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.cost_export_start_date == null || can(regex("^\\d{4}-\\d{2}-\\d{2}$", var.cost_export_start_date))
+    error_message = "cost_export_start_date must use YYYY-MM-DD."
+  }
+}
+
+variable "cost_export_end_date" {
+  description = "UTC date (YYYY-MM-DD) the export schedule ends. Defaults to five years after the start date; exports stop silently after it."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.cost_export_end_date == null || can(regex("^\\d{4}-\\d{2}-\\d{2}$", var.cost_export_end_date))
+    error_message = "cost_export_end_date must use YYYY-MM-DD."
+  }
+}

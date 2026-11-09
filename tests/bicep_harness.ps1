@@ -24,6 +24,9 @@ $configuration = @{
         deployment = 'ptu-one'
     }
     enableCostDashboard = $env:TEST_COST_DASHBOARD -ne 'false'
+    enableCostExportDashboard = $env:TEST_COST_EXPORT -eq 'true'
+    costExportClusterUri = if ($env:TEST_COST_EXPORT_URI) { $env:TEST_COST_EXPORT_URI } else { 'https://adx.eastus.kusto.windows.net' }
+    costExportDatabase = 'costs'
 }
 
 function global:az {
@@ -94,14 +97,15 @@ function global:Invoke-WebRequest {
             $status = 404
         }
         else {
+            $isAdx = $path.EndsWith('/ai-observability-azure-data-explorer')
             $content = @{
-                id = 4
-                version = 7
-                uid = 'ai-observability-azure-monitor'
-                name = 'AI observability - Azure Monitor'
-                type = 'grafana-azure-monitor-datasource'
+                id = if ($isAdx) { 5 } else { 4 }
+                version = if ($isAdx) { 3 } else { 7 }
+                uid = $path.Split('/')[-1]
+                name = if ($isAdx) { 'AI observability - Azure Data Explorer' } else { 'AI observability - Azure Monitor' }
+                type = if ($isAdx) { 'grafana-azure-data-explorer-datasource' } else { 'grafana-azure-monitor-datasource' }
                 readOnly = $false
-                jsonData = if ($mode -eq 'unmanaged-source') { @{} } else { @{ aiObservabilityOwner = 'azure-ai-observability-bicep-v1' } }
+                jsonData = if ($mode -eq 'unmanaged-source' -or ($isAdx -and $mode -eq 'unmanaged-adx-source')) { @{} } else { @{ aiObservabilityOwner = 'azure-ai-observability-bicep-v1' } }
             }
         }
     }

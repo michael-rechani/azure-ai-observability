@@ -54,6 +54,29 @@ The helper rejects combinations exceeding 30 minutes of minimum Cost Management 
 
 For an optional monthly account-filtered budget, set a positive whole-number `monthlyAiCostBudgetAmount` in subscription billing currency and set `costBudgetStartDate` and `costBudgetEndDate` as UTC `YYYY-MM-DDT00:00:00Z` values. The start must be the first of a month and the end later. Tune `costBudgetThresholdPercent` (default 80). This is an alert, not a spending cap; costs may arrive late.
 
+### Optional cost export to Azure Data Explorer
+
+Set `enableCostExport = true` to get billed cost without the Function. The template deploys a private storage account, two subscription-scoped Cost Management exports (daily month-to-date and monthly last-month), an Azure Data Explorer cluster and database with external tables, and the role assignments that let the exports write, ADX read, and Grafana query, all by managed identity. The helper then provisions an Azure Data Explorer data source (uid `ai-observability-azure-data-explorer`, managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. It is independent of `enableCostPipeline`, needs no Function publish and no monitored accounts, and both can be enabled together.
+
+```bicep
+param enableCostExport = true
+// Object ID of the identity running the deployment: az ad signed-in-user show --query id -o tsv
+param costExportDeployerObjectId = '00000000-0000-0000-0000-000000000000'
+// param costExportDeployerPrincipalType = 'App' // when a service principal deploys
+// Keep the first deployment's value on later deployments; the default is tomorrow (UTC) and moves each time.
+param costExportStartDate = '2026-01-15'
+```
+
+Before deploying:
+
+- Register the provider once per subscription: `az provider register --namespace Microsoft.CostManagementExports`.
+- Review the standing charge: the default `Dev(No SLA)_Standard_E2a_v4` cluster bills continuously (roughly $95 per month at retail; confirm current pricing) and is never auto-stopped.
+- The deployer needs permission to create role assignments on the storage account and to create subscription-scoped exports.
+- Set `costExportDeployerObjectId`. The deployer is granted **AllDatabasesAdmin on the dedicated cost cluster**, because only that role can set the database `managed_identity` policy the export script needs; a deployer without it fails with "not authorized to perform operation `DatabaseScopedManagedIdentityPolicyAlterCommand`". The cluster holds nothing but the cost export, and you can remove that assignment after the deployment (redeploying re-adds it). `scripts\deploy_bicep.ps1` rejects a missing or invalid value before calling Azure.
+- Exports only cover the deployment subscription and start collecting from `costExportStartDate`; `costExportEndDate` defaults to about five years out, after which exports stop.
+
+The export contains the whole subscription's cost rows, so anyone who can edit queries on the ADX data source can read them. See [Cost Management export to Azure Data Explorer](costs.md#cost-management-export-to-azure-data-explorer-no-function) for validation status, the positional-schema caveat, first-run timing and the **Run now** option. Like the other optional features, setting `enableCostExport` back to false does not delete the cluster, exports or storage; remove them explicitly to stop the charge, and delete the subscription-scoped exports separately from the resource group.
+
 ## Deploy and provision Grafana
 
 Sign in and create the monitoring resource group if necessary. Creating the group is a real Azure change, even before what-if:

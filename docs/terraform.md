@@ -80,6 +80,26 @@ Terraform packages the PowerShell Function and invokes `az functionapp deploymen
 
 The default identity assignment is **Cost Management Reader for the entire subscription**, not just the selected accounts. For resource-group queries, set `cost_query_scope = "resourceGroup"` and arrange separate grants, or use `resourceGroupManaged` to create one single-action custom role and assignment per distinct group. See [cost collection](costs.md#configure-resource-group-query-mode) for the required deployer permissions, access migration, propagation, and lifecycle. The Terraform managed-role mode created the expected role and assignment live; the equivalent role from the Bicep stack was exercised with a real Cost Management query (see [cost collection](costs.md)), but Terraform's own role was not queried with. For an existing Terraform deployment, review the plan for removal of its managed subscription assignment and review any inherited or externally managed access separately.
 
+### Optional cost export to Azure Data Explorer
+
+To get billed cost without the Function, add to the Azure stage's `local.tfvars`:
+
+```hcl
+enable_cost_export     = true
+cost_export_start_date = "2026-01-15" # Required, UTC YYYY-MM-DD, in the future. Keep it unchanged on later applies.
+```
+
+Terraform creates a private storage account, two subscription-scoped Cost Management exports (daily month-to-date and monthly last-month) through the `azapi` provider (azurerm cannot give an export a managed identity), an Azure Data Explorer cluster and database with external tables over both containers, and the roles that let each export write, ADX read, and Grafana query. `cost_export_end_date` defaults to 43,800 hours after the start (about five years); exports stop after it. `cost_export_adx_sku_name` defaults to the cheapest Dev/Test SKU, which bills continuously (roughly $95 per month at retail; confirm current pricing). Terraform also grants the identity running it **AllDatabasesAdmin on the dedicated cost cluster**, because only that role can set the database `managed_identity` policy the export script needs. Set `cost_export_deployer_principal_type = "App"` when a service principal runs Terraform (default `User`); you can remove the assignment afterwards, but the next apply re-adds it. Register the provider first with `az provider register --namespace Microsoft.CostManagementExports`. The export is independent of `enable_cost_pipeline`; no Function or secret is involved.
+
+In the Grafana stage, set `enable_cost_export_dashboard = true` and pass the Azure stage's outputs:
+
+```powershell
+terraform -chdir=terraform\azure output -raw cost_export_adx_cluster_uri
+terraform -chdir=terraform\azure output -raw cost_export_adx_database
+```
+
+This creates an Azure Data Explorer data source (managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. The export holds the whole subscription's cost rows, so anyone who can edit queries on that data source can read them. A tenant policy that forces storage public access off may normalize the account's network setting and show as drift on later plans. **This path passes `terraform validate` and mock-provider tests but has not been applied live**; the equivalent [Bicep deployment](bicep.md#optional-cost-export-to-azure-data-explorer) was. See [cost collection](costs.md#cost-management-export-to-azure-data-explorer-no-function) for the full caveats.
+
 From the repository root in PowerShell:
 
 ```powershell
