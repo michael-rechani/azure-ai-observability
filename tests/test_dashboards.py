@@ -221,7 +221,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(business_defaults["ptuDeployment"], self.config["ptu"]["deployment"])
 
     def test_all_configured_metrics_use_documented_aggregations(self):
-        totals = {"AzureOpenAIRequests", "GeneratedTokens", "ProcessedPromptTokens", "TokenTransaction"}
+        totals = {
+            "AzureOpenAIRequests", "GeneratedTokens", "ProcessedPromptTokens", "TokenTransaction",
+            "InputTokens", "OutputTokens",
+        }
         averages = {
             "AzureOpenAIProvisionedManagedUtilizationV2", "AzureOpenAITimeToResponse",
             "AzureOpenAITTLTInMS", "AzureOpenAINormalizedTBTInMS",
@@ -244,6 +247,59 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("OperationId !in (TracesWithModelUsage)", query)
         self.assertIn('Operation in ("chat", "text_completion")', query)
         self.assertIn("Success != false", query)
+
+    def test_token_cost_panel_is_a_labelled_estimate_from_native_sources(self):
+        panel = self.dashboards["foundry-overview.json"]["panels"][4]
+        self.assertEqual(panel["id"], 5)
+        self.assertEqual(panel["type"], "table")
+        self.assertIn("Estimated", panel["title"])
+        self.assertIn("not billed", panel["title"])
+        for caveat in ("estimate", "cach", "PTU", "no list price", "Costs dashboard"):
+            self.assertIn(caveat, panel["description"])
+        by_ref = {target["refId"]: target for target in panel["targets"]}
+        self.assertEqual(set(by_ref), {"A", "B", "C"})
+        for ref, metric_name in (("A", "InputTokens"), ("B", "OutputTokens")):
+            query = by_ref[ref]["azureMonitor"]
+            self.assertEqual(query["metricName"], metric_name)
+            self.assertEqual(query["aggregation"], "Total")
+            self.assertEqual(query["dimensionFilters"],
+                             [{"dimension": "ModelName", "operator": "eq", "filters": ["*"]}])
+        prices = by_ref["C"]
+        self.assertEqual(prices["queryType"], "Azure Log Analytics")
+        self.assertEqual(prices["azureLogAnalytics"]["resources"], ["$workspaceResourceId"])
+        self.assertEqual(prices["azureLogAnalytics"]["resultFormat"], "table")
+        self.assertFalse(prices["azureLogAnalytics"]["dashboardTime"])
+        self.assertEqual(prices["azureLogAnalytics"]["query"],
+                         (ROOT / "queries" / "model-prices.kql").read_text(encoding="utf-8"))
+        steps = [step["id"] for step in panel["transformations"]]
+        self.assertEqual(steps[:4], ["labelsToFields", "merge", "groupBy", "filterByValue"])
+        self.assertEqual(steps[-1], "organize")
+        self.assertEqual(steps.count("calculateField"), 4)
+
+    def test_model_price_table_matches_the_columns_the_panel_transforms(self):
+        query = (ROOT / "queries" / "model-prices.kql").read_text(encoding="utf-8")
+        self.assertIn("datatable(modelname: string, InputPer1M: real, OutputPer1M: real)", query)
+        # The panel's groupBy needs both token fields even when one metric has no series.
+        self.assertIn("['Input Tokens'] = real(null)", query)
+        self.assertIn("['Output Tokens'] = real(null)", query)
+        rows = re.findall(r'^\s*"([^"]+)",\s*([0-9.]+),\s*([0-9.]+),?\s*$', query, re.MULTILINE)
+        names = [name for name, _, _ in rows]
+        self.assertGreaterEqual(len(rows), 10)
+        self.assertEqual(len(names), len(set(names)))
+        for name, input_price, output_price in rows:
+            with self.subTest(model=name):
+                self.assertEqual(name, name.lower())
+                self.assertGreater(float(input_price), 0)
+                self.assertGreaterEqual(float(output_price), 0)
+        for model in ("gpt-5.4", "gpt-5.4-mini", "gpt-4.1"):
+            self.assertIn(model, names)
+        grouped = next(
+            step for step in self.dashboards["foundry-overview.json"]["panels"][4]["transformations"]
+            if step["id"] == "groupBy"
+        )["options"]["fields"]
+        self.assertEqual(
+            set(grouped), {"modelname", "Input Tokens", "Output Tokens", "InputPer1M", "OutputPer1M"}
+        )
 
     def test_agent_table_duration_units(self):
         panels = self.dashboards["foundry-agents.json"]["panels"]
