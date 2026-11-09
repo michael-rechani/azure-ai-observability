@@ -506,6 +506,28 @@ class BicepTemplateTests(unittest.TestCase):
         budget = next(r for r in resources_of(budget_template) if r["type"].lower() == "microsoft.consumption/budgets")
         self.assertEqual(budget["properties"]["filter"]["dimensions"]["name"], "ResourceId")
 
+    def test_cost_export_grafana_access_is_opt_in_and_private_only_closes_the_cluster(self):
+        result = subprocess.run(
+            [AZ, "bicep", "build", "--file", str(ROOT / "infra" / "modules" / "cost-export.bicep"), "--stdout"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        template = json.loads(result.stdout)
+        access = template["parameters"]["grafanaAccess"]
+        self.assertEqual(access["defaultValue"], "public")
+        self.assertEqual(access["allowedValues"], ["public", "privateEndpoint", "privateOnly"])
+        resources = template["resources"]
+        resources = list(resources.values()) if isinstance(resources, dict) else resources
+        endpoint = next(r for r in resources
+                        if r["type"].lower() == "microsoft.dashboard/grafana/managedprivateendpoints")
+        self.assertEqual(endpoint["condition"], "[not(equals(parameters('grafanaAccess'), 'public'))]")
+        self.assertEqual(endpoint["properties"]["groupIds"], ["cluster"])
+        cluster = next(r for r in resources if r["type"].lower() == "microsoft.kusto/clusters")
+        self.assertEqual(
+            cluster["properties"]["publicNetworkAccess"],
+            "[if(equals(parameters('grafanaAccess'), 'privateOnly'), 'Disabled', 'Enabled')]",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

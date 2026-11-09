@@ -333,6 +333,16 @@ variable "cost_export_deployer_principal_type" {
   }
 }
 
+variable "cost_export_grafana_access" {
+  description = "How Managed Grafana reaches the cost cluster. public (default) uses the cluster public endpoint. privateEndpoint adds a Grafana managed private endpoint and keeps the public endpoint. privateOnly adds the managed private endpoint and disables the public endpoint. Either private option leaves the connection Pending until scripts/approve_grafana_private_endpoint.ps1 approves it, so use privateEndpoint first if Grafana must keep working during the switch."
+  type        = string
+  default     = "public"
+  validation {
+    condition     = contains(["public", "privateEndpoint", "privateOnly"], var.cost_export_grafana_access)
+    error_message = "cost_export_grafana_access must be public, privateEndpoint, or privateOnly."
+  }
+}
+
 variable "cost_export_start_date" {
   description = "UTC date (YYYY-MM-DD) the export schedule starts. Required when enable_cost_export is true. Keep it unchanged on later applies, because changing it rewrites the schedule."
   type        = string

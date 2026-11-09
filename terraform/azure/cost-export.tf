@@ -69,7 +69,7 @@ resource "azurerm_kusto_cluster" "cost_export" {
   location                      = var.location
   auto_stop_enabled             = false
   streaming_ingestion_enabled   = false
-  public_network_access_enabled = true
+  public_network_access_enabled = var.cost_export_grafana_access != "privateOnly"
 
   sku {
     name     = var.cost_export_adx_sku_name
@@ -143,6 +143,25 @@ resource "azurerm_kusto_database_principal_assignment" "cost_export_grafana" {
   principal_id        = azurerm_dashboard_grafana.monitoring.identity[0].principal_id
   principal_type      = "App"
   role                = "Viewer"
+}
+
+resource "azapi_resource" "cost_export_grafana_private_endpoint" {
+  count     = var.enable_cost_export && var.cost_export_grafana_access != "public" ? 1 : 0
+  type      = "Microsoft.Dashboard/grafana/managedPrivateEndpoints@2024-10-01"
+  name      = "mpe-cost-adx"
+  parent_id = azurerm_dashboard_grafana.monitoring.id
+  location  = var.location
+
+  body = {
+    properties = {
+      privateLinkResourceId     = azurerm_kusto_cluster.cost_export[0].id
+      privateLinkResourceRegion = var.location
+      groupIds                  = ["cluster"]
+      requestMessage            = "Azure AI Observability cost export"
+    }
+  }
+
+  depends_on = [azurerm_kusto_script.cost_export]
 }
 
 resource "azapi_resource" "cost_export" {

@@ -127,6 +127,10 @@ param costExportDeployerObjectId string = ''
 @allowed(['User', 'App', 'Group'])
 param costExportDeployerPrincipalType string = 'User'
 
+@allowed(['public', 'privateEndpoint', 'privateOnly'])
+@description('How Grafana reaches the cost cluster. public (default) uses the cluster public endpoint. privateEndpoint adds a Grafana managed private endpoint and keeps the public endpoint. privateOnly adds the managed private endpoint and disables the public endpoint. Either private option leaves the connection Pending until scripts/approve_grafana_private_endpoint.ps1 approves it, so use privateEndpoint first if you want Grafana to keep working during the switch.')
+param costExportGrafanaAccess string = 'public'
+
 @description('First scheduled export date (yyyy-MM-dd); it must be in the future. Pass the existing value on redeploys so the schedule is not moved.')
 param costExportStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
 
@@ -405,6 +409,8 @@ module costExport 'modules/cost-export.bicep' = if (enableCostExport) {
     adxCapacity: costExportAdxCapacity
     deployerObjectId: costExportDeployerObjectId
     deployerPrincipalType: costExportDeployerPrincipalType
+    grafanaName: grafana.name
+    grafanaAccess: costExportGrafanaAccess
   }
 }
 
@@ -456,6 +462,7 @@ output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName
 output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
 output costExportStorageAccountName string = enableCostExport ? costExport!.outputs.storageAccountName : ''
 output costExportAdxClusterName string = enableCostExport ? costExport!.outputs.clusterName : ''
+output costExportPrivateEndpointName string = enableCostExport ? costExport!.outputs.privateEndpointName : ''
 output dashboardConfiguration object = {
   monitoringWorkspaceResourceId: workspace.id
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId

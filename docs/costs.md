@@ -56,11 +56,38 @@ Enable it with `enableCostExport = true` ([Bicep](bicep.md#optional-cost-export-
 - **The CSV schema is positional.** The external tables map the 45 export columns by position. If Cost Management reorders or adds columns, values can silently misalign. Check the dashboard totals against the portal after any export format change, and compare `AiCost()` with a Cost Management query when you first deploy.
 - **Tenants with storage policies.** Some tenants force `publicNetworkAccess=Disabled` and `allowSharedKeyAccess=false` on storage accounts and revert manual changes. This design works under such a policy in the Lab: the export and ADX reach storage as trusted Azure services, and no shared key is used. Terraform may show the normalized setting as drift on later plans.
 
+### Private access from Grafana (optional)
+
+Grafana cannot reach Azure Storage privately: Storage is not a supported target for Managed Grafana managed private endpoints, and Grafana has no managed-identity blob data source. It does not need to. The only service Grafana talks to is ADX, which **is** a supported target. The export writes to storage and ADX reads from it as trusted Azure services, so neither hop needs a private endpoint of its own. Private access therefore applies to the **Grafana to ADX** hop only.
+
+`costExportGrafanaAccess` (Bicep) or `cost_export_grafana_access` (Terraform) chooses how Grafana reaches the cluster:
+
+| Value | Effect |
+| --- | --- |
+| `public` (default) | Grafana uses the cluster's public endpoint. |
+| `privateEndpoint` | Also creates a Grafana managed private endpoint (`mpe-cost-adx`) to the cluster. It stays **Pending** until approved. The public endpoint stays open. |
+| `privateOnly` | The same endpoint, and the cluster's public network access is **Disabled**. |
+
+Azure names the ADX side of the connection with a generated GUID, so Bicep and Terraform cannot approve it. Use the helper once after deployment:
+
+```powershell
+.\scripts\approve_grafana_private_endpoint.ps1 -ResourceGroupName "<monitoring-rg>" -ClusterName "<cluster-name>" -GrafanaName "<grafana-name>"
+```
+
+The cluster name is the `costExportAdxClusterName` Bicep output or the `cost_export_adx_cluster_name` Terraform output. The script approves the pending connection, asks Grafana to refresh its cached state and waits until Grafana reports **Approved**. It supports `-WhatIf`. The identity running it needs permission to approve private endpoint connections on the cluster and to read and refresh the Grafana workspace.
+
+- **Recommended order.** Deploy with `privateEndpoint`, approve, confirm the dashboard returns data, then redeploy with `privateOnly`. Going to `privateOnly` immediately leaves Grafana without ADX access until the approval finishes.
+- **Allow a few minutes, and more after a delete.** On a first deployment, panels returned data about 30 seconds after Grafana reported Approved. In one earlier test, an endpoint created shortly after deleting a different Grafana managed private endpoint carried no traffic for about 12 minutes even though both sides reported Approved; deleting and recreating it fixed it. The cause was not identified (stale Grafana state is the likely explanation). If you delete a managed private endpoint, wait about ten minutes before recreating it, and if a new one stays silent, delete and recreate it.
+- **What `privateOnly` removes.** The cluster is no longer reachable from the public internet, so the ADX web UI, Kusto Explorer and the repository's local KQL helper scripts work only from a network with private access. Check the dashboard instead. The ARM database script (Bicep and Terraform) still deploys with the public endpoint disabled.
+- **Requirements and cost.** The Grafana workspace must be on the Standard tier, which this repository always uses. Private endpoints add their own hourly and data-processing charges; confirm current pricing.
+- **Secretless.** The path still uses managed identities only; no key, token or firewall exemption is added.
+
 ### What has been validated
 
 - **Live, with Bicep, in a Lab subscription:** the whole chain, from a clean resource group through a full `main.bicep` deployment, then a repeat deployment that succeeded unchanged. Manual runs of both exports wrote CSV files to a private storage account under the tenant policy above, ADX external tables read them with managed identity, and Grafana queried ADX with managed identity. The ADX total for the current month matched a Cost Management Query API request for the same window and filter. All five panels of the native dashboard returned data through Grafana, and `AiCost()` returned the closed month from `cost-closed` together with the current month from `cost-current`.
 - **Found and fixed during live validation:** the deployer needs cluster-level AllDatabasesAdmin to set the `managed_identity` policy; the export API rejects `partitionData = false`, so the property is omitted; and each export also writes a `manifest.json` beside its CSV, which breaks the external tables unless they set `fileExtension='.csv'`.
-- **Not validated:** an **Active scheduled** export run (validation used manual runs, and the first scheduled run is the day after deployment), the month rollover from `cost-current` to `cost-closed`, a month that appears in both containers (the closed-month-wins logic is untested against real overlapping files), a deployment of the Terraform path (it passes `terraform validate` and mock-provider tests only), and exports beyond the five-year end date.
+- **Private access, live with Bicep:** with the cluster's public network access `Disabled`, all five dashboard panels still returned data through Grafana's managed identity, and the same panels failed with a connection timeout once the managed private endpoint was removed (negative control), so the private endpoint is what carries the traffic. The `privateOnly` Bicep deployment, including its ARM database script with public access disabled, succeeded and created the endpoint; after `scripts\approve_grafana_private_endpoint.ps1` approved it, all five panels returned data on the first attempt. Direct access to the cluster from outside timed out. The one failure seen (see the note on deleting an endpoint above) was resolved by recreating the endpoint.
+- **Not validated:** an **Active scheduled** export run (validation used manual runs, and the first scheduled run is the day after deployment), the month rollover from `cost-current` to `cost-closed`, a month that appears in both containers (the closed-month-wins logic is untested against real overlapping files), a deployment of the Terraform path including its managed private endpoint (it passes `terraform validate` and mock-provider tests only), switching an existing `privateEndpoint` deployment to `privateOnly`, and exports beyond the five-year end date.
 
 ### Query the data
 

@@ -14,8 +14,16 @@ param deployerObjectId string
 @allowed(['User', 'App', 'Group'])
 param deployerPrincipalType string = 'User'
 
+@description('Name of the Managed Grafana workspace that queries the cluster. Needed only when grafanaAccess is not public.')
+param grafanaName string = ''
+
+@allowed(['public', 'privateEndpoint', 'privateOnly'])
+@description('public: Grafana reaches the cluster over its public endpoint. privateEndpoint: also create a Grafana managed private endpoint (it stays Pending until approved) and keep the public endpoint. privateOnly: create the managed private endpoint and disable the cluster public endpoint; Grafana loses access until the connection is approved.')
+param grafanaAccess string = 'public'
+
 var suffix = take(uniqueString(subscription().id, resourceGroup().id, namePrefix), 12)
 var databaseName = 'costs'
+var privateEndpointName = 'mpe-cost-adx'
 var currentContainerName = 'cost-current'
 var closedContainerName = 'cost-closed'
 var storageBlobDataReaderRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
@@ -89,7 +97,7 @@ resource cluster 'Microsoft.Kusto/clusters@2024-04-13' = {
   properties: {
     enableStreamingIngest: false
     enableAutoStop: false
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: grafanaAccess == 'privateOnly' ? 'Disabled' : 'Enabled'
   }
 }
 
@@ -155,6 +163,25 @@ resource grafanaViewer 'Microsoft.Kusto/clusters/databases/principalAssignments@
   }
 }
 
+resource grafana 'Microsoft.Dashboard/grafana@2025-08-01' existing = if (grafanaAccess != 'public') {
+  name: grafanaName
+}
+
+resource grafanaPrivateEndpoint 'Microsoft.Dashboard/grafana/managedPrivateEndpoints@2024-10-01' = if (grafanaAccess != 'public') {
+  parent: grafana
+  name: privateEndpointName
+  location: location
+  properties: {
+    privateLinkResourceId: cluster.id
+    privateLinkResourceRegion: location
+    groupIds: ['cluster']
+    requestMessage: 'Azure AI Observability cost export'
+  }
+  dependsOn: [
+    databaseScript
+  ]
+}
+
 output storageAccountName string = storage.name
 output storageAccountId string = storage.id
 output currentContainerName string = currentContainerName
@@ -162,3 +189,4 @@ output closedContainerName string = closedContainerName
 output clusterName string = cluster.name
 output clusterUri string = cluster.properties.uri
 output databaseName string = databaseName
+output privateEndpointName string = grafanaAccess != 'public' ? privateEndpointName : ''

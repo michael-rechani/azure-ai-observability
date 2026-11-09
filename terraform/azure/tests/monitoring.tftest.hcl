@@ -861,3 +861,60 @@ run "cost_export_rejects_unknown_deployer_principal_type" {
   }
   expect_failures = [var.cost_export_deployer_principal_type]
 }
+
+run "cost_export_grafana_access_defaults_to_public" {
+  command = plan
+  variables {
+    enable_cost_export     = true
+    cost_export_start_date = "2026-11-10"
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].public_network_access_enabled == true &&
+      length(azapi_resource.cost_export_grafana_private_endpoint) == 0
+    )
+    error_message = "By default Grafana uses the public endpoint and no managed private endpoint is created."
+  }
+}
+
+run "cost_export_private_endpoint_keeps_public_access" {
+  command = plan
+  variables {
+    enable_cost_export         = true
+    cost_export_start_date     = "2026-11-10"
+    cost_export_grafana_access = "privateEndpoint"
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].public_network_access_enabled == true &&
+      length(azapi_resource.cost_export_grafana_private_endpoint) == 1 &&
+      azapi_resource.cost_export_grafana_private_endpoint[0].type == "Microsoft.Dashboard/grafana/managedPrivateEndpoints@2024-10-01" &&
+      azapi_resource.cost_export_grafana_private_endpoint[0].body.properties.groupIds[0] == "cluster"
+    )
+    error_message = "privateEndpoint must add the Grafana managed private endpoint to the cluster group without closing the public endpoint."
+  }
+}
+
+run "cost_export_private_only_disables_public_access" {
+  command = plan
+  variables {
+    enable_cost_export         = true
+    cost_export_start_date     = "2026-11-10"
+    cost_export_grafana_access = "privateOnly"
+  }
+  assert {
+    condition = (
+      azurerm_kusto_cluster.cost_export[0].public_network_access_enabled == false &&
+      length(azapi_resource.cost_export_grafana_private_endpoint) == 1
+    )
+    error_message = "privateOnly must create the managed private endpoint and disable the cluster public endpoint."
+  }
+}
+
+run "cost_export_rejects_unknown_grafana_access" {
+  command = plan
+  variables {
+    cost_export_grafana_access = "private"
+  }
+  expect_failures = [var.cost_export_grafana_access]
+}

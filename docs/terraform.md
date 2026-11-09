@@ -98,7 +98,11 @@ terraform -chdir=terraform\azure output -raw cost_export_adx_cluster_uri
 terraform -chdir=terraform\azure output -raw cost_export_adx_database
 ```
 
-This creates an Azure Data Explorer data source (managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. The export holds the whole subscription's cost rows, so anyone who can edit queries on that data source can read them. A tenant policy that forces storage public access off may normalize the account's network setting and show as drift on later plans. **This path passes `terraform validate` and mock-provider tests but has not been applied live**; the equivalent [Bicep deployment](bicep.md#optional-cost-export-to-azure-data-explorer) was. See [cost collection](costs.md#cost-management-export-to-azure-data-explorer-no-function) for the full caveats.
+This creates an Azure Data Explorer data source (managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. The export holds the whole subscription's cost rows, so anyone who can edit queries on that data source can read them. A tenant policy that forces storage public access off may normalize the account's network setting and show as drift on later plans.
+
+To let Grafana reach the cluster over a managed private endpoint, set `cost_export_grafana_access` to `privateEndpoint` (keeps the public endpoint) or `privateOnly` (also disables it). Terraform creates the endpoint through `azapi`, but the connection stays Pending until you approve it with `scripts\approve_grafana_private_endpoint.ps1 -ResourceGroupName <rg> -ClusterName (terraform output -raw cost_export_adx_cluster_name) -GrafanaName <grafana>`, because Azure generates the connection name. Apply `privateEndpoint` first, approve, confirm the dashboard returns data, then switch to `privateOnly`; Terraform's `public_network_access_enabled` then closes the cluster to the internet. See [Private access from Grafana](costs.md#private-access-from-grafana-optional).
+
+**This path passes `terraform validate` and mock-provider tests but has not been applied live**, including the managed private endpoint; the equivalent [Bicep deployment](bicep.md#optional-cost-export-to-azure-data-explorer) was. See [cost collection](costs.md#cost-management-export-to-azure-data-explorer-no-function) for the full caveats.
 
 From the repository root in PowerShell:
 
