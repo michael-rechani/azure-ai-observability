@@ -75,6 +75,17 @@ The original [JSON API plugin](https://grafana.com/docs/plugins/marcusolsson-jso
 
 Keep the collector unless a supported alternative demonstrates least-privilege authentication, complete results and explicit error handling. Per-viewer access also needs two independently authenticated users with different effective permissions, including cold and warm caches, token refresh, and the identity used for background queries. Controlled test users can exercise that boundary but do not validate real-human workflows. See [issue #4](https://github.com/michael-rechani/azure-ai-observability/issues/4) for test details and remaining checks.
 
+### Native estimate from Azure Monitor metrics (no collector, no secret)
+
+Grafana's managed identity can already read per-model token metrics (`InputTokens`, `OutputTokens`) and `FoundryModelEstimatedCost` from Azure Monitor. A read-only comparison against Cost Management actual cost covered one existing pay-as-you-go Foundry account: five usage days and three models. The subscription's other two accounts had no estimate data and were not compared. It found:
+
+- **`FoundryModelEstimatedCost` is not a usable spend figure.** It was close on the smallest days but about 2x below billed for the small models, and about 14x below (roughly 7% of billed) for the largest model on its two heavy days. It also reports no unit.
+- **Output tokens × the model's per-1M output price reproduced the billed output charge** for every model-day compared. Input tokens priced the same way reproduced the billed input charge on days without prompt caching.
+- **Prompt caching breaks the input side.** `InputTokens` includes cached tokens, which bill at a much lower rate. For the largest model about three quarters of input tokens were cached. No usable per-model cached-token metric was found: `cacheReadInputTokens` had no data and the cache-match-rate average did not match the billed split. Pricing all input as uncached overstated total cost by roughly 30–50% on those days.
+- **Not covered:** provisioned (PTU) hourly charges, hosted-agent compute, negotiated or discounted rates, tax, and later price changes.
+
+A tokens × price table panel would therefore be a native, secretless **upper-bound estimate** for pay-as-you-go token spend, not billed cost. It is not implemented in the dashboards; the collector stays the source of billed cost. This is one account over a few days, so repeat the comparison on your own accounts before relying on it.
+
 ## What the numbers mean
 
 The dashboard reports **pretax costs attributed by Cost Management to the exact configured AI account resource IDs**. It is not an invoice, total subscription spend, a per-deployment/PTU price, or a reservation-coverage report. Reservation purchases, shared or billing-scope charges, child-resource costs, and tax can be omitted. Actual and amortized costs are alternative views and must not be added together; currencies remain separate. Values are rounded for display.
