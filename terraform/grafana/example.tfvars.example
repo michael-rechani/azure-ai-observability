@@ -1,6 +1,7 @@
-grafana_endpoint      = "https://replace-with-grafana-endpoint.example.invalid"
-subscription_id       = "00000000-0000-0000-0000-000000000000"
-enable_cost_dashboard = false
+grafana_endpoint         = "https://replace-with-grafana-endpoint.example.invalid"
+subscription_id          = "00000000-0000-0000-0000-000000000000"
+# Business overview dashboard (agent and PTU signals); it reads the telemetry workspace set in dashboard_defaults below.
+enable_business_overview = false
 
 # Set with enable_cost_export in the Azure stage; use its cost_export_adx_cluster_uri output.
 enable_cost_export_dashboard = false
@@ -20,7 +21,8 @@ enable_cost_infinity_dashboard = false
 # cost_infinity_alert_pending_minutes  = 60
 
 dashboard_defaults = {
-  # Use workspace_resource_id from the Azure Terraform stage.
+  # Use workspace_resource_id from the Azure Terraform stage. It is the telemetry workspace unless
+  # telemetry_workspace_resource_id below points elsewhere.
   monitoring_workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
   # If agent telemetry is elsewhere, set telemetry_workspace_resource_id to that workspace's ARM ID.
   foundry_account = {

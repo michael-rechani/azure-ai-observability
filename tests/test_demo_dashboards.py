@@ -35,7 +35,7 @@ class DemoDashboardTests(unittest.TestCase):
         self.assertIn("## Dashboards", introduction)
         self.assertIn("simulated data", introduction.lower())
         for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png",
-                     "cost-grafana-preview.png", "business-overview-preview.png"):
+                     "business-overview-preview.png"):
             path = f"docs/images/{name}"
             with self.subTest(image=name):
                 self.assertIn(f"]({path})", introduction)
@@ -68,7 +68,6 @@ class DemoDashboardTests(unittest.TestCase):
         pairs = (
             ("foundry-agents.json", "foundry-agents-demo.json"),
             ("openai-ptu.json", "openai-ptu-demo.json"),
-            ("azure-ai-costs.json", "azure-ai-costs-demo.json"),
             ("business-overview.json", "business-overview-demo.json"),
         )
         for real_name, demo_name in pairs:
@@ -104,17 +103,6 @@ class DemoDashboardTests(unittest.TestCase):
             self.assertLessEqual(float(row["Last *"]), float(row["Max"]))
         self.assertNotIn("AllocatedPTUs", demo_builder.PTU_DATA[11])
         self.assertIn("PassRatePercent", demo_builder.AGENT_DATA[7])
-        for panel_id, values in ((3, demo_builder.COST_ACTUAL), (4, demo_builder.COST_AMORTIZED)):
-            total = next(csv.DictReader(io.StringIO(demo_builder.COST_DATA[panel_id])))
-            self.assertEqual(total["Currency"], "USD")
-            self.assertAlmostEqual(float(total["Amount"]), sum(values), places=2)
-        accounts = list(csv.DictReader(io.StringIO(demo_builder.COST_DATA[7])))
-        for kind, values in (("ActualCost", demo_builder.COST_ACTUAL),
-                             ("AmortizedCost", demo_builder.COST_AMORTIZED)):
-            self.assertAlmostEqual(
-                sum(float(row["Amount"]) for row in accounts if row["CostType"] == kind),
-                sum(values), places=2,
-            )
 
     def test_dedicated_axes_distinguish_small_counts(self):
         agents = self.real["foundry-agents.json"]["panels"]

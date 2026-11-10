@@ -53,34 +53,10 @@ mock_provider "azurerm" {
       }
     }
   }
-  mock_resource "azurerm_user_assigned_identity" {
-    defaults = {
-      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cost"
-      principal_id = "00000000-0000-0000-0000-000000000008"
-      client_id    = "00000000-0000-0000-0000-000000000009"
-    }
-  }
   mock_resource "azurerm_storage_account" {
     defaults = {
       id                    = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Storage/storageAccounts/aicost"
       primary_blob_endpoint = "https://aicost.blob.core.windows.net/"
-    }
-  }
-  mock_resource "azurerm_monitor_data_collection_rule" {
-    defaults = {
-      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Insights/dataCollectionRules/cost"
-      immutable_id = "dcr-00000000000000000000000000000000"
-    }
-  }
-  mock_resource "azurerm_monitor_data_collection_endpoint" {
-    defaults = {
-      id                      = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Insights/dataCollectionEndpoints/cost"
-      logs_ingestion_endpoint = "https://example.eastus-1.ingest.monitor.azure.com"
-    }
-  }
-  mock_resource "azurerm_service_plan" {
-    defaults = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Web/serverFarms/cost"
     }
   }
 }
@@ -333,218 +309,13 @@ run "reject_other_subscription" {
   expect_failures = [var.monitored_accounts]
 }
 
-run "cost_pipeline_is_opt_in" {
-  command = plan
-  assert {
-    condition = (
-      length(azurerm_function_app_flex_consumption.cost) == 0 &&
-      length(azurerm_log_analytics_workspace_table_custom_log.cost) == 0 &&
-      length(azurerm_role_assignment.cost_reader) == 0 &&
-      length(azurerm_role_definition.cost_group_query) == 0 &&
-      length(azurerm_role_assignment.cost_group_query) == 0
-    )
-    error_message = "The Function, cost table, and subscription-wide permission must be opt-in."
-  }
-}
-
-run "cost_pipeline_uses_managed_identity_and_complete_schema" {
+run "cost_infinity_group_role_rejects_parent_scope" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  override_resource {
-    target          = azurerm_monitor_data_collection_rule.cost[0]
-    override_during = plan
-    values = {
-      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.Insights/dataCollectionRules/cost"
-    }
-  }
-  assert {
-    condition = (
-      azurerm_role_assignment.cost_reader[0].scope == "/subscriptions/00000000-0000-0000-0000-000000000000" &&
-      azurerm_role_assignment.cost_reader[0].role_definition_name == "Cost Management Reader" &&
-      length(azurerm_role_definition.cost_group_query) == 0 &&
-      length(azurerm_role_assignment.cost_group_query) == 0 &&
-      azurerm_function_app_flex_consumption.cost[0].app_settings["COST_QUERY_SCOPE"] == "subscription" &&
-      azurerm_role_assignment.cost_ingestion[0].scope == azurerm_monitor_data_collection_rule.cost[0].id &&
-      azurerm_role_assignment.cost_ingestion[0].role_definition_name == "Monitoring Metrics Publisher"
-    )
-    error_message = "Cost access must be subscription-scoped and ingestion access limited to the DCR."
-  }
-  assert {
-    condition = (
-      azurerm_function_app_flex_consumption.cost[0].runtime_name == "powershell" &&
-      azurerm_function_app_flex_consumption.cost[0].runtime_version == "7.6" &&
-      azurerm_function_app_flex_consumption.cost[0].maximum_instance_count == 40 &&
-      azurerm_function_app_flex_consumption.cost[0].storage_authentication_type == "UserAssignedIdentity" &&
-      azurerm_function_app_flex_consumption.cost[0].app_settings["AzureWebJobsStorage__credential"] == "managedidentity" &&
-      !azurerm_storage_account.cost[0].shared_access_key_enabled
-    )
-    error_message = "The Function and storage must use managed identity rather than account keys."
-  }
-  assert {
-    condition = (
-      azurerm_storage_account.cost[0].blob_properties[0].delete_retention_policy[0].days == 7 &&
-      azurerm_storage_account.cost[0].blob_properties[0].container_delete_retention_policy[0].days == 7 &&
-      length(azurerm_monitor_diagnostic_setting.cost_blob_read) == 1
-    )
-    error_message = "Cost deployment storage must retain deleted blobs and containers for seven days and log blob reads."
-  }
-  assert {
-    condition = (
-      azurerm_log_analytics_workspace_table_custom_log.cost[0].name == "AICostSnapshot_CL" &&
-      contains([for c in azurerm_log_analytics_workspace_table_custom_log.cost[0].column : c.name], "ExpectedRows") &&
-      contains([for c in azurerm_log_analytics_workspace_table_custom_log.cost[0].column : c.name], "UsageDate")
-    )
-    error_message = "The cost table must contain the snapshot completeness and usage-date fields."
-  }
-}
-
-run "resource_group_cost_scope_omits_subscription_role" {
-  command = plan
-  variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroup"
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  override_resource {
-    target          = azurerm_user_assigned_identity.cost[0]
-    override_during = plan
-    values = {
-      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cost"
-      principal_id = "00000000-0000-0000-0000-000000000008"
-      client_id    = "00000000-0000-0000-0000-000000000009"
-    }
-  }
-  assert {
-    condition = (
-      length(azurerm_role_assignment.cost_reader) == 0 &&
-      length(azurerm_role_definition.cost_group_query) == 0 &&
-      length(azurerm_role_assignment.cost_group_query) == 0 &&
-      azurerm_function_app_flex_consumption.cost[0].app_settings["COST_QUERY_SCOPE"] == "resourceGroup" &&
-      output.cost_identity_principal_id == azurerm_user_assigned_identity.cost[0].principal_id
-    )
-    error_message = "Resource-group queries must not receive the automatic subscription cost role and must expose the identity for separate assignments."
-  }
-}
-
-run "managed_resource_group_cost_roles_are_deduplicated_and_narrow" {
-  command = plan
-  variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
-    monitored_accounts = {
-      first = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Foundry/providers/Microsoft.CognitiveServices/accounts/first"
-        ptu_deployments = []
-      }
-      second = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/second"
-        ptu_deployments = []
-      }
-      third = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/openai/providers/Microsoft.CognitiveServices/accounts/third"
-        ptu_deployments = []
-      }
-    }
-  }
-  override_resource {
-    target          = azurerm_user_assigned_identity.cost[0]
-    override_during = plan
-    values = {
-      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cost"
-      principal_id = "00000000-0000-0000-0000-000000000008"
-      client_id    = "00000000-0000-0000-0000-000000000009"
-    }
-  }
-  override_resource {
-    target          = azurerm_role_definition.cost_group_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry"]
-    override_during = plan
-    values = {
-      role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000011"
-    }
-  }
-  override_resource {
-    target          = azurerm_role_definition.cost_group_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/openai"]
-    override_during = plan
-    values = {
-      role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000012"
-    }
-  }
-  assert {
-    condition = (
-      length(azurerm_role_assignment.cost_reader) == 0 &&
-      length(azurerm_role_definition.cost_group_query) == 2 &&
-      length(azurerm_role_assignment.cost_group_query) == 2 &&
-      azurerm_function_app_flex_consumption.cost[0].app_settings["COST_QUERY_SCOPE"] == "resourceGroup"
-    )
-    error_message = "Managed resource-group mode must deduplicate groups, omit the subscription role, and configure resource-group queries."
-  }
-  assert {
-    condition = alltrue([
-      for scope, role in azurerm_role_definition.cost_group_query :
-      length(role.assignable_scopes) == 1 && role.assignable_scopes[0] == scope &&
-      length(role.permissions) == 1 &&
-      length(role.permissions[0].actions) == 1 &&
-      role.permissions[0].actions[0] == "Microsoft.CostManagement/query/read" &&
-      length(role.permissions[0].not_actions) == 0 &&
-      length(role.permissions[0].data_actions) == 0 &&
-      length(role.permissions[0].not_data_actions) == 0
-    ])
-    error_message = "Each custom role must be assignable only in its group and contain only the Cost Management query action."
-  }
-  assert {
-    condition = alltrue([
-      for scope, assignment in azurerm_role_assignment.cost_group_query :
-      assignment.scope == {
-        "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry" = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Foundry"
-        "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/openai"  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/openai"
-      }[scope] &&
-      assignment.role_definition_id == azurerm_role_definition.cost_group_query[scope].role_definition_resource_id &&
-      assignment.principal_id == azurerm_user_assigned_identity.cost[0].principal_id &&
-      assignment.principal_type == "ServicePrincipal"
-    ])
-    error_message = "Each assignment must bind the matching group-scoped role to the collector identity."
-  }
-}
-
-run "managed_resource_group_roles_are_disabled_with_pipeline" {
-  command = plan
-  variables {
-    enable_cost_pipeline = false
-    cost_query_scope     = "resourceGroupManaged"
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  assert {
-    condition = (
-      length(azurerm_role_definition.cost_group_query) == 0 &&
-      length(azurerm_role_assignment.cost_group_query) == 0
-    )
-    error_message = "Managed group roles must not exist when the cost pipeline is disabled."
-  }
-}
-
-run "managed_resource_group_role_rejects_parent_scope" {
-  command = plan
-  variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
+    enable_cost_infinity                      = true
+    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
+    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    cost_infinity_scope                       = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/../providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -555,11 +326,13 @@ run "managed_resource_group_role_rejects_parent_scope" {
   expect_failures = [var.monitored_accounts]
 }
 
-run "managed_resource_group_role_rejects_escaped_scope" {
+run "cost_infinity_group_role_rejects_escaped_scope" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
+    enable_cost_infinity                      = true
+    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
+    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    cost_infinity_scope                       = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry%2fother/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -570,11 +343,13 @@ run "managed_resource_group_role_rejects_escaped_scope" {
   expect_failures = [var.monitored_accounts]
 }
 
-run "managed_resource_group_role_rejects_query_delimiter" {
+run "cost_infinity_group_role_rejects_query_delimiter" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
+    enable_cost_infinity                      = true
+    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
+    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    cost_infinity_scope                       = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry?other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -585,11 +360,13 @@ run "managed_resource_group_role_rejects_query_delimiter" {
   expect_failures = [var.monitored_accounts]
 }
 
-run "managed_resource_group_role_rejects_fragment_delimiter" {
+run "cost_infinity_group_role_rejects_fragment_delimiter" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
+    enable_cost_infinity                      = true
+    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
+    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    cost_infinity_scope                       = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry#other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -600,11 +377,13 @@ run "managed_resource_group_role_rejects_fragment_delimiter" {
   expect_failures = [var.monitored_accounts]
 }
 
-run "managed_resource_group_role_rejects_backslash_scope" {
+run "cost_infinity_group_role_rejects_backslash_scope" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
+    enable_cost_infinity                      = true
+    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
+    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    cost_infinity_scope                       = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry\\other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -615,11 +394,13 @@ run "managed_resource_group_role_rejects_backslash_scope" {
   expect_failures = [var.monitored_accounts]
 }
 
-run "managed_resource_group_role_rejects_control_character_scope" {
+run "cost_infinity_group_role_rejects_control_character_scope" {
   command = plan
   variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
+    enable_cost_infinity                      = true
+    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
+    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    cost_infinity_scope                       = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry\u0001other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -628,127 +409,6 @@ run "managed_resource_group_role_rejects_control_character_scope" {
     }
   }
   expect_failures = [var.monitored_accounts]
-}
-
-run "cost_scope_must_be_valid" {
-  command = plan
-  variables {
-    cost_query_scope = "invalid"
-  }
-  expect_failures = [var.cost_query_scope]
-}
-
-run "cost_collection_requires_accounts" {
-  command = plan
-  variables {
-    enable_cost_pipeline = true
-  }
-  expect_failures = [azurerm_monitor_data_collection_rule.cost]
-}
-
-run "cost_lookback_must_be_valid" {
-  command = plan
-  variables {
-    cost_lookback_days = 7
-  }
-  expect_failures = [var.cost_lookback_days]
-}
-
-run "cost_collection_rejects_excessive_baseline_duration" {
-  command = plan
-  variables {
-    enable_cost_pipeline = true
-    monitored_accounts = {
-      for i in range(15) : "account-${i}" => {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/account-${i}"
-        ptu_deployments = []
-      }
-    }
-  }
-  expect_failures = [azurerm_monitor_data_collection_rule.cost]
-}
-
-run "cost_collection_accepts_maximum_default_accounts" {
-  command = plan
-  variables {
-    enable_cost_pipeline = true
-    monitored_accounts = {
-      for i in range(14) : "account-${i}" => {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/account-${i}"
-        ptu_deployments = []
-      }
-    }
-  }
-  assert {
-    condition     = length(azurerm_monitor_data_collection_rule.cost) == 1
-    error_message = "Fourteen accounts with the default lookback must fit within the request-pacing limit."
-  }
-}
-
-run "cost_scope_migration_initial_subscription_role" {
-  command = apply
-  plan_options {
-    target = [azurerm_role_assignment.cost_reader]
-  }
-  variables {
-    enable_cost_pipeline = true
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  assert {
-    condition     = length(azurerm_role_assignment.cost_reader) == 1
-    error_message = "The original subscription-scoped cost assignment must be represented in state."
-  }
-}
-
-run "cost_scope_migration_removes_managed_subscription_role" {
-  command = plan
-  plan_options {
-    target = [azurerm_role_assignment.cost_reader]
-  }
-  variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroup"
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  assert {
-    condition     = length(azurerm_role_assignment.cost_reader) == 0
-    error_message = "Switching to resource-group queries must remove the Terraform-managed subscription cost assignment."
-  }
-}
-
-run "cost_scope_migration_to_managed_group_role" {
-  command = plan
-  plan_options {
-    target = [azurerm_role_assignment.cost_reader, azurerm_role_assignment.cost_group_query]
-  }
-  variables {
-    enable_cost_pipeline = true
-    cost_query_scope     = "resourceGroupManaged"
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  assert {
-    condition = (
-      length(azurerm_role_assignment.cost_reader) == 0 &&
-      length(azurerm_role_definition.cost_group_query) == 1 &&
-      length(azurerm_role_assignment.cost_group_query) == 1
-    )
-    error_message = "Migrating to managed group mode must omit the old subscription assignment and create the group role and assignment."
-  }
 }
 
 run "cost_export_is_opt_in" {
@@ -1009,10 +669,9 @@ run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" 
     condition = (
       length(azurerm_role_assignment.cost_infinity_reader) == 0 &&
       length(azurerm_role_definition.cost_infinity_group_query) == 2 &&
-      length(azurerm_role_assignment.cost_infinity_group_query) == 2 &&
-      length(azurerm_role_definition.cost_group_query) == 0
+      length(azurerm_role_assignment.cost_infinity_group_query) == 2
     )
-    error_message = "Group scope must omit the subscription role, deduplicate groups, and stay separate from the Function's roles."
+    error_message = "Group scope must omit the subscription role and deduplicate groups."
   }
   assert {
     condition = alltrue([
@@ -1040,55 +699,6 @@ run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" 
   assert {
     condition     = output.cost_infinity_scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Foundry"
     error_message = "The default dashboard scope must be the first monitored resource group."
-  }
-}
-
-run "cost_infinity_roles_do_not_collide_with_the_cost_function_roles" {
-  command = plan
-  variables {
-    enable_cost_pipeline                      = true
-    cost_query_scope                          = "resourceGroupManaged"
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
-    monitored_accounts = {
-      foundry = {
-        resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry/providers/Microsoft.CognitiveServices/accounts/foundry"
-        ptu_deployments = []
-      }
-    }
-  }
-  override_resource {
-    target          = azurerm_user_assigned_identity.cost[0]
-    override_during = plan
-    values = {
-      id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cost"
-      principal_id = "00000000-0000-0000-0000-000000000008"
-      client_id    = "00000000-0000-0000-0000-000000000009"
-    }
-  }
-  override_resource {
-    target          = azurerm_role_definition.cost_group_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry"]
-    override_during = plan
-    values = {
-      role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000011"
-    }
-  }
-  override_resource {
-    target          = azurerm_role_definition.cost_infinity_group_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry"]
-    override_during = plan
-    values = {
-      role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000021"
-    }
-  }
-  assert {
-    condition = (
-      length(azurerm_role_definition.cost_group_query) == 1 &&
-      length(azurerm_role_definition.cost_infinity_group_query) == 1 &&
-      one(values(azurerm_role_definition.cost_group_query)).name != one(values(azurerm_role_definition.cost_infinity_group_query)).name
-    )
-    error_message = "The Function and Infinity roles must have different names, or enabling both would conflict."
   }
 }
 

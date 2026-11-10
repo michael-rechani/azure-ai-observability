@@ -11,6 +11,10 @@ run "dashboard_bindings" {
     condition     = length(grafana_dashboard.monitoring) == 3
     error_message = "Expected separate Foundry overview, agent, and PTU dashboards."
   }
+  assert {
+    condition     = !contains(keys(grafana_dashboard.monitoring), "business_overview")
+    error_message = "The Business overview dashboard must not be created unless enable_business_overview is set."
+  }
 
   assert {
     condition     = jsondecode(grafana_data_source.azure_monitor.json_data_encoded).azureAuthType == "msi"
@@ -38,25 +42,30 @@ run "dashboard_bindings" {
   }
 }
 
-run "cost_dashboard_is_opt_in" {
+run "business_overview_is_opt_in" {
   command = plan
   variables {
-    enable_cost_dashboard = true
+    enable_business_overview = true
     dashboard_defaults = {
       monitoring_workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.OperationalInsights/workspaces/monitoring"
     }
   }
   assert {
     condition = (
-      length(grafana_dashboard.monitoring) == 5 &&
-      contains(keys(grafana_dashboard.monitoring), "azure_ai_costs") &&
-      contains(keys(grafana_dashboard.monitoring), "business_overview")
+      length(grafana_dashboard.monitoring) == 4 &&
+      contains(keys(grafana_dashboard.monitoring), "business_overview") &&
+      !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs")
     )
-    error_message = "Enabling cost dashboards must add both cost and business overviews without replacing other dashboards."
+    error_message = "Enabling the Business overview must add only that dashboard without replacing the others."
   }
   assert {
-    condition     = !strcontains(grafana_dashboard.monitoring["azure_ai_costs"].config_json, "$${DS_AZURE_MONITOR}")
-    error_message = "The cost dashboard must use the provisioned Azure Monitor data source."
+    condition = (
+      length(grafana_data_source.azure_data_explorer) == 0 &&
+      length(grafana_data_source.infinity) == 0 &&
+      !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_native") &&
+      !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_infinity")
+    )
+    error_message = "Enabling the Business overview must not enable any cost data source or dashboard."
   }
   assert {
     condition     = !strcontains(grafana_dashboard.monitoring["business_overview"].config_json, "$${DS_AZURE_MONITOR}")
@@ -69,12 +78,19 @@ run "cost_dashboard_is_opt_in" {
     )
     error_message = "Agent dashboards should use the monitoring workspace unless a separate telemetry workspace is configured."
   }
+  assert {
+    condition = one([
+      for v in jsondecode(grafana_dashboard.monitoring["business_overview"].config_json).templating.list :
+      v.current.value if v.name == "workspaceResourceId"
+    ]) == var.dashboard_defaults.monitoring_workspace_resource_id
+    error_message = "The Business overview must fall back to the monitoring workspace for telemetry."
+  }
 }
 
 run "dashboard_defaults_target_real_resources" {
   command = plan
   variables {
-    enable_cost_dashboard = true
+    enable_business_overview = true
     dashboard_defaults = {
       monitoring_workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring/providers/Microsoft.OperationalInsights/workspaces/costs"
       telemetry_workspace_resource_id  = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/apps/providers/Microsoft.OperationalInsights/workspaces/agents"
@@ -119,13 +135,20 @@ run "dashboard_defaults_target_real_resources" {
   assert {
     condition = (
       one(jsondecode(grafana_dashboard.monitoring["foundry_agents"].config_json).templating.list).current.value == var.dashboard_defaults.telemetry_workspace_resource_id &&
-      one(jsondecode(grafana_dashboard.monitoring["azure_ai_costs"].config_json).templating.list).current.value == var.dashboard_defaults.monitoring_workspace_resource_id &&
-      one([
-        for v in jsondecode(grafana_dashboard.monitoring["business_overview"].config_json).templating.list :
-        v.current.value if v.name == "monitoringWorkspaceResourceId"
-      ]) == var.dashboard_defaults.monitoring_workspace_resource_id
+      { for v in jsondecode(grafana_dashboard.monitoring["business_overview"].config_json).templating.list : v.name => v.current.value } == {
+        workspaceResourceId = var.dashboard_defaults.telemetry_workspace_resource_id
+        ptuSubscription     = var.subscription_id
+        ptuResourceGroup    = "ptu-rg"
+        ptuAccount          = "openai-prod"
+        ptuRegion           = "westus3"
+        ptuDeployment       = "gpt-ptu"
+      }
     )
-    error_message = "Agent telemetry and cost snapshots must use their independently selected workspaces."
+    error_message = "Agent telemetry and the Business overview must use the telemetry workspace, and the Business overview must receive the PTU account."
+  }
+  assert {
+    condition     = !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs")
+    error_message = "The removed cost dashboard must not be provisioned."
   }
   assert {
     condition = alltrue(flatten([
@@ -411,15 +434,31 @@ run "cost_infinity_rejects_malformed_ids" {
   ]
 }
 
-run "cost_dashboard_requires_monitoring_workspace" {
+run "business_overview_requires_a_telemetry_workspace" {
   command = plan
   variables {
-    enable_cost_dashboard = true
+    enable_business_overview = true
   }
   expect_failures = [
-    grafana_dashboard.monitoring["azure_ai_costs"],
     grafana_dashboard.monitoring["business_overview"],
   ]
+}
+
+run "business_overview_accepts_a_telemetry_workspace_alone" {
+  command = plan
+  variables {
+    enable_business_overview = true
+    dashboard_defaults = {
+      telemetry_workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/apps/providers/Microsoft.OperationalInsights/workspaces/agents"
+    }
+  }
+  assert {
+    condition = one([
+      for v in jsondecode(grafana_dashboard.monitoring["business_overview"].config_json).templating.list :
+      v.current.value if v.name == "workspaceResourceId"
+    ]) == var.dashboard_defaults.telemetry_workspace_resource_id
+    error_message = "The Business overview needs only the telemetry workspace."
+  }
 }
 
 run "reject_invalid_dashboard_workspace" {

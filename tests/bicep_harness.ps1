@@ -3,7 +3,6 @@ $root = Split-Path -Parent $PSScriptRoot
 $global:HttpCalls = [System.Collections.ArrayList]::new()
 $global:CliCalls = [System.Collections.ArrayList]::new()
 $global:TempParameters = ''
-$global:ZipEntries = @()
 $subscription = '11111111-1111-1111-1111-111111111111'
 $workspace = "/subscriptions/$subscription/resourceGroups/monitoring/providers/Microsoft.OperationalInsights/workspaces/logs"
 $configuration = @{
@@ -23,7 +22,7 @@ $configuration = @{
         region = 'eastus'
         deployment = 'ptu-one'
     }
-    enableCostDashboard = $env:TEST_COST_DASHBOARD -ne 'false'
+    enableBusinessOverview = $env:TEST_BUSINESS_OVERVIEW -ne 'false'
     enableCostExportDashboard = $env:TEST_COST_EXPORT -eq 'true'
     costExportClusterUri = if ($env:TEST_COST_EXPORT_URI) { $env:TEST_COST_EXPORT_URI } else { 'https://adx.eastus.kusto.windows.net' }
     costExportDatabase = 'costs'
@@ -60,22 +59,7 @@ function global:az {
             return @{
                 grafanaEndpoint = @{ value = 'https://test.eastus.grafana.azure.com' }
                 dashboardConfiguration = @{ value = $configuration }
-                costFunctionName = @{ value = 'ai-cost-example' }
             } | ConvertTo-Json -Depth 30 -Compress
-        }
-        return
-    }
-    if ($arguments[0] -eq 'functionapp') {
-        $index = [Array]::IndexOf($arguments, '--src')
-        $archive = [IO.Compression.ZipFile]::OpenRead($arguments[$index + 1])
-        try {
-            $global:ZipEntries = @($archive.Entries | ForEach-Object FullName)
-        }
-        finally {
-            $archive.Dispose()
-        }
-        if ($env:TEST_FAIL_FUNCTION -eq 'true') {
-            $global:LASTEXITCODE = 1
         }
         return
     }
@@ -232,6 +216,5 @@ finally {
         http = @($global:HttpCalls)
         cli = @($global:CliCalls)
         parameterTemp = $global:TempParameters
-        zipEntries = @($global:ZipEntries)
     } | ConvertTo-Json -Depth 100 | Set-Content -LiteralPath $env:TEST_LOG -Encoding utf8
 }

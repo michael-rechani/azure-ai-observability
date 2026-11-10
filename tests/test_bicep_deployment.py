@@ -30,62 +30,14 @@ def parameters():
         "notificationEmail": {"value": "alerts@customer.example"},
         "monitoredAccounts": {"value": [copy.deepcopy(ACCOUNT)]},
         "existingTelemetryWorkspaces": {"value": []},
-        "enableCostPipeline": {"value": True},
-        "costLookbackDays": {"value": 90},
         "monthlyAiCostBudgetAmount": {"value": 0},
     }
 
 
 @unittest.skipUnless(PWSH, "PowerShell 7 is required to exercise Bicep deployment")
 class BicepDeploymentTests(unittest.TestCase):
-    @unittest.skipUnless(AZ, "Azure CLI with Bicep is required to inspect compiled cost resources")
-    def test_cost_storage_has_soft_delete_and_blob_read_diagnostics(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "cost.json"
-            result = subprocess.run(
-                [
-                    AZ, "bicep", "build", "--file", str(ROOT / "infra" / "modules" / "cost.bicep"),
-                    "--outfile", str(output),
-                ],
-                capture_output=True, text=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            template_resources = json.loads(output.read_text(encoding="utf-8"))["resources"]
-        resources = list(template_resources.values()) if isinstance(template_resources, dict) else template_resources
-        blob_service = next(item for item in resources if item["type"] == "Microsoft.Storage/storageAccounts/blobServices")
-        policies = blob_service["properties"]
-        self.assertEqual(policies["deleteRetentionPolicy"], {"enabled": True, "days": 7})
-        self.assertEqual(policies["containerDeleteRetentionPolicy"], {"enabled": True, "days": 7})
-        diagnostics = next(item for item in resources if item["type"] == "Microsoft.Insights/diagnosticSettings")
-        self.assertIn(
-            {"category": "StorageRead", "enabled": True},
-            diagnostics["properties"]["logs"],
-        )
-        function_types = {
-            "Microsoft.Storage/storageAccounts",
-            "Microsoft.Storage/storageAccounts/blobServices",
-            "Microsoft.Storage/storageAccounts/blobServices/containers",
-            "Microsoft.Insights/diagnosticSettings",
-            "Microsoft.Web/serverfarms",
-            "Microsoft.Web/sites",
-            "Microsoft.Web/sites/config",
-            "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
-        }
-        for resource in resources:
-            if resource["type"] in function_types:
-                self.assertNotIn("condition", resource)
-        role_assignments = [
-            item for item in resources if item["type"] == "Microsoft.Authorization/roleAssignments"
-        ]
-        self.assertTrue(role_assignments)
-        self.assertFalse([item for item in role_assignments if "condition" in item])
-        self.assertFalse([
-            item for item in resources
-            if item["type"] == "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials"
-        ])
-
-    def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True,
-                    fail_function=False, cost_export=False, cost_export_uri=None, cost_infinity=False,
+    def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, business_overview=True,
+                    cost_export=False, cost_export_uri=None, cost_infinity=False,
                     infinity_secret=None, plugin_missing=False, infinity_scope=None, infinity_alert=True,
                     alert_interval=None, alert_pending=None):
         with tempfile.TemporaryDirectory() as directory:
@@ -111,8 +63,7 @@ class BicepDeploymentTests(unittest.TestCase):
                 "TEST_BUNDLE": str(bundle),
                 "TEST_LOG": str(log),
                 "TEST_WHAT_IF": str(what_if).lower(),
-                "TEST_COST_DASHBOARD": str(cost_dashboard).lower(),
-                "TEST_FAIL_FUNCTION": str(fail_function).lower(),
+                "TEST_BUSINESS_OVERVIEW": str(business_overview).lower(),
                 "TEST_COST_EXPORT": str(cost_export).lower(),
                 "TEST_COST_EXPORT_URI": cost_export_uri or "",
                 "TEST_COST_INFINITY": str(cost_infinity).lower(),
@@ -135,29 +86,18 @@ class BicepDeploymentTests(unittest.TestCase):
             calls = json.loads(log.read_text(encoding="utf-8-sig"))
             return result, calls
 
-    def test_cost_pacing_boundary_and_cross_subscription_validation(self):
-        at_limit = parameters()
-        at_limit["monitoredAccounts"]["value"] = [
-            {**ACCOUNT, "name": f"account-{index}"} for index in range(14)
-        ]
-        result, _ = self.run_harness("validate", at_limit)
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-        over_limit = copy.deepcopy(at_limit)
-        over_limit["monitoredAccounts"]["value"].append({**ACCOUNT, "name": "account-14"})
-        result, _ = self.run_harness("validate", over_limit)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("more than 30 minutes", result.stderr)
-
+    def test_budget_requires_accounts_in_the_monitoring_subscription(self):
         cross = parameters()
         cross["monitoredAccounts"]["value"][0]["subscriptionId"] = OTHER_SUBSCRIPTION
         result, _ = self.run_harness("validate", cross)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        cross["monthlyAiCostBudgetAmount"]["value"] = 100
+        cross["costBudgetStartDate"] = {"value": "2026-11-01T00:00:00Z"}
+        cross["costBudgetEndDate"] = {"value": "2027-11-01T00:00:00Z"}
+        result, _ = self.run_harness("validate", cross)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("monitoring subscription", result.stderr)
-
-        cross["enableCostPipeline"]["value"] = False
-        result, _ = self.run_harness("validate", cross)
-        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_cost_export_requires_a_real_deployer_object_id(self):
         missing = parameters()
@@ -193,28 +133,16 @@ class BicepDeploymentTests(unittest.TestCase):
         invalid_prefix = parameters()
         invalid_prefix["namePrefix"] = {"value": "Invalid-Prefix"}
         cases.append((invalid_prefix, "namePrefix must"))
-        invalid_scope = parameters()
-        invalid_scope["costQueryScope"] = {"value": "invalid"}
-        cases.append((invalid_scope, "costQueryScope must"))
         for values, expected in cases:
             with self.subTest(expected=expected):
                 result, _ = self.run_harness("validate", values)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(expected, result.stderr)
 
-    def test_resource_group_cost_scope_is_accepted_by_deployment_validation(self):
-        for mode in ("resourceGroup", "resourceGroupManaged"):
-            with self.subTest(mode=mode):
-                scoped = parameters()
-                scoped["costQueryScope"] = {"value": mode}
-                result, _ = self.run_harness("validate", scoped)
-                self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_account_group_names_cannot_escape_managed_cost_scope(self):
+    def test_account_resource_group_names_cannot_contain_path_traversal(self):
         for group in (".", "..", "foundry%2fother", "foundry?other", "foundry#other", "foundry\\other", "foundry/other", "foundry\x01other"):
             with self.subTest(group=group):
                 scoped = parameters()
-                scoped["costQueryScope"] = {"value": "resourceGroupManaged"}
                 scoped["monitoredAccounts"]["value"][0]["resourceGroup"] = group
                 result, _ = self.run_harness("validate", scoped)
                 self.assertNotEqual(result.returncode, 0)
@@ -225,12 +153,15 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(all(call["maximumRedirection"] == 0 for call in calls["http"]))
         posts = [call for call in calls["http"] if call["method"] == "Post"]
-        self.assertEqual(len(posts), 6)
+        self.assertEqual(len(posts), 5)
         source = posts[0]["body"]
         self.assertEqual(source["jsonData"]["azureAuthType"], "msi")
         self.assertEqual(source["jsonData"]["subscriptionId"], SUBSCRIPTION)
         dashboards = {call["body"]["dashboard"]["uid"]: call["body"] for call in posts[1:]}
-        self.assertEqual(len(dashboards), 5)
+        self.assertEqual(
+            set(dashboards),
+            {"foundry-overview", "foundry-agent-operations", "azure-openai-ptu", "azure-ai-business-overview"},
+        )
         available_uids = set(dashboards)
         for body in dashboards.values():
             for link in body["dashboard"].get("links", []):
@@ -240,17 +171,15 @@ class BicepDeploymentTests(unittest.TestCase):
             self.assertIn("managed-by-azure-ai-observability-bicep", body["dashboard"]["tags"])
             self.assertNotIn("${DS_AZURE_MONITOR}", json.dumps(body))
         agent_vars = dashboards["foundry-agent-operations"]["dashboard"]["templating"]["list"]
-        cost_vars = dashboards["azure-ai-costs"]["dashboard"]["templating"]["list"]
         business_vars = dashboards["azure-ai-business-overview"]["dashboard"]["templating"]["list"]
         self.assertIn("/resourceGroups/agents/", agent_vars[0]["current"]["value"])
-        self.assertIn("/resourceGroups/monitoring/", cost_vars[0]["current"]["value"])
         business_defaults = {item["name"]: item["current"]["value"] for item in business_vars}
-        self.assertIn("/resourceGroups/monitoring/", business_defaults["monitoringWorkspaceResourceId"])
+        self.assertNotIn("monitoringWorkspaceResourceId", business_defaults)
         self.assertEqual(business_defaults["ptuAccount"], "foundry-account")
         self.assertEqual(business_defaults["ptuDeployment"], "ptu-one")
 
-    def test_grafana_omits_links_to_optional_cost_dashboards_when_disabled(self):
-        result, calls = self.run_harness("grafana", cost_dashboard=False)
+    def test_grafana_omits_the_business_overview_unless_enabled(self):
+        result, calls = self.run_harness("grafana", business_overview=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         posts = [call for call in calls["http"] if call["method"] == "Post"]
         dashboards = {call["body"]["dashboard"]["uid"]: call["body"]["dashboard"] for call in posts[1:]}
@@ -279,7 +208,7 @@ class BicepDeploymentTests(unittest.TestCase):
             call["body"]["dashboard"]["uid"]: call["body"]
             for call in posts if call["path"] == "/api/dashboards/db"
         }
-        self.assertEqual(len(dashboards), 6)
+        self.assertEqual(len(dashboards), 5)
         native = dashboards["azure-ai-costs-native"]
         self.assertNotIn("${DS_AZURE_DATA_EXPLORER}", json.dumps(native))
         self.assertIn("ai-observability-azure-data-explorer", json.dumps(native))
@@ -370,7 +299,6 @@ class BicepDeploymentTests(unittest.TestCase):
 
         cross = self.infinity_parameters("resourceGroupManaged")
         cross["monitoredAccounts"]["value"][0]["subscriptionId"] = OTHER_SUBSCRIPTION
-        cross["enableCostPipeline"]["value"] = False
         result, _ = self.run_harness("validate", cross)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("monitoring subscription", result.stderr)
@@ -403,7 +331,7 @@ class BicepDeploymentTests(unittest.TestCase):
                     call["body"]["dashboard"]["uid"]: call["body"]["dashboard"]
                     for call in posts if call["path"] == "/api/dashboards/db"
                 }
-                self.assertEqual(len(dashboards), 6)
+                self.assertEqual(len(dashboards), 5)
                 dashboard = dashboards["azure-ai-costs-infinity"]
                 self.assertNotIn("${DS_COST_INFINITY}", json.dumps(dashboard))
                 self.assertIn("ai-observability-cost-infinity", json.dumps(dashboard))
@@ -587,7 +515,6 @@ class BicepDeploymentTests(unittest.TestCase):
 
     def test_deploy_passes_the_infinity_secret_to_grafana_provisioning(self):
         values = self.infinity_parameters()
-        values["enableCostPipeline"]["value"] = False
         result, calls = self.run_harness(
             "deploy", values, cost_infinity=True, infinity_secret="parameter",
         )
@@ -612,7 +539,7 @@ class BicepDeploymentTests(unittest.TestCase):
         update = next(call for call in calls["http"] if call["method"] == "Put")
         self.assertEqual(update["body"]["version"], 7)
         dashboards = [call["body"] for call in calls["http"] if call["path"] == "/api/dashboards/db"]
-        self.assertEqual(len(dashboards), 5)
+        self.assertEqual(len(dashboards), 4)
         for body in dashboards:
             self.assertEqual(body["dashboard"]["version"], 12)
             self.assertEqual(body["dashboard"]["id"], 10)
@@ -652,33 +579,15 @@ class BicepDeploymentTests(unittest.TestCase):
                 self.assertEqual(calls["cli"], [])
                 self.assertEqual(calls["http"], [])
 
-    def test_deploy_publishes_function_and_provisions_grafana_and_cleans_temporary_files(self):
+    def test_deploy_provisions_grafana_and_cleans_temporary_files(self):
         result, calls = self.run_harness("deploy")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls["cli"][1][:3], ["deployment", "group", "create"])
-        commands = [command[:3] for command in calls["cli"]]
-        publish = commands.index(["functionapp", "deployment", "source"])
-        self.assertLess(commands.index(["account", "get-access-token", "--subscription"]), publish)
-        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
-        self.assertIn("host.json", calls["zipEntries"])
-        self.assertIn("CollectCost/function.json", [name.replace("\\", "/") for name in calls["zipEntries"]])
-        self.assertFalse(Path(calls["parameterTemp"]).exists())
-
-    def test_function_publish_failure_still_provisions_grafana(self):
-        result, calls = self.run_harness("deploy", fail_function=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 5)
-        self.assertFalse(Path(calls["parameterTemp"]).exists())
-
-    def test_deploy_without_cost_pipeline_publishes_no_function(self):
-        values = parameters()
-        values["enableCostPipeline"] = {"value": False}
-        result, calls = self.run_harness("deploy", values)
-        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(any(command[0] == "functionapp" for command in calls["cli"]))
-        self.assertEqual(calls["zipEntries"], [])
+        self.assertEqual(len([c for c in calls["http"] if c["path"] == "/api/dashboards/db"]), 4)
         self.assertFalse(Path(calls["parameterTemp"]).exists())
-    def test_what_if_performs_no_publishing_or_grafana_changes(self):
+
+    def test_what_if_performs_no_grafana_changes(self):
         result, calls = self.run_harness("deploy", what_if=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(calls["cli"][1][:3], ["deployment", "group", "what-if"])
@@ -709,44 +618,33 @@ class BicepTemplateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         template = json.loads(result.stdout)
         self.assertEqual(template["parameters"]["grafanaMajorVersion"]["defaultValue"], "12")
-        self.assertEqual(template["parameters"]["costQueryScope"]["defaultValue"], "subscription")
-        self.assertNotIn("costCollectorMode", template["parameters"])
-        self.assertNotIn("costGithubOidcSubject", template["parameters"])
-        self.assertNotIn("costCollectorConfiguration", template["outputs"])
-        self.assertEqual(
-            template["parameters"]["costQueryScope"]["allowedValues"],
-            ["subscription", "resourceGroup", "resourceGroupManaged"],
-        )
-        self.assertIn("costIdentityPrincipalId", template["outputs"])
+        for removed in ("costQueryScope", "costLookbackDays", "enableCostPipeline",
+                        "costCollectorMode", "costGithubOidcSubject"):
+            self.assertNotIn(removed, template["parameters"])
+        for removed in ("costIdentityPrincipalId", "costFunctionName", "costCollectorConfiguration"):
+            self.assertNotIn(removed, template["outputs"])
+        self.assertIn("enableBusinessOverview", template["parameters"])
+        self.assertIs(template["parameters"]["enableBusinessOverview"]["defaultValue"], False)
         resources = resources_of(template)
         self.assertTrue(any(r["type"].lower() == "microsoft.insights/scheduledqueryrules" for r in resources))
+        self.assertFalse(any(r["type"].lower().startswith("microsoft.web/") for r in resources))
         nested = [r["properties"]["template"] for r in resources
                   if r["type"].lower() == "microsoft.resources/deployments"]
-        cost_template = next(t for t in nested if any(
-            r["type"].lower() == "microsoft.web/sites" for r in resources_of(t)
-        ))
-        cost_deployment = next(r for r in resources
-                               if r["type"].lower() == "microsoft.resources/deployments"
-                               and r["properties"]["template"] == cost_template)
-        self.assertEqual(
-            cost_deployment["properties"]["parameters"]["costQueryScope"],
-            "[if(equals(parameters('costQueryScope'), 'resourceGroupManaged'), createObject('value', 'resourceGroup'), createObject('value', parameters('costQueryScope')))]",
-        )
+        for template_resources in (resources_of(t) for t in nested):
+            self.assertFalse(any(r["type"].lower().startswith("microsoft.web/") for r in template_resources))
         cost_reader = next(r for r in resources
                            if r["type"].lower() == "microsoft.resources/deployments"
-                           and "-cost-reader" in r["name"])
-        self.assertEqual(
-            cost_reader["condition"],
-            "[and(parameters('enableCostPipeline'), equals(parameters('costQueryScope'), 'subscription'))]",
-        )
+                           and "-cost-infinity-reader" in r["name"])
+        self.assertIn("enableCostInfinity", cost_reader["condition"])
+        self.assertIn("'subscription'", cost_reader["condition"])
         self.assertEqual(cost_reader["subscriptionId"], "[subscription().subscriptionId]")
         self.assertEqual(
             cost_reader["properties"]["parameters"]["principalId"]["value"],
-            "[reference('cost').outputs.principalId.value]",
+            "[parameters('costInfinityServicePrincipalObjectId')]",
         )
         cost_group_reader = next(r for r in resources
                                  if r["type"].lower() == "microsoft.resources/deployments"
-                                 and "-cost-rg-" in r["name"])
+                                 and "-cost-infinity-rg-" in r["name"])
         self.assertEqual(cost_group_reader["copy"]["count"], "[length(variables('costAccountGroups'))]")
         self.assertEqual(
             template["variables"]["costAccountGroups"],
@@ -757,7 +655,7 @@ class BicepTemplateTests(unittest.TestCase):
         self.assertIn("subscriptionId", subscription_guard)
         self.assertEqual(
             cost_group_reader["properties"]["parameters"]["principalId"]["value"],
-            "[reference('cost').outputs.principalId.value]",
+            "[parameters('costInfinityServicePrincipalObjectId')]",
         )
         group_template = cost_group_reader["properties"]["template"]
         self.assertEqual(group_template["parameters"]["scopeIsValid"]["allowedValues"], [True])
@@ -788,15 +686,6 @@ class BicepTemplateTests(unittest.TestCase):
         self.assertEqual(group_assignment["properties"]["principalId"], "[parameters('principalId')]")
         self.assertEqual(group_assignment["properties"]["principalType"], "ServicePrincipal")
         self.assertEqual(group_assignment["properties"]["roleDefinitionId"], "[parameters('roleDefinitionId')]")
-        cost_resources = resources_of(cost_template)
-        app = next(r for r in cost_resources if r["type"].lower() == "microsoft.web/sites")
-        config = app["properties"]["functionAppConfig"]
-        self.assertEqual(config["runtime"], {"name": "powershell", "version": "7.6"})
-        self.assertEqual(config["scaleAndConcurrency"]["maximumInstanceCount"], 40)
-        self.assertEqual(config["deployment"]["storage"]["authentication"]["type"], "UserAssignedIdentity")
-        app_settings = next(r for r in cost_resources if r["type"].lower() == "microsoft.web/sites/config")
-        self.assertEqual(app_settings["properties"]["COST_QUERY_SCOPE"], "[parameters('costQueryScope')]")
-        self.assertTrue(any(r["type"].lower() == "microsoft.operationalinsights/workspaces/tables" for r in cost_resources))
         budget_template = next(t for t in nested if any(
             r["type"].lower() == "microsoft.consumption/budgets" for r in resources_of(t)
         ))

@@ -71,8 +71,6 @@ try {
         throw 'Azure deployment did not return the required Grafana endpoint and dashboard configuration.'
     }
 
-    # Provision Grafana first: the dashboards and managed-identity data sources do not depend on the
-    # optional cost Function, so a Function publishing failure must not leave Grafana unconfigured.
     $provisionArguments = @{
         Endpoint = $outputs.grafanaEndpoint.value
         SubscriptionId = $SubscriptionId
@@ -82,27 +80,6 @@ try {
         $provisionArguments['CostInfinityClientSecret'] = $CostInfinityClientSecret
     }
     & (Join-Path $PSScriptRoot 'provision_grafana.ps1') @provisionArguments
-
-    $costEnabled = [bool](Get-BicepParameter $compiledParameters.parameters 'enableCostPipeline' $false)
-    if ($costEnabled) {
-        $functionName = [string]$outputs.costFunctionName.value
-        if ([string]::IsNullOrWhiteSpace($functionName)) {
-            throw 'Azure deployment did not return the cost Function name.'
-        }
-        $package = [IO.Path]::Combine([IO.Path]::GetTempPath(), "ai-cost-$([guid]::NewGuid().ToString('N')).zip")
-        try {
-            $functionDirectory = Join-Path $root 'function' 'cost-collector'
-            Compress-Archive -Path (Join-Path $functionDirectory '*') -DestinationPath $package
-            & (Join-Path $PSScriptRoot 'deploy_cost_function.ps1') `
-                -ResourceGroup $ResourceGroup -FunctionName $functionName `
-                -SubscriptionId $SubscriptionId -Package $package
-        }
-        finally {
-            if (Test-Path -LiteralPath $package -PathType Leaf) {
-                Remove-Item -LiteralPath $package
-            }
-        }
-    }
 
     Write-Host "Azure resources and Grafana dashboards deployed. Grafana: $($outputs.grafanaEndpoint.value)"
 }

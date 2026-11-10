@@ -251,5 +251,5 @@
       "pluginName": "Azure Data Explorer"
     }
   ],
-  "description": "Actual cost of Azure AI resources from a Cost Management export read by Azure Data Explorer, with no collector Function. The export covers one subscription and begins at deployment. No data can mean the export has not run yet, not zero cost."
+  "description": "Actual cost of Azure AI resources from a Cost Management export read by Azure Data Explorer. The export covers one subscription and begins at deployment. No data can mean the export has not run yet, not zero cost."
 }

@@ -11,7 +11,6 @@ DEMO_DS = {"type": "grafana-testdata-datasource", "uid": "ai-demo-data"}
 DEMO_DASHBOARD_UIDS = {
     "demo-foundry-agent-operations",
     "demo-azure-openai-ptu",
-    "demo-azure-ai-costs",
     "demo-azure-ai-business-overview",
 }
 
@@ -83,50 +82,17 @@ AGENT_DATA = {
     8: "DependencyType,Dependency,ObservedCalls,FailedCalls,P95_ms\nHTTP,search.example.invalid,120,2,340\nHTTP,storage.example.invalid,86,1,210\n",
 }
 
-COST_ACTUAL = [
-    112.50, 119.20, 116.30, 124.00, 127.40, 121.80, 132.10, 136.20, 139.50, 130.80,
-    135.10, 141.20, 133.40, 128.60, 137.20, 131.30, 125.90, 129.40, 127.80, 126.10,
-]
-COST_AMORTIZED = [
-    90.50, 95.20, 93.30, 99.00, 102.40, 97.80, 106.10, 110.20, 113.50, 105.80,
-    109.10, 115.20, 107.40, 103.60, 111.20, 106.30, 100.90, 104.40, 102.80, 101.10,
-]
-actual_total = round(sum(COST_ACTUAL), 2)
-amortized_total = round(sum(COST_AMORTIZED), 2)
-actual_first = round(actual_total * 0.6, 2)
-amortized_first = round(amortized_total * 0.6, 2)
-COST_DATA = {
-    2: (
-        "Status,Coverage,LastCollectedUTC,HistoryFromUTC,HistoryThroughUTC,ReportedRows\n"
-        "Current,Within history,2026-10-31 06:00,"
-        "2026-08-03,2026-10-31,360\n"
-    ),
-    3: f"Currency,Amount\nUSD,{actual_total:.2f}\n",
-    4: f"Currency,Amount\nUSD,{amortized_total:.2f}\n",
-    5: [("Actual - USD", COST_ACTUAL)],
-    6: [("Amortized - USD", COST_AMORTIZED)],
-    7: (
-        "Account,CostType,Currency,Amount,ResourceId\n"
-        f"foundry-prod,ActualCost,USD,{actual_first:.2f},/subscriptions/demo/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/foundry-prod\n"
-        f"foundry-prod,AmortizedCost,USD,{amortized_first:.2f},/subscriptions/demo/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/foundry-prod\n"
-        f"openai-prod,ActualCost,USD,{actual_total - actual_first:.2f},/subscriptions/demo/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/openai-prod\n"
-        f"openai-prod,AmortizedCost,USD,{amortized_total - amortized_first:.2f},/subscriptions/demo/resourceGroups/ai/providers/Microsoft.CognitiveServices/accounts/openai-prod\n"
-    ),
-}
 BUSINESS_DATA = {
-    1: COST_DATA[2],
-    2: COST_DATA[3],
-    3: AGENT_DATA[2][:1],
-    4: PTU_DATA[1],
-    5: COST_DATA[5],
-    6: AGENT_DATA[1],
-    7: PTU_DATA[3],
-    8: PTU_DATA[4],
-    9: [("FailureRatePercent", [
+    1: AGENT_DATA[2][:1],
+    2: PTU_DATA[1],
+    3: AGENT_DATA[1],
+    4: PTU_DATA[3],
+    5: PTU_DATA[4],
+    6: [("FailureRatePercent", [
         round(100 * failed / observed, 2)
         for failed, observed in zip(AGENT_DATA[2][1][1], AGENT_RUN_COUNTS, strict=True)
     ])],
-    10: [
+    7: [
         ("Input tokens", PTU_DATA[5][0][1]),
         ("Output tokens", PTU_DATA[6][0][1]),
     ],
@@ -185,7 +151,6 @@ def build():
     return {
         "foundry-agents-demo.json": demo_dashboard(real["foundry-agents.json"], AGENT_DATA),
         "openai-ptu-demo.json": demo_dashboard(real["openai-ptu.json"], PTU_DATA),
-        "azure-ai-costs-demo.json": demo_dashboard(real["azure-ai-costs.json"], COST_DATA),
         "business-overview-demo.json": demo_dashboard(real["business-overview.json"], BUSINESS_DATA),
     }
 

@@ -126,33 +126,19 @@ function Test-BicepDeploymentParameters {
         }
     }
 
-    $enableCost = [bool](Get-BicepParameter $Parameters 'enableCostPipeline' $false)
     $budget = [int](Get-BicepParameter $Parameters 'monthlyAiCostBudgetAmount' 0)
-    $lookback = [int](Get-BicepParameter $Parameters 'costLookbackDays' 90)
-    $costScope = [string](Get-BicepParameter $Parameters 'costQueryScope' 'subscription')
-    if ($costScope -cnotin @('subscription', 'resourceGroup', 'resourceGroupManaged')) {
-        throw 'costQueryScope must be subscription, resourceGroup, or resourceGroupManaged.'
-    }
-    if ($lookback -lt 31 -or $lookback -gt 366) {
-        throw 'costLookbackDays must be between 31 and 366.'
-    }
     if ($budget -lt 0) {
         throw 'monthlyAiCostBudgetAmount cannot be negative.'
     }
-    if ($enableCost -or $budget -gt 0) {
+    if ($budget -gt 0) {
         if ($accounts.Count -eq 0) {
-            throw 'Configure at least one monitored account before enabling cost collection or the budget.'
+            throw 'Configure at least one monitored account before enabling the budget.'
         }
         foreach ($target in $accounts) {
             if ($target.subscriptionId -ine $SubscriptionId) {
-                throw 'Cost collection and the account budget require all monitored accounts to be in the monitoring subscription. Deploy separate stacks for other subscriptions.'
+                throw 'The account budget requires all monitored accounts to be in the monitoring subscription. Deploy separate stacks for other subscriptions.'
             }
         }
-    }
-    if ($enableCost -and ($accounts.Count * [Math]::Ceiling($lookback / 27.0) * 2 * 16) -gt 1800) {
-        throw 'The account count and lookback require more than 30 minutes of minimum API pacing. Reduce either or split the deployment.'
-    }
-    if ($budget -gt 0) {
         $startText = [string](Get-BicepParameter $Parameters 'costBudgetStartDate' '')
         $endText = [string](Get-BicepParameter $Parameters 'costBudgetEndDate' '')
         $start = [datetime]::MinValue

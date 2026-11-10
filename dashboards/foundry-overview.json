@@ -308,7 +308,7 @@
       "id": 5,
       "title": "Estimated pay-as-you-go token cost by model (list price, not billed)",
       "type": "table",
-      "description": "An estimate, not billed cost. Tokens in the selected time range (Azure Monitor InputTokens and OutputTokens for every model on the selected account) multiplied by the Global Standard list prices in queries/model-prices.kql. Input tokens are priced as uncached, so a workload with heavy prompt caching is overstated. Batch, Flex, Priority, regional and data-zone pricing, hosted-agent compute, PTU hourly charges and tax are not covered; tokens served by a PTU deployment are priced as if pay-as-you-go. A model missing from the price table shows 'no list price' and is left out of the cost total in the footer (its tokens are still counted). Costs are rounded to cents. Use the cost collector and the Costs dashboard for billed cost.",
+      "description": "An estimate, not billed cost. Tokens in the selected time range (Azure Monitor InputTokens and OutputTokens for every model on the selected account) multiplied by the Global Standard list prices in queries/model-prices.kql. Input tokens are priced as uncached, so a workload with heavy prompt caching is overstated. Batch, Flex, Priority, regional and data-zone pricing, hosted-agent compute, PTU hourly charges and tax are not covered; tokens served by a PTU deployment are priced as if pay-as-you-go. A model missing from the price table shows 'no list price' and is left out of the cost total in the footer (its tokens are still counted). Costs are rounded to cents. Use Azure Cost Management, or the optional cost dashboards, for billed cost.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"

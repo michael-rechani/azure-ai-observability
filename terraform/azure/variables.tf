@@ -275,34 +275,8 @@ variable "cost_budget_threshold_percent" {
   }
 }
 
-variable "enable_cost_pipeline" {
-  description = "Deploy the optional billed-cost pipeline: a Log Analytics table, a data collection endpoint and rule, and an in-Azure Function that writes daily snapshots with a managed identity. Managed Grafana's identity cannot read Cost Management, so this is the only part that needs a collector."
-  type        = bool
-  default     = false
-}
-
-variable "cost_query_scope" {
-  description = "Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles)."
-  type        = string
-  default     = "subscription"
-  validation {
-    condition     = contains(["subscription", "resourceGroup", "resourceGroupManaged"], var.cost_query_scope)
-    error_message = "cost_query_scope must be subscription, resourceGroup, or resourceGroupManaged."
-  }
-}
-
-variable "cost_lookback_days" {
-  description = "Rolling daily cost history to refresh. Older corrections are not collected automatically."
-  type        = number
-  default     = 90
-  validation {
-    condition     = var.cost_lookback_days >= 31 && var.cost_lookback_days <= 366 && floor(var.cost_lookback_days) == var.cost_lookback_days
-    error_message = "cost_lookback_days must be an integer between 31 and 366."
-  }
-}
-
 variable "enable_cost_export" {
-  description = "Deploy the Function-free cost path: Cost Management exports into private storage, read by an Azure Data Explorer cluster through its managed identity, queried by Managed Grafana through its managed identity. The cluster is a standing cost. The subscription must have the Microsoft.CostManagementExports resource provider registered."
+  description = "Deploy the cost export path: Cost Management exports into private storage, read by an Azure Data Explorer cluster through its managed identity, queried by Managed Grafana through its managed identity. The cluster is a standing cost. The subscription must have the Microsoft.CostManagementExports resource provider registered."
   type        = bool
   default     = false
 }
@@ -344,7 +318,7 @@ variable "cost_export_grafana_access" {
 }
 
 variable "enable_cost_infinity" {
-  description = "Opt in to direct Cost Management queries through the Grafana Infinity plugin: installs the plugin and grants cost query access to a service principal that you create. Adds no cluster, Function or storage, but is NOT secretless: Infinity signs in with that principal's client secret, which you rotate and supply only to the Grafana stage."
+  description = "Opt in to direct Cost Management queries through the Grafana Infinity plugin: installs the plugin and grants cost query access to a service principal that you create. Adds no cluster or storage, but is NOT secretless: Infinity signs in with that principal's client secret, which you rotate and supply only to the Grafana stage."
   type        = bool
   default     = false
 }

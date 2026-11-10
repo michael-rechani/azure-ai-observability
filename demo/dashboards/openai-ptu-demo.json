@@ -844,15 +844,6 @@
       "keepTime": true,
       "includeVars": false,
       "targetBlank": false
-    },
-    {
-      "type": "link",
-      "title": "Cost details",
-      "url": "/d/demo-azure-ai-costs/_",
-      "icon": "external link alt",
-      "keepTime": true,
-      "includeVars": false,
-      "targetBlank": false
     }
   ],
   "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
