@@ -128,7 +128,7 @@ terraform -chdir=terraform\azure output -raw cost_infinity_scope
 
 Set `enable_cost_infinity_dashboard = true`, `cost_infinity_tenant_id`, `cost_infinity_client_id` and (optionally) `cost_infinity_scope` in the Grafana stage's `local.tfvars`. Terraform then creates the Infinity data source (uid `ai-observability-cost-infinity`, client-credentials OAuth, the secret held only in the data source's secure data) and the `azure-ai-costs-infinity` dashboard. A missing tenant ID, client ID or secret fails the plan.
 
-**This path passes `terraform validate` and mock-provider tests but has not been applied live**, including the `azapi` plugin installation. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
+**This path has been applied live** in a throwaway deployment, with both stages applied, re-planned with no changes, and destroyed (see [what has been validated](costs.md#what-has-been-validated-1)). The `azapi` resource installed the Infinity plugin, the single-action role limited queries to the monitored resource group, and all four panels returned HTTP 200 through Grafana. Rotating the secret changed the data source in place. The monitored group had no billed Azure AI cost, so no panel returned rows in that run. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
 
 From the repository root in PowerShell:
 
