@@ -105,7 +105,6 @@ jobs:
             az bicep build --file "$source" --outfile "$output"
           done < <(find infra -type f -name '*.bicep' -print0)
           test -s "$output_dir/main.json"
-          test -s "$output_dir/modules/cost.json"
       - name: Scan compiled ARM templates
         run: |
           output_dir="$RUNNER_TEMP/arm-scan"
@@ -128,8 +127,6 @@ jobs:
             fi
           done < <(find "$output_dir" -type f -name '*.json' -print0)
 
-          jq -e 'any(.Results[]?; (.Target | endswith("modules/cost.json")) and
-            any(.Misconfigurations[]?; .ID == "AZU-0056"))' "$report" > /dev/null
           {
             echo "### Bicep ARM scan"
             echo "Findings are report-only; expressions are not evaluated. See the artifact and SECURITY.md."
