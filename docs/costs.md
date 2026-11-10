@@ -160,7 +160,7 @@ az role assignment delete --assignee <sp-object-id>       # then delete the AI O
 az ad app delete --id <app-id>                            # also removes the service principal and its secrets
 ```
 
-Delete the Infinity data source and dashboard in Grafana if you no longer want them.
+Delete the Infinity data source and dashboard in Grafana if you no longer want them. Delete the **Infinity cost data source** alert rule group (folder **AI observability alerts**, under **Alerting**) first or at the same time: once the data source or the service principal is gone the rule's query fails, and the rule fires on every evaluation until it is removed. With Terraform the rule group is destroyed together with the data source.
 
 ### Things to know before you enable it
 
