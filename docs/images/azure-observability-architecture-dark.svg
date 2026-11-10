@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2207" viewBox="0 0 1800 2207" role="img" aria-labelledby="title description" style="max-width:100%;height:auto">
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1942" viewBox="0 0 1800 1942" role="img" aria-labelledby="title description" style="max-width:100%;height:auto">
   <title id="title">Azure AI Observatory architecture at a glance</title>
-  <desc id="description">A logical Azure architecture with five numbered flows. Existing Foundry agents and applications use app-configured OpenTelemetry instrumentation and an exporter to send traces to Application Insights and Log Analytics. Evaluation events are optional. No OpenTelemetry Collector is deployed. Azure OpenAI and PTU metrics come directly from Azure Monitor. Azure Resource Graph supplies RBAC-filtered inventory of accounts, projects and ML workspaces. Azure Managed Grafana queries these sources using its managed identity. Billed cost is optional, and none of three independent cost paths is deployed by default. Option 4a is a scheduled collector that reads account-attributed costs from Cost Management and sends actual and amortized snapshots through a data collection endpoint and rule to the monitoring workspace. The collector is an Azure Function in the subscription that uses a user-assigned managed identity with no client secret. Option 4c needs no Function and no secret: Cost Management exports files to a private storage account, and an Azure Data Explorer cluster reads them with its managed identity for Grafana to query. Option 4b lets the Grafana Infinity data source query the Cost Management Query API live, using a service principal and a client secret stored in Grafana, so it is not secretless and copies nothing to Log Analytics. Azure Monitor alerts and an optional account-filtered budget notify an action group. An optional Grafana-managed alert rule fires when the Infinity data source cannot query Cost Management, for example because its secret failed. It notifies a Grafana contact point that the user creates, not the action group, and it is not an advance expiry warning. Terraform or Bicep deploys the observability resources; existing AI accounts are not created or resized. The tenant outline is logical, not a network boundary or live resource inventory.</desc>
+  <desc id="description">A logical Azure architecture with five numbered flows. Existing Foundry agents and applications use app-configured OpenTelemetry instrumentation and an exporter to send traces to Application Insights and Log Analytics. Evaluation events are optional. No OpenTelemetry Collector is deployed. Azure OpenAI and PTU metrics come directly from Azure Monitor. Azure Resource Graph supplies RBAC-filtered inventory of accounts, projects and ML workspaces. Azure Managed Grafana queries these sources using its managed identity. Billed cost is optional, and neither of two independent cost paths is deployed by default. Option 4a is a scheduled collector that reads account-attributed costs from Cost Management and sends actual and amortized snapshots through a data collection endpoint and rule to the monitoring workspace. The collector is an Azure Function in the subscription that uses a user-assigned managed identity with no client secret. Option 4b lets the Grafana Infinity data source query the Cost Management Query API live, using a service principal and a client secret stored in Grafana, so it is not secretless and copies nothing to Log Analytics. Azure Monitor alerts and an optional account-filtered budget notify an action group. An optional Grafana-managed alert rule fires when the Infinity data source cannot query Cost Management, for example because its secret failed. It notifies a Grafana contact point that the user creates, not the action group, and it is not an advance expiry warning. Terraform or Bicep deploys the observability resources; existing AI accounts are not created or resized. The tenant outline is logical, not a network boundary or live resource inventory.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4aa8ff"/></marker>
     <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#3cc3ae"/></marker>
@@ -25,10 +25,10 @@
       .divider { stroke: #344454; stroke-width: 1; }
     </style>
   </defs>
-  <rect width="1800" height="2207" fill="#0d1117"/>
+  <rect width="1800" height="1942" fill="#0d1117"/>
   <text x="42" y="52" class="title">Azure AI Observatory — architecture at a glance</text>
   <text x="42" y="86" class="subtitle">Agent telemetry, native metrics and optional costs converge in Grafana.</text>
-  <rect x="36" y="112" width="1728" height="1908" rx="16" fill="#0d1117" stroke="#6b7c8e" stroke-width="1.5" stroke-dasharray="9 6"/>
+  <rect x="36" y="112" width="1728" height="1643" rx="16" fill="#0d1117" stroke="#6b7c8e" stroke-width="1.5" stroke-dasharray="9 6"/>
   <text x="62" y="147" class="section-small">CUSTOMER AZURE TENANT • LOGICAL VIEW, NOT A NETWORK BOUNDARY</text>
   <text x="62" y="173" class="small">AI resources can span subscriptions; cost collection queries one. The starter uses public endpoints.</text>
   <rect x="54" y="194" width="310" height="570" rx="12" class="source-group"/>
@@ -100,7 +100,7 @@
   <path d="M336 688H399" class="data"/><path d="M672 688H1118" class="data"/>
 
   <!-- Grafana and access -->
-  <path d="M1120 311V1349" class="bus"/>
+  <path d="M1120 311V1012" class="bus"/>
   <path d="M1120 502H1192" class="data"/>
   <rect x="1195" y="235" width="530" height="612" rx="14" fill="#10263a" stroke="#377ba8" stroke-width="1.5"/>
   <!-- Azure icon: grafana -->
@@ -112,7 +112,7 @@
   <text x="1238" y="384" class="body">• Foundry resources and models</text>
   <text x="1238" y="416" class="body">• Agent operations</text>
   <text x="1238" y="448" class="body">• OpenAI PTU performance</text>
-  <text x="1238" y="487" class="body">• AI costs <tspan class="small">(optional: collector, export or Infinity)</tspan></text>
+  <text x="1238" y="487" class="body">• AI costs <tspan class="small">(optional: collector or Infinity)</tspan></text>
   <text x="1238" y="519" class="body">• Business overview <tspan class="small">(optional)</tspan></text>
   <text x="1238" y="562" class="small">Business overview needs collector data.</text>
   <rect x="1218" y="624" width="484" height="96" rx="10" fill="#111c28" stroke="#526476" stroke-width="1.5"/>
@@ -186,42 +186,6 @@
   <text x="1229" y="1124" class="body">Client secret stored in Grafana; rotate it.</text>
   <text x="1229" y="1146" class="small">Live query; nothing is copied to Log Analytics.</text>
 
-  <!-- 4c: cost export to Azure Data Explorer -->
-  <rect x="54" y="1192" width="1028" height="250" rx="12" fill="#191812" stroke="#b79532" stroke-width="1.5" stroke-dasharray="7 5"/>
-  <circle cx="79" cy="1225" r="15" fill="#1683d8"/><text x="79" y="1231" class="num">4c</text>
-  <text x="105" y="1232" class="section">Optional cost export to Azure Data Explorer</text>
-  <text x="106" y="1258" class="small">No Function and no secret • exported files are read by Data Explorer with its own identity</text>
-  <rect x="72" y="1286" width="262" height="126" rx="10" class="box"/>
-  <use href="#azure-icon-7-e00fef30-156c-4930-8b65-3a593543aa1d" transform="translate(0 406)"/>
-  <text x="122" y="1315" class="name" style="font-size:18px">Cost Management</text>
-  <text x="88" y="1340" class="body">Daily and monthly exports</text>
-  <text x="88" y="1364" class="body">Whole-subscription rows</text>
-  <text x="88" y="1388" class="small">Not limited to AI accounts</text>
-  <rect x="360" y="1286" width="262" height="126" rx="10" class="box"/>
-  <text x="376" y="1315" class="name" style="font-size:18px">Private storage</text>
-  <text x="376" y="1340" class="body">CSV files in containers</text>
-  <text x="376" y="1364" class="body">Trusted-service access</text>
-  <text x="376" y="1388" class="small">No shared key</text>
-  <rect x="648" y="1286" width="406" height="126" rx="10" class="box"/>
-  <text x="664" y="1315" class="name" style="font-size:18px">Azure Data Explorer</text>
-  <text x="664" y="1340" class="body">Small Dev SKU cluster, always on</text>
-  <text x="664" y="1364" class="body">External tables and AiCost()</text>
-  <text x="664" y="1388" class="small">Grafana reads it as a managed identity</text>
-  <path d="M334 1349H357" class="flow"/><path d="M622 1349H645" class="data"/>
-  <path d="M1054 1349H1120" class="data"/>
-
-  <!-- Choosing a cost path -->
-  <rect x="1195" y="1192" width="530" height="250" rx="12" class="data-group"/>
-  <text x="1215" y="1226" class="name">Choose any combination, or none</text>
-  <text x="1215" y="1250" class="small">No cost path is deployed by default.</text>
-  <text x="1215" y="1284" class="name" style="font-size:18px">Function collector (4a)</text>
-  <text x="1215" y="1306" class="small">No secret • pennies • feeds the Business overview</text>
-  <text x="1215" y="1340" class="name" style="font-size:18px">Infinity direct query (4b)</text>
-  <text x="1215" y="1362" class="small">Client secret • no standing cost • live, 31-day cap</text>
-  <text x="1215" y="1396" class="name" style="font-size:18px">Data Explorer export (4c)</text>
-  <text x="1215" y="1418" class="small">No secret • standing cluster cost • full history</text>
-
-  <g transform="translate(0 265)">
   <!-- Alerts -->
   <rect x="36" y="1227" width="1728" height="528" rx="14" fill="#111923" stroke="#526476" stroke-width="1.5"/>
   <circle cx="79" cy="1261" r="15" fill="#1683d8"/><text x="79" y="1267" class="num">5</text>
@@ -270,9 +234,8 @@
 <text x="1293" y="1655" class="body">Webhook tested; email needs SMTP</text>
 <text x="1293" y="1680" class="small">Separate from the Azure action group.</text>
 <path d="M631 1662H857" class="flow"/><path d="M1170 1662H1272" class="flow"/>
-</g>
 
-<g transform="translate(0 463)">
+<g transform="translate(0 198)">
 <path d="M50 1594H170" class="flow"/>
   <text x="188" y="1600" class="small">Telemetry writes / notifications</text>
   <path d="M480 1594H600" class="data"/>
