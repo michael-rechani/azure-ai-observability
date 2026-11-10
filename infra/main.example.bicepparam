@@ -46,19 +46,15 @@ param dashboardTelemetryWorkspaceResourceId = ''
 // Verify the telemetry schema and guaranteed traffic before enabling agent alerts.
 param enableAgentAlerts = false
 
-// Set true to deploy the cost pipeline and dashboard; all accounts must be in this subscription.
-param enableCostPipeline = false
-// Recommended when enabling costs: one query-only custom role per monitored resource group.
-// The deployer needs role-definition write/delete and role-assignment permissions.
-param costQueryScope = 'resourceGroupManaged'
-param costLookbackDays = 90
+// Set true to include the Business overview dashboard (agent and PTU signals, no cost panels) when Grafana is provisioned.
+param enableBusinessOverview = false
 
 // Optional monthly account-filtered budget, in subscription billing currency.
 param monthlyAiCostBudgetAmount = 0
 param costBudgetStartDate = ''
 param costBudgetEndDate = ''
 
-// Optional Function-free cost path: Cost Management export -> private storage -> Azure Data Explorer -> Grafana.
+// Optional secretless cost path: Cost Management export -> private storage -> Azure Data Explorer -> Grafana.
 // The ADX cluster bills continuously (roughly $95/month at retail) and the export holds the whole subscription's
 // cost rows. Register Microsoft.CostManagementExports first. See docs/costs.md.
 param enableCostExport = false
@@ -72,7 +68,7 @@ param enableCostExport = false
 // param costExportGrafanaAccess = 'privateEndpoint'
 
 // Optional cheapest billed-cost path: Grafana queries Cost Management directly through the Infinity plugin.
-// It adds no cluster, Function or storage, but it is NOT secretless: Infinity signs in with a service principal
+// It adds no cluster or storage, but it is NOT secretless: Infinity signs in with a service principal
 // client secret that you create, supply only to the provisioning step (never to this template) and rotate.
 // Create the principal with the `az ad` commands in docs/costs.md, then fill in its client ID and service principal object ID.
 // param enableCostInfinity = true

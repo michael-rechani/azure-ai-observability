@@ -101,18 +101,10 @@ param costBudgetEndDate string = ''
 @maxValue(100)
 param costBudgetThresholdPercent int = 80
 
-@description('Deploy the optional cost collector Function and its Log Analytics ingestion pipeline.')
-param enableCostPipeline bool = false
+@description('Provision the Business overview dashboard (agent and PTU signals) when Grafana is provisioned from dashboardConfiguration. It has no cost panels.')
+param enableBusinessOverview bool = false
 
-@description('Cost query and role mode: subscription, resourceGroup (separate grants), or resourceGroupManaged (create scoped custom roles).')
-@allowed(['subscription', 'resourceGroup', 'resourceGroupManaged'])
-param costQueryScope string = 'subscription'
-
-@minValue(31)
-@maxValue(366)
-param costLookbackDays int = 90
-
-@description('Deploy the native cost path: subscription Cost Management Exports to private storage, read by Azure Data Explorer, queried by Grafana over managed identities. No Function and no secrets, but it adds a standing Azure Data Explorer cluster cost.')
+@description('Deploy the native cost path: subscription Cost Management Exports to private storage, read by Azure Data Explorer, queried by Grafana over managed identities. No secrets, but it adds a standing Azure Data Explorer cluster cost.')
 param enableCostExport bool = false
 
 @description('Azure Data Explorer SKU for the cost database. The Dev SKU is the cheapest and carries no SLA.')
@@ -137,7 +129,7 @@ param costExportStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
 @description('Last scheduled export date (yyyy-MM-dd). Exports stop after this date.')
 param costExportEndDate string = dateTimeAdd(utcNow(), 'P5Y', 'yyyy-MM-dd')
 
-@description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. It needs no export, Function or cluster, but it is NOT secretless: Infinity supports only a service principal client secret, which you create, pass to the Grafana provisioning step (never to this template) and rotate.')
+@description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. It needs no export or cluster, but it is NOT secretless: Infinity supports only a service principal client secret, which you create, pass to the Grafana provisioning step (never to this template) and rotate.')
 param enableCostInfinity bool = false
 
 @description('Application (client) ID of the service principal Infinity signs in as. scripts/new_cost_infinity_principal.ps1 creates it.')
@@ -398,40 +390,6 @@ resource agentAlerts 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for 
   }
 }]
 
-module cost 'modules/cost.bicep' = if (enableCostPipeline) {
-  name: '${namePrefix}-cost'
-  params: {
-    location: location
-    namePrefix: namePrefix
-    workspaceName: workspace.name
-    insightsName: insights.name
-    accountIds: monitoredAccountIds
-    costQueryScope: costQueryScope == 'resourceGroupManaged' ? 'resourceGroup' : costQueryScope
-    lookbackDays: costLookbackDays
-    retentionInDays: retentionInDays
-  }
-}
-
-module costReader 'modules/cost-reader.bicep' = if (enableCostPipeline && costQueryScope == 'subscription') {
-  name: '${namePrefix}-cost-reader'
-  scope: subscription()
-  params: {
-    principalId: cost!.outputs.principalId
-  }
-}
-
-module costGroupReaders 'modules/cost-group-reader.bicep' = [for group in costAccountGroups: if (enableCostPipeline && costQueryScope == 'resourceGroupManaged') {
-  name: '${namePrefix}-cost-rg-${uniqueString(resourceGroup().id, namePrefix, group.name)}'
-  scope: subscription()
-  params: {
-    resourceGroupName: group.name
-    stackResourceGroupId: resourceGroup().id
-    namePrefix: namePrefix
-    principalId: cost!.outputs.principalId
-    subscriptionMatches: group.subscriptionId == toLower(subscription().subscriptionId)
-  }
-}]
-
 module costInfinityReader 'modules/cost-reader.bicep' = if (enableCostInfinity && costInfinityScope == 'subscription') {
   name: '${namePrefix}-cost-infinity-reader'
   scope: subscription()
@@ -512,8 +470,6 @@ output grafanaPrincipalId string = grafana.identity.principalId
 output workspaceResourceId string = workspace.id
 output applicationInsightsResourceId string = insights.id
 output actionGroupResourceId string = actionGroup.id
-output costFunctionName string = enableCostPipeline ? cost!.outputs.functionName : ''
-output costIdentityPrincipalId string = enableCostPipeline ? cost!.outputs.principalId : ''
 output costExportStorageAccountName string = enableCostExport ? costExport!.outputs.storageAccountName : ''
 output costExportAdxClusterName string = enableCostExport ? costExport!.outputs.clusterName : ''
 output costExportPrivateEndpointName string = enableCostExport ? costExport!.outputs.privateEndpointName : ''
@@ -522,7 +478,7 @@ output dashboardConfiguration object = {
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId
   foundryAccount: foundryDashboardAccount
   ptuAccount: ptuDashboardAccount
-  enableCostDashboard: enableCostPipeline
+  enableBusinessOverview: enableBusinessOverview
   enableCostExportDashboard: enableCostExport
   costExportClusterUri: enableCostExport ? costExport!.outputs.clusterUri : ''
   costExportDatabase: enableCostExport ? costExport!.outputs.databaseName : ''

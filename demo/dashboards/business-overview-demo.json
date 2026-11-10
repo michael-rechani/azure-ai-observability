@@ -33,97 +33,6 @@
     },
     {
       "id": 1,
-      "title": "Cost collection status",
-      "type": "table",
-      "description": "Shows whether a complete snapshot is current and covers the selected period. Missing or stale collection is not zero cost.",
-      "datasource": {
-        "type": "grafana-testdata-datasource",
-        "uid": "ai-demo-data"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-testdata-datasource",
-            "uid": "ai-demo-data"
-          },
-          "refId": "A",
-          "scenarioId": "csv_content",
-          "csvContent": "Status,Coverage,LastCollectedUTC,HistoryFromUTC,HistoryThroughUTC,ReportedRows\nCurrent,Within history,2026-10-31 06:00,2026-08-03,2026-10-31,360\n"
-        }
-      ],
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 3
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true
-      },
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "LastCollectedUTC": true,
-              "HistoryFromUTC": true,
-              "HistoryThroughUTC": true,
-              "ReportedRows": true
-            },
-            "indexByName": {
-              "Status": 0,
-              "Coverage": 1
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "title": "Actual cost by currency",
-      "type": "table",
-      "description": "Pretax account-attributed actual cost for the selected UTC period. Currencies remain separate; use the cost dashboard for amortized cost.",
-      "datasource": {
-        "type": "grafana-testdata-datasource",
-        "uid": "ai-demo-data"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-testdata-datasource",
-            "uid": "ai-demo-data"
-          },
-          "refId": "A",
-          "scenarioId": "csv_content",
-          "csvContent": "Currency,Amount\nUSD,2575.80\n"
-        }
-      ],
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 3
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true
-      }
-    },
-    {
-      "id": 3,
       "title": "Observed agent runs per interval",
       "type": "timeseries",
       "description": "Each point is a time-bucket count, not the total for the selected range. Counts are weighted for sampling when present. No data is not evidence of zero activity or healthy service.",
@@ -144,9 +53,9 @@
         }
       ],
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
+        "h": 8,
+        "w": 12,
+        "x": 0,
         "y": 3
       },
       "fieldConfig": {
@@ -200,7 +109,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 2,
       "title": "PTU utilization - average",
       "type": "timeseries",
       "description": "Azure platform metric for the configured provisioned deployment. Availability depends on the model and SKU.",
@@ -221,9 +130,9 @@
         }
       ],
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
+        "h": 8,
+        "w": 12,
+        "x": 12,
         "y": 3
       },
       "fieldConfig": {
@@ -261,68 +170,7 @@
       }
     },
     {
-      "id": 5,
-      "title": "Daily actual cost by currency",
-      "type": "timeseries",
-      "description": "Daily account-attributed actual cost. Each currency is a separate series; billing may be revised or delayed.",
-      "datasource": {
-        "type": "grafana-testdata-datasource",
-        "uid": "ai-demo-data"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-testdata-datasource",
-            "uid": "ai-demo-data"
-          },
-          "refId": "A",
-          "scenarioId": "csv_metric_values",
-          "alias": "Actual - USD",
-          "stringInput": "112.5,119.2,116.3,124.0,127.4,121.8,132.1,136.2,139.5,130.8,135.1,141.2,133.4,128.6,137.2,131.3,125.9,129.4,127.8,126.1"
-        }
-      ],
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "No data",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      }
-    },
-    {
-      "id": 6,
+      "id": 3,
       "title": "Agent run latency",
       "type": "timeseries",
       "description": "Percentiles reflect retained, instrumented spans and are not an end-to-end service-level objective.",
@@ -363,10 +211,10 @@
         }
       ],
       "gridPos": {
-        "h": 9,
+        "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 8
+        "x": 0,
+        "y": 11
       },
       "fieldConfig": {
         "defaults": {
@@ -403,7 +251,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 4,
       "title": "PTU requests by status code",
       "type": "timeseries",
       "description": "Azure platform request counts by status for the configured deployment. Counts are per time bucket, not per second.",
@@ -437,7 +285,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 17
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -474,7 +322,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 5,
       "title": "Throttled requests (429)",
       "type": "timeseries",
       "description": "Azure platform 429 request counts per time bucket, not a rate. No data can mean no matching traffic or unavailable metrics.",
@@ -498,7 +346,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 17
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -551,7 +399,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 6,
       "title": "Agent run failure rate",
       "type": "timeseries",
       "description": "Failed runs divided by runs with a known success/failure outcome, weighted by ItemCount where sampling is present. No data is not a zero failure rate; retained spans may be sampled.",
@@ -573,9 +421,9 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 17
+        "w": 12,
+        "x": 12,
+        "y": 11
       },
       "fieldConfig": {
         "defaults": {
@@ -629,7 +477,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 7,
       "title": "PTU input and output tokens",
       "type": "timeseries",
       "description": "Azure platform token counts per time bucket for the configured deployment.",
@@ -661,9 +509,9 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 25
+        "w": 8,
+        "x": 16,
+        "y": 19
       },
       "fieldConfig": {
         "defaults": {
@@ -705,17 +553,6 @@
       {
         "name": "workspaceResourceId",
         "label": "Agent telemetry workspace ARM ID",
-        "type": "textbox",
-        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
-        "current": {
-          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
-          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
-        },
-        "hide": 0
-      },
-      {
-        "name": "monitoringWorkspaceResourceId",
-        "label": "Cost data workspace ARM ID",
         "type": "textbox",
         "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
         "current": {
@@ -795,15 +632,6 @@
       "type": "link",
       "title": "PTU performance",
       "url": "/d/demo-azure-openai-ptu/_?var-subscription=${ptuSubscription:percentencode}&var-resourceGroup=${ptuResourceGroup:percentencode}&var-account=${ptuAccount:percentencode}&var-region=${ptuRegion:percentencode}&var-deployment=${ptuDeployment:percentencode}",
-      "icon": "external link alt",
-      "keepTime": true,
-      "includeVars": false,
-      "targetBlank": false
-    },
-    {
-      "type": "link",
-      "title": "Cost details",
-      "url": "/d/demo-azure-ai-costs/_?var-workspaceResourceId=${monitoringWorkspaceResourceId:percentencode}",
       "icon": "external link alt",
       "keepTime": true,
       "includeVars": false,

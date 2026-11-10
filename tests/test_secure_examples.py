@@ -7,24 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SecureExampleTests(unittest.TestCase):
-    def test_cost_examples_select_resource_group_scoped_roles(self):
-        examples = (
-            (
-                ROOT / "terraform" / "azure" / "example.tfvars.example",
-                r'(?m)^cost_query_scope\s*=\s*"resourceGroupManaged"',
-            ),
-            (
-                ROOT / "infra" / "main.example.bicepparam",
-                r"(?m)^param costQueryScope = 'resourceGroupManaged'$",
-            ),
-        )
-        for path, pattern in examples:
-            with self.subTest(path=path.name):
-                content = path.read_text(encoding="utf-8")
-                self.assertRegex(content, pattern)
-                self.assertRegex(content, r"(?m)^(?:enable_cost_pipeline|param enableCostPipeline)\s*=?\s*(?:false|= false)$")
-
-    def test_examples_configure_no_github_collector(self):
+    def test_examples_configure_no_function_collector_or_github(self):
         examples = (
             ROOT / "terraform" / "azure" / "example.tfvars.example",
             ROOT / "infra" / "main.example.bicepparam",
@@ -32,9 +15,22 @@ class SecureExampleTests(unittest.TestCase):
         for path in examples:
             with self.subTest(path=path.name):
                 content = path.read_text(encoding="utf-8").lower()
-                self.assertNotIn("github", content)
-                self.assertNotIn("collector_mode", content)
-                self.assertNotIn("collectormode", content)
+                for removed in ("github", "collector", "cost_query_scope", "costqueryscope",
+                                "enable_cost_pipeline", "enablecostpipeline", "cost_lookback_days",
+                                "costlookbackdays"):
+                    self.assertNotIn(removed, content)
+
+    def test_examples_keep_optional_cost_paths_disabled(self):
+        for path in (
+            ROOT / "terraform" / "azure" / "example.tfvars.example",
+            ROOT / "infra" / "main.example.bicepparam",
+        ):
+            with self.subTest(path=path.name):
+                content = path.read_text(encoding="utf-8")
+                self.assertNotRegex(
+                    content,
+                    r"(?m)^(?:param )?(?:enable_cost_infinity|enableCostInfinity|enable_cost_export|enableCostExport)\s*=\s*true$",
+                )
 
 
 if __name__ == "__main__":

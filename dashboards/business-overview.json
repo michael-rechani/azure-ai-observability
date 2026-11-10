@@ -17,113 +17,6 @@
   "panels": [
     {
       "id": 1,
-      "title": "Cost collection status",
-      "type": "table",
-      "description": "Shows whether a complete snapshot is current and covers the selected period. Missing or stale collection is not zero cost.",
-      "datasource": {
-        "type": "grafana-azure-monitor-datasource",
-        "uid": "${DS_AZURE_MONITOR}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-azure-monitor-datasource",
-            "uid": "${DS_AZURE_MONITOR}"
-          },
-          "queryType": "Azure Log Analytics",
-          "azureLogAnalytics": {
-            "resources": [
-              "$monitoringWorkspaceResourceId"
-            ],
-            "query": "// Shared prefix: choose only the newest fully ingested snapshot.\nlet SnapshotRecords = materialize(\n    AICostSnapshot_CL\n    | where TimeGenerated >= ago(14d)\n    | where RecordType in (\"Cost\", \"Complete\")\n);\nlet CostRows = materialize(\n    SnapshotRecords\n    | where RecordType == \"Cost\" and isnotempty(RunId) and isnotempty(RowKey)\n    | summarize arg_max(TimeGenerated, *) by RunId, RowKey\n);\nlet RowCounts = CostRows | summarize IngestedRows = count() by RunId;\nlet LatestCompleteSnapshot = materialize(\n    SnapshotRecords\n    | where RecordType == \"Complete\" and isnotempty(RunId)\n    | summarize arg_max(TimeGenerated, *) by RunId\n    | join kind=leftouter RowCounts on RunId\n    | extend IngestedRows = coalesce(IngestedRows, long(0))\n    | where ExpectedRows == IngestedRows\n    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd\n    | top 1 by SnapshotTime desc\n);\nlet LatestCostRows = CostRows\n    | where RunId in (LatestCompleteSnapshot | project RunId);\n\nprint JoinKey = 1\n| join kind=leftouter (LatestCompleteSnapshot | extend JoinKey = 1) on JoinKey\n| extend Status = case(\n    isempty(RunId), \"Missing snapshot\",\n    SnapshotTime < ago(48h), \"Stale - check logs\",\n    ExpectedRows == 0, \"No cost data\",\n    \"Current\"\n)\n| extend Coverage = case(\n    isempty(RunId), \"No collection\",\n    startofday($__timeFrom()) < WindowStart, \"Before history\",\n    startofday($__timeTo()) > startofday(WindowEnd), \"After history\",\n    \"Within history\"\n)\n| project Status, Coverage, LastCollectedUTC = SnapshotTime, HistoryFromUTC = WindowStart, HistoryThroughUTC = WindowEnd, ReportedRows = ExpectedRows\n",
-            "resultFormat": "table",
-            "timeColumn": "TimeGenerated",
-            "dashboardTime": false
-          }
-        }
-      ],
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 0
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true
-      },
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "LastCollectedUTC": true,
-              "HistoryFromUTC": true,
-              "HistoryThroughUTC": true,
-              "ReportedRows": true
-            },
-            "indexByName": {
-              "Status": 0,
-              "Coverage": 1
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "title": "Actual cost by currency",
-      "type": "table",
-      "description": "Pretax account-attributed actual cost for the selected UTC period. Currencies remain separate; use the cost dashboard for amortized cost.",
-      "datasource": {
-        "type": "grafana-azure-monitor-datasource",
-        "uid": "${DS_AZURE_MONITOR}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-azure-monitor-datasource",
-            "uid": "${DS_AZURE_MONITOR}"
-          },
-          "queryType": "Azure Log Analytics",
-          "azureLogAnalytics": {
-            "resources": [
-              "$monitoringWorkspaceResourceId"
-            ],
-            "query": "// Shared prefix: choose only the newest fully ingested snapshot.\nlet SnapshotRecords = materialize(\n    AICostSnapshot_CL\n    | where TimeGenerated >= ago(14d)\n    | where RecordType in (\"Cost\", \"Complete\")\n);\nlet CostRows = materialize(\n    SnapshotRecords\n    | where RecordType == \"Cost\" and isnotempty(RunId) and isnotempty(RowKey)\n    | summarize arg_max(TimeGenerated, *) by RunId, RowKey\n);\nlet RowCounts = CostRows | summarize IngestedRows = count() by RunId;\nlet LatestCompleteSnapshot = materialize(\n    SnapshotRecords\n    | where RecordType == \"Complete\" and isnotempty(RunId)\n    | summarize arg_max(TimeGenerated, *) by RunId\n    | join kind=leftouter RowCounts on RunId\n    | extend IngestedRows = coalesce(IngestedRows, long(0))\n    | where ExpectedRows == IngestedRows\n    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd\n    | top 1 by SnapshotTime desc\n);\nlet LatestCostRows = CostRows\n    | where RunId in (LatestCompleteSnapshot | project RunId);\n\nLatestCostRows\n| where CostType == \"ActualCost\"\n| where UsageDate >= startofday($__timeFrom()) and UsageDate < $__timeTo()\n| summarize Amount = sum(Cost) by Currency\n| order by Currency asc\n",
-            "resultFormat": "table",
-            "timeColumn": "TimeGenerated",
-            "dashboardTime": false
-          }
-        }
-      ],
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "No data"
-        },
-        "overrides": []
-      },
-      "options": {
-        "showHeader": true
-      }
-    },
-    {
-      "id": 3,
       "title": "Observed agent runs per interval",
       "type": "timeseries",
       "description": "Each point is a time-bucket count, not the total for the selected range. Counts are weighted for sampling when present. No data is not evidence of zero activity or healthy service.",
@@ -151,9 +44,9 @@
         }
       ],
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
+        "h": 8,
+        "w": 12,
+        "x": 0,
         "y": 0
       },
       "fieldConfig": {
@@ -207,7 +100,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 2,
       "title": "PTU utilization - average",
       "type": "timeseries",
       "description": "Azure platform metric for the configured provisioned deployment. Availability depends on the model and SKU.",
@@ -252,9 +145,9 @@
         }
       ],
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
+        "h": 8,
+        "w": 12,
+        "x": 12,
         "y": 0
       },
       "fieldConfig": {
@@ -292,75 +185,7 @@
       }
     },
     {
-      "id": 5,
-      "title": "Daily actual cost by currency",
-      "type": "timeseries",
-      "description": "Daily account-attributed actual cost. Each currency is a separate series; billing may be revised or delayed.",
-      "datasource": {
-        "type": "grafana-azure-monitor-datasource",
-        "uid": "${DS_AZURE_MONITOR}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-azure-monitor-datasource",
-            "uid": "${DS_AZURE_MONITOR}"
-          },
-          "queryType": "Azure Log Analytics",
-          "azureLogAnalytics": {
-            "resources": [
-              "$monitoringWorkspaceResourceId"
-            ],
-            "query": "// Shared prefix: choose only the newest fully ingested snapshot.\nlet SnapshotRecords = materialize(\n    AICostSnapshot_CL\n    | where TimeGenerated >= ago(14d)\n    | where RecordType in (\"Cost\", \"Complete\")\n);\nlet CostRows = materialize(\n    SnapshotRecords\n    | where RecordType == \"Cost\" and isnotempty(RunId) and isnotempty(RowKey)\n    | summarize arg_max(TimeGenerated, *) by RunId, RowKey\n);\nlet RowCounts = CostRows | summarize IngestedRows = count() by RunId;\nlet LatestCompleteSnapshot = materialize(\n    SnapshotRecords\n    | where RecordType == \"Complete\" and isnotempty(RunId)\n    | summarize arg_max(TimeGenerated, *) by RunId\n    | join kind=leftouter RowCounts on RunId\n    | extend IngestedRows = coalesce(IngestedRows, long(0))\n    | where ExpectedRows == IngestedRows\n    | project RunId, SnapshotTime = TimeGenerated, ExpectedRows, WindowStart, WindowEnd\n    | top 1 by SnapshotTime desc\n);\nlet LatestCostRows = CostRows\n    | where RunId in (LatestCompleteSnapshot | project RunId);\n\nLatestCostRows\n| where CostType == \"ActualCost\"\n| where UsageDate >= startofday($__timeFrom()) and UsageDate < $__timeTo()\n| summarize Amount = sum(Cost) by UsageDate, Currency\n| project TimeGenerated = UsageDate, Currency, Amount\n| order by TimeGenerated asc\n",
-            "resultFormat": "time_series",
-            "timeColumn": "TimeGenerated",
-            "dashboardTime": false
-          }
-        }
-      ],
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 0,
-        "y": 5
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "noValue": "No data",
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "showPoints": "never",
-            "spanNulls": false,
-            "axisPlacement": "auto"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "right",
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      }
-    },
-    {
-      "id": 6,
+      "id": 3,
       "title": "Agent run latency",
       "type": "timeseries",
       "description": "Percentiles reflect retained, instrumented spans and are not an end-to-end service-level objective.",
@@ -388,10 +213,10 @@
         }
       ],
       "gridPos": {
-        "h": 9,
+        "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 5
+        "x": 0,
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -428,7 +253,7 @@
       }
     },
     {
-      "id": 7,
+      "id": 4,
       "title": "PTU requests by status code",
       "type": "timeseries",
       "description": "Azure platform request counts by status for the configured deployment. Counts are per time bucket, not per second.",
@@ -483,7 +308,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 14
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -520,7 +345,7 @@
       }
     },
     {
-      "id": 8,
+      "id": 5,
       "title": "Throttled requests (429)",
       "type": "timeseries",
       "description": "Azure platform 429 request counts per time bucket, not a rate. No data can mean no matching traffic or unavailable metrics.",
@@ -575,7 +400,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 14
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -628,7 +453,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 6,
       "title": "Agent run failure rate",
       "type": "timeseries",
       "description": "Failed runs divided by runs with a known success/failure outcome, weighted by ItemCount where sampling is present. No data is not a zero failure rate; retained spans may be sampled.",
@@ -657,9 +482,9 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 14
+        "w": 12,
+        "x": 12,
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -713,7 +538,7 @@
       }
     },
     {
-      "id": 10,
+      "id": 7,
       "title": "PTU input and output tokens",
       "type": "timeseries",
       "description": "Azure platform token counts per time bucket for the configured deployment.",
@@ -793,9 +618,9 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 22
+        "w": 8,
+        "x": 16,
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -837,17 +662,6 @@
       {
         "name": "workspaceResourceId",
         "label": "Agent telemetry workspace ARM ID",
-        "type": "textbox",
-        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
-        "current": {
-          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
-          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
-        },
-        "hide": 0
-      },
-      {
-        "name": "monitoringWorkspaceResourceId",
-        "label": "Cost data workspace ARM ID",
         "type": "textbox",
         "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
         "current": {
@@ -940,16 +754,7 @@
       "keepTime": true,
       "includeVars": false,
       "targetBlank": false
-    },
-    {
-      "type": "link",
-      "title": "Cost details",
-      "url": "/d/azure-ai-costs/_?var-workspaceResourceId=${monitoringWorkspaceResourceId:percentencode}",
-      "icon": "external link alt",
-      "keepTime": true,
-      "includeVars": false,
-      "targetBlank": false
     }
   ],
-  "description": "A concise view of cost, observed agent activity, and Azure OpenAI PTU signals. It does not calculate a blended health score. Cost is optional; missing or stale data must not be interpreted as zero. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
+  "description": "A concise view of observed agent activity and Azure OpenAI PTU signals. It does not calculate a blended health score and shows no cost; use Azure Cost Management or the optional cost dashboards for billed cost. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
 }

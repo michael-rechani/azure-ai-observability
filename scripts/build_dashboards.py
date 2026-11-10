@@ -135,16 +135,6 @@ def logs(filename, table=False):
     }
 
 
-def cost_logs(filename, table=False, workspace="workspaceResourceId"):
-    target = logs(filename, table)
-    query = target["azureLogAnalytics"]
-    query["resources"] = [f"${workspace}"]
-    prefix = (ROOT / "queries" / "cost-snapshot.kql").read_text(encoding="utf-8")
-    query["query"] = prefix + "\n" + query["query"]
-    query["dashboardTime"] = False
-    return target
-
-
 def token_cost_panel(number):
     """Estimated pay-as-you-go cost: token metrics x a list-price table, joined in Grafana."""
     model_dimension = [{"dimension": "ModelName", "operator": "eq", "filters": ["*"]}]
@@ -213,8 +203,8 @@ def token_cost_panel(number):
             "pricing, hosted-agent compute, PTU hourly charges and tax are not covered; tokens served by "
             "a PTU deployment are priced as if pay-as-you-go. A model missing from the price table shows "
             "'no list price' and is left out of the cost total in the footer (its tokens are still "
-            "counted). Costs are rounded to cents. Use the cost collector and the "
-            "Costs dashboard for billed cost."
+            "counted). Costs are rounded to cents. Use Azure Cost Management, or the optional cost "
+            "dashboards, for billed cost."
         ),
     )
     item["targets"] = [input_tokens, output_tokens, prices]
@@ -364,7 +354,6 @@ def build(config):
             ("ptuRegion", "region"),
             ("ptuDeployment", "deployment"),
         )),
-        ("Cost details", "azure-ai-costs", ()),
     ))
     ptu["panels"].append(panel(
         11, "Provisioned deployments reporting utilization",
@@ -507,70 +496,8 @@ def build(config):
     for item in foundry["panels"][2:]:
         item["description"] = "OpenAI-specific metric on the selected account; not a universal metric for every Foundry model."
     foundry["panels"].append(token_cost_panel(5))
-    cost_panels = [{
-        "id": 1, "type": "text", "title": "Understand these costs",
-        "datasource": DS, "targets": [],
-        "gridPos": {"h": 5, "w": 24, "x": 0, "y": 0},
-        "fieldConfig": {"defaults": {}, "overrides": []},
-        "options": {"mode": "markdown", "content": (
-            "**Pretax account costs, not invoice or deployment totals.** "
-            "Actual and amortized are alternatives: **do not add them together**. "
-            "Billing can lag; missing data is not zero. Currencies stay separate. "
-            "Partial UTC days include the full reported day."
-        )},
-    }]
-    cost_specs = [
-        (2, "Collection status and selected-period coverage", "cost-status.kql", True,
-         "The latest fully ingested snapshot from the last 14 days. Stale means the collection is "
-         "over 48 hours old. A range outside collected history can be incomplete.",
-         {"h": 5, "w": 24, "x": 0, "y": 5}),
-        (3, "Actual cost by currency", "cost-actual-total.kql", True,
-         "Reported resource-attributed actual pretax cost for the selected UTC usage days.",
-         {"h": 5, "w": 12, "x": 0, "y": 10}),
-        (4, "Amortized cost by currency", "cost-amortized-total.kql", True,
-         "Reported resource-attributed amortized pretax cost; do not add to actual cost.",
-         {"h": 5, "w": 12, "x": 12, "y": 10}),
-        (5, "Daily actual cost", "cost-actual-trend.kql", False,
-         "Daily resource-attributed actual cost. Each currency is a separate series.",
-         {"h": 9, "w": 12, "x": 0, "y": 15}),
-        (6, "Daily amortized cost", "cost-amortized-trend.kql", False,
-         "Daily resource-attributed amortized cost. Each currency is a separate series.",
-         {"h": 9, "w": 12, "x": 12, "y": 15}),
-        (7, "Cost by AI account", "cost-accounts.kql", True,
-         "Account resource IDs remain visible so accounts with identical names are distinguishable. "
-         "Actual and amortized rows are alternatives, separated by currency.",
-         {"h": 9, "w": 24, "x": 0, "y": 24}),
-    ]
-    for number, title, filename, table, description, position in cost_specs:
-        item = panel(number, title, cost_logs(filename, table), unit="none",
-                     kind="table" if table else "timeseries",
-                     description=description)
-        item["gridPos"] = position
-        item["fieldConfig"]["defaults"]["noValue"] = "No data reported"
-        override(item, "/^Amount$/", {"decimals": 2})
-        if number == 7:
-            for field, width in (("Account", 160), ("CostType", 150), ("Currency", 110),
-                                 ("Amount", 130), ("ResourceId", 600)):
-                override(item, f"/^{field}$/", {"custom.width": width})
-        cost_panels.append(item)
-    costs = dashboard(
-        "azure-ai-costs", "Azure AI - Cost visibility",
-        [textbox("workspaceResourceId", config["workspaceResourceId"], "Cost data workspace ARM ID")],
-        cost_panels,
-        related=(
-            ("Business overview", "azure-ai-business-overview", (
-                ("monitoringWorkspaceResourceId", "workspaceResourceId"),
-            )),
-            ("PTU performance", "azure-openai-ptu", ()),
-        ),
-    )
-    costs["timezone"] = "utc"
-    costs["refresh"] = "1h"
-    costs["time"] = {"from": "now-30d", "to": "now"}
-
     business_variables = [
         textbox("workspaceResourceId", config["workspaceResourceId"], "Agent telemetry workspace ARM ID"),
-        textbox("monitoringWorkspaceResourceId", config["workspaceResourceId"], "Cost data workspace ARM ID"),
         textbox("ptuSubscription", config["subscription"]),
         textbox("ptuResourceGroup", config["ptu"]["resourceGroup"]),
         textbox("ptuAccount", config["ptu"]["account"]),
@@ -579,48 +506,27 @@ def build(config):
     ]
     business_panels = [
         panel(
-            1, "Cost collection status",
-            cost_logs("cost-status.kql", table=True, workspace="monitoringWorkspaceResourceId"),
-            unit="none", kind="table",
-            description="Shows whether a complete snapshot is current and covers the selected period. "
-            "Missing or stale collection is not zero cost.",
-        ),
-        panel(
-            2, "Actual cost by currency",
-            cost_logs("cost-actual-total.kql", table=True, workspace="monitoringWorkspaceResourceId"),
-            unit="none", kind="table",
-            description="Pretax account-attributed actual cost for the selected UTC period. "
-            "Currencies remain separate; use the cost dashboard for amortized cost.",
-        ),
-        panel(
-            3, "Observed agent runs per interval",
+            1, "Observed agent runs per interval",
             logs("agent-run-volume.kql"),
             description="Each point is a time-bucket count, not the total for the selected range. "
             "Counts are weighted for sampling when present. No data is not evidence of zero activity or healthy service.",
         ),
         panel(
-            4, "PTU utilization - average",
+            2, "PTU utilization - average",
             metric("AzureOpenAIProvisionedManagedUtilizationV2", variable_prefix="ptu"),
             unit="percent",
             description="Azure platform metric for the configured provisioned deployment. "
             "Availability depends on the model and SKU.",
         ),
         panel(
-            5, "Daily actual cost by currency",
-            cost_logs("cost-actual-trend.kql", workspace="monitoringWorkspaceResourceId"),
-            unit="none",
-            description="Daily account-attributed actual cost. Each currency is a separate series; "
-            "billing may be revised or delayed.",
-        ),
-        panel(
-            6, "Agent run latency",
+            3, "Agent run latency",
             logs("agent-latency.kql"),
             unit="ms",
             description="Percentiles reflect retained, instrumented spans and are not an end-to-end "
             "service-level objective.",
         ),
         panel(
-            7, "PTU requests by status code",
+            4, "PTU requests by status code",
             metric(
                 "AzureOpenAIRequests", "Total",
                 [
@@ -633,7 +539,7 @@ def build(config):
             "Counts are per time bucket, not per second.",
         ),
         panel(
-            8, "Throttled requests (429)",
+            5, "Throttled requests (429)",
             metric(
                 "AzureOpenAIRequests", "Total",
                 [
@@ -646,56 +552,41 @@ def build(config):
             "No data can mean no matching traffic or unavailable metrics.",
         ),
         panel(
-            9, "Agent run failure rate",
+            6, "Agent run failure rate",
             logs("agent-failure-rate.kql"),
             unit="percent",
             description="Failed runs divided by runs with a known success/failure outcome, weighted by ItemCount "
             "where sampling is present. No data is not a zero failure rate; retained spans may be sampled.",
         ),
         panel(
-            10, "PTU input and output tokens",
+            7, "PTU input and output tokens",
             metric("ProcessedPromptTokens", "Total", variable_prefix="ptu"),
             description="Azure platform token counts per time bucket for the configured deployment.",
         ),
     ]
     output_tokens = metric("GeneratedTokens", "Total", variable_prefix="ptu")
     output_tokens["refId"] = "B"
-    business_panels[9]["targets"].append(output_tokens)
+    business_panels[6]["targets"].append(output_tokens)
     business_positions = [
-        {"h": 5, "w": 6, "x": 0, "y": 0},
-        {"h": 5, "w": 6, "x": 6, "y": 0},
-        {"h": 5, "w": 6, "x": 12, "y": 0},
-        {"h": 5, "w": 6, "x": 18, "y": 0},
-        {"h": 9, "w": 12, "x": 0, "y": 5},
-        {"h": 9, "w": 12, "x": 12, "y": 5},
-        {"h": 8, "w": 8, "x": 0, "y": 14},
-        {"h": 8, "w": 8, "x": 8, "y": 14},
-        {"h": 8, "w": 8, "x": 16, "y": 14},
-        {"h": 8, "w": 24, "x": 0, "y": 22},
+        {"h": 8, "w": 12, "x": 0, "y": 0},
+        {"h": 8, "w": 12, "x": 12, "y": 0},
+        {"h": 8, "w": 12, "x": 0, "y": 8},
+        {"h": 8, "w": 8, "x": 0, "y": 16},
+        {"h": 8, "w": 8, "x": 8, "y": 16},
+        {"h": 8, "w": 12, "x": 12, "y": 8},
+        {"h": 8, "w": 8, "x": 16, "y": 16},
     ]
     for item, position in zip(business_panels, business_positions, strict=True):
         item["gridPos"] = position
-    business_panels[0]["transformations"] = [{
-        "id": "organize",
-        "options": {
-            "excludeByName": {
-                "LastCollectedUTC": True,
-                "HistoryFromUTC": True,
-                "HistoryThroughUTC": True,
-                "ReportedRows": True,
-            },
-            "indexByName": {"Status": 0, "Coverage": 1},
-        },
-    }]
     for index, field, color in (
-        (2, "ObservedRuns", "blue"),
-        (7, "429", "orange"),
-        (8, "FailureRatePercent", "red"),
+        (0, "ObservedRuns", "blue"),
+        (4, "429", "orange"),
+        (5, "FailureRatePercent", "red"),
     ):
         override(business_panels[index], f"/.*{field}.*/", {
             "color": {"mode": "fixed", "fixedColor": color},
         })
-    business_panels[8]["fieldConfig"]["defaults"]["min"] = 0
+    business_panels[5]["fieldConfig"]["defaults"]["min"] = 0
     business = dashboard(
         "azure-ai-business-overview", "Azure AI - Business overview",
         business_variables, business_panels,
@@ -708,13 +599,12 @@ def build(config):
                 ("region", "ptuRegion"),
                 ("deployment", "ptuDeployment"),
             )),
-            ("Cost details", "azure-ai-costs", (("workspaceResourceId", "monitoringWorkspaceResourceId"),)),
         ),
     )
     business["description"] = (
-        "A concise view of cost, observed agent activity, and Azure OpenAI PTU signals. "
-        "It does not calculate a blended health score. Cost is optional; missing or stale data "
-        "must not be interpreted as zero. No data can indicate no traffic, missing permissions, "
+        "A concise view of observed agent activity and Azure OpenAI PTU signals. "
+        "It does not calculate a blended health score and shows no cost; use Azure Cost Management or the "
+        "optional cost dashboards for billed cost. No data can indicate no traffic, missing permissions, "
         "unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
     )
     business["timezone"] = "utc"
@@ -776,8 +666,8 @@ def build(config):
         }],
     )
     native["description"] = (
-        "Actual cost of Azure AI resources from a Cost Management export read by Azure Data Explorer, "
-        "with no collector Function. The export covers one subscription and begins at deployment. "
+        "Actual cost of Azure AI resources from a Cost Management export read by Azure Data Explorer. "
+        "The export covers one subscription and begins at deployment. "
         "No data can mean the export has not run yet, not zero cost."
     )
     native["timezone"] = "utc"
@@ -861,7 +751,7 @@ def build(config):
     infinity["time"] = {"from": "now-30d", "to": "now"}
     return {
         "foundry-overview.json": foundry, "foundry-agents.json": agents,
-        "openai-ptu.json": ptu, "azure-ai-costs.json": costs,
+        "openai-ptu.json": ptu,
         "business-overview.json": business,
         "azure-ai-costs-native.json": native,
         "azure-ai-costs-infinity.json": infinity,

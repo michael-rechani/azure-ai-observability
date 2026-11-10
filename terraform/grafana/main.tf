@@ -61,8 +61,7 @@ locals {
     foundry_overview = "foundry-overview.json"
     foundry_agents   = "foundry-agents.json"
     openai_ptu       = "openai-ptu.json"
-    }, var.enable_cost_dashboard ? {
-    azure_ai_costs    = "azure-ai-costs.json"
+    }, var.enable_business_overview ? {
     business_overview = "business-overview.json"
     } : {}, var.enable_cost_export_dashboard ? {
     azure_ai_costs_native = "azure-ai-costs-native.json"
@@ -78,12 +77,6 @@ locals {
   telemetry_workspace = var.dashboard_defaults.telemetry_workspace_resource_id != null ? var.dashboard_defaults.telemetry_workspace_resource_id : var.dashboard_defaults.monitoring_workspace_resource_id
   telemetry_defaults = local.telemetry_workspace == null ? tomap({}) : tomap({
     workspaceResourceId = local.telemetry_workspace
-  })
-  cost_defaults = var.dashboard_defaults.monitoring_workspace_resource_id == null ? tomap({}) : tomap({
-    workspaceResourceId = var.dashboard_defaults.monitoring_workspace_resource_id
-  })
-  business_cost_defaults = var.dashboard_defaults.monitoring_workspace_resource_id == null ? tomap({}) : tomap({
-    monitoringWorkspaceResourceId = var.dashboard_defaults.monitoring_workspace_resource_id
   })
   foundry_defaults = var.dashboard_defaults.foundry_account == null ? tomap({}) : tomap({
     subscription  = var.subscription_id
@@ -110,12 +103,10 @@ locals {
     foundry_overview        = merge(local.foundry_defaults, local.telemetry_defaults)
     foundry_agents          = local.telemetry_defaults
     openai_ptu              = local.ptu_defaults
-    azure_ai_costs          = local.cost_defaults
     azure_ai_costs_native   = tomap({})
     azure_ai_costs_infinity = tomap({ costScope = var.cost_infinity_scope != null ? var.cost_infinity_scope : "/subscriptions/${var.subscription_id}" })
     business_overview = merge(
       local.telemetry_defaults,
-      local.business_cost_defaults,
       local.business_ptu_defaults,
     )
   }
@@ -157,8 +148,8 @@ resource "grafana_dashboard" "monitoring" {
 
   lifecycle {
     precondition {
-      condition     = !contains(["azure_ai_costs", "business_overview"], each.key) || var.dashboard_defaults.monitoring_workspace_resource_id != null
-      error_message = "Set dashboard_defaults.monitoring_workspace_resource_id when enabling cost dashboards."
+      condition     = each.key != "business_overview" || local.telemetry_workspace != null
+      error_message = "Set dashboard_defaults.telemetry_workspace_resource_id (or monitoring_workspace_resource_id) when enabling the Business overview dashboard."
     }
     precondition {
       condition     = each.key != "azure_ai_costs_native" || var.cost_export_cluster_uri != null

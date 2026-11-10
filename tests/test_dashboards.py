@@ -154,127 +154,73 @@ class DashboardTests(unittest.TestCase):
                 target = panel["targets"][0]
                 if target.get("queryType") == "Azure Log Analytics":
                     query = target["azureLogAnalytics"]
-                    expected_workspace = (
-                        "$monitoringWorkspaceResourceId"
-                        if dashboard["uid"] == "azure-ai-business-overview"
-                        and panel["id"] in {1, 2, 5}
-                        else "$workspaceResourceId"
-                    )
-                    self.assertEqual(query["resources"], [expected_workspace])
-                    if dashboard["uid"] == "azure-ai-costs":
-                        self.assertIn("TimeGenerated >= ago(14d)", query["query"])
-                        self.assertFalse(query["dashboardTime"])
-                    elif dashboard["uid"] == "azure-ai-business-overview" and panel["id"] in {1, 2, 5}:
-                        self.assertIn("TimeGenerated >= ago(14d)", query["query"])
-                        self.assertFalse(query["dashboardTime"])
-                    else:
-                        self.assertIn("$__timeFilter(TimeGenerated)", query["query"])
-                        self.assertTrue(query["dashboardTime"])
+                    self.assertEqual(query["resources"], ["$workspaceResourceId"])
+                    self.assertIn("$__timeFilter(TimeGenerated)", query["query"])
+                    self.assertTrue(query["dashboardTime"])
 
-    def test_cost_queries_select_only_the_latest_complete_deduplicated_snapshot(self):
-        prefix = (ROOT / "queries" / "cost-snapshot.kql").read_text()
-        self.assertIn("summarize arg_max(TimeGenerated, *) by RunId, RowKey", prefix)
-        self.assertIn("summarize IngestedRows = count() by RunId", prefix)
-        self.assertIn("ExpectedRows == IngestedRows", prefix)
-        self.assertIn("top 1 by SnapshotTime desc", prefix)
-        self.assertNotIn("dcount(", prefix)
-        panels = self.dashboards["azure-ai-costs.json"]["panels"]
-        for item in panels:
-            if item["type"] != "text":
-                query = item["targets"][0]["azureLogAnalytics"]["query"]
-                self.assertTrue(query.startswith(prefix))
-        status = panels[1]["targets"][0]["azureLogAnalytics"]["query"]
-        for state in ("Missing snapshot", "Stale - check logs", "No cost data",
-                      "Before history", "After history"):
-            self.assertIn(state, status)
-        self.assertIn("ago(48h)", status)
+    def test_removed_function_collector_leaves_no_dashboard_or_query_behind(self):
+        self.assertNotIn("azure-ai-costs.json", self.dashboards)
+        self.assertEqual(
+            {dashboard["uid"] for dashboard in self.dashboards.values()},
+            {
+                "foundry-overview", "foundry-agent-operations", "azure-openai-ptu",
+                "azure-ai-business-overview", "azure-ai-costs-native", "azure-ai-costs-infinity",
+            },
+        )
+        self.assertEqual(list((ROOT / "queries").glob("cost-*.kql")), [])
+        for dashboard in self.dashboards.values():
+            self.assertNotIn("AICostSnapshot_CL", json.dumps(dashboard))
 
     def test_business_overview_keeps_data_sources_and_meaning_separate(self):
         dashboard = self.dashboards["business-overview.json"]
         panels = dashboard["panels"]
         self.assertEqual(dashboard["time"], {"from": "now-7d", "to": "now"})
         self.assertIn("does not calculate a blended health score", dashboard["description"])
+        self.assertIn("shows no cost", dashboard["description"])
         self.assertEqual(len({item["id"] for item in panels}), len(panels))
-        self.assertEqual(panels[0]["title"], "Cost collection status")
-        self.assertIn("not zero cost", panels[0]["description"])
+        self.assertEqual(len(panels), 7)
+        self.assertEqual(panels[0]["title"], "Observed agent runs per interval")
+        self.assertIn("not the total for the selected range", panels[0]["description"])
         self.assertEqual(
-            [item["gridPos"]["w"] for item in panels],
-            [6, 6, 6, 6, 12, 12, 8, 8, 8, 24],
-        )
-        collection_fields = panels[0]["transformations"][0]["options"]
-        self.assertEqual(
-            collection_fields["indexByName"],
-            {"Status": 0, "Coverage": 1},
-        )
-        self.assertEqual(
-            collection_fields["excludeByName"],
-            {
-                "LastCollectedUTC": True,
-                "HistoryFromUTC": True,
-                "HistoryThroughUTC": True,
-                "ReportedRows": True,
-            },
-        )
-        self.assertIn("ActualCost", panels[1]["targets"][0]["azureLogAnalytics"]["query"])
-        self.assertIn("Currency", panels[1]["targets"][0]["azureLogAnalytics"]["query"])
-        self.assertEqual(panels[2]["title"], "Observed agent runs per interval")
-        self.assertIn("not the total for the selected range", panels[2]["description"])
-        self.assertEqual(
-            panels[2]["targets"][0]["azureLogAnalytics"]["query"],
+            panels[0]["targets"][0]["azureLogAnalytics"]["query"],
             (ROOT / "queries" / "agent-run-volume.kql").read_text(),
         )
         self.assertEqual(
-            panels[3]["targets"][0]["azureMonitor"]["metricName"],
+            panels[1]["targets"][0]["azureMonitor"]["metricName"],
             "AzureOpenAIProvisionedManagedUtilizationV2",
         )
         self.assertEqual(
-            panels[6]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
+            panels[3]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
             ["*"],
         )
-        self.assertEqual(panels[7]["title"], "Throttled requests (429)")
+        self.assertEqual(panels[4]["title"], "Throttled requests (429)")
         self.assertEqual(
-            panels[7]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
+            panels[4]["targets"][0]["azureMonitor"]["dimensionFilters"][1]["filters"],
             ["429"],
         )
-        self.assertEqual(panels[8]["title"], "Agent run failure rate")
-        self.assertIn("known success/failure outcome", panels[8]["description"])
-        self.assertEqual(panels[8]["fieldConfig"]["defaults"]["unit"], "percent")
-        self.assertEqual(panels[8]["fieldConfig"]["defaults"]["min"], 0)
-        self.assertNotIn("max", panels[8]["fieldConfig"]["defaults"])
-        failure_query = panels[8]["targets"][0]["azureLogAnalytics"]["query"]
+        self.assertEqual(panels[5]["title"], "Agent run failure rate")
+        self.assertIn("known success/failure outcome", panels[5]["description"])
+        self.assertEqual(panels[5]["fieldConfig"]["defaults"]["unit"], "percent")
+        self.assertEqual(panels[5]["fieldConfig"]["defaults"]["min"], 0)
+        self.assertNotIn("max", panels[5]["fieldConfig"]["defaults"])
+        failure_query = panels[5]["targets"][0]["azureLogAnalytics"]["query"]
         self.assertIn("FailureRatePercent", failure_query)
         self.assertIn("| where isnotnull(Success)", failure_query)
         self.assertIn("KnownOutcomeRuns = sum(ItemCount)", failure_query)
         self.assertIn("sumif(ItemCount, Success == false)", failure_query)
-        self.assertEqual(panels[9]["title"], "PTU input and output tokens")
+        self.assertEqual(panels[6]["title"], "PTU input and output tokens")
         self.assertEqual(
             {link["title"] for link in dashboard["links"]},
-            {"Agent operations", "PTU performance", "Cost details"},
+            {"Agent operations", "PTU performance"},
         )
         self.assertTrue(all(link["keepTime"] for link in dashboard["links"]))
         self.assertEqual(
             [item["name"] for item in dashboard["templating"]["list"]],
             [
-                "workspaceResourceId", "monitoringWorkspaceResourceId", "ptuSubscription",
+                "workspaceResourceId", "ptuSubscription",
                 "ptuResourceGroup", "ptuAccount", "ptuRegion", "ptuDeployment",
             ],
         )
-
-    def test_cost_totals_and_trends_keep_types_currencies_and_usage_dates_separate(self):
-        panels = self.dashboards["azure-ai-costs.json"]["panels"]
-        for index, cost_type in ((2, "ActualCost"), (3, "AmortizedCost"),
-                                 (4, "ActualCost"), (5, "AmortizedCost")):
-            query = panels[index]["targets"][0]["azureLogAnalytics"]["query"].split("let LatestCostRows", 1)[1]
-            self.assertIn(f'CostType == "{cost_type}"', query)
-            self.assertIn("Currency", query.split("summarize Amount = sum(Cost) by ", 1)[1])
-            self.assertIn("UsageDate >= startofday($__timeFrom())", query)
-            self.assertIn("UsageDate < $__timeTo()", query)
-            self.assertNotIn("coalesce(sum(Cost)", query)
-            self.assertEqual(panels[index]["fieldConfig"]["defaults"]["unit"], "none")
-        account_query = panels[6]["targets"][0]["azureLogAnalytics"]["query"]
-        self.assertIn("by ResourceId, CostType, Currency", account_query)
-        self.assertEqual(self.dashboards["azure-ai-costs.json"]["timezone"], "utc")
-        self.assertIn("do not add them together", panels[0]["options"]["content"])
 
     def test_invalid_configuration_is_rejected(self):
         cases = [
@@ -340,7 +286,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(panel["type"], "table")
         self.assertIn("Estimated", panel["title"])
         self.assertIn("not billed", panel["title"])
-        for caveat in ("estimate", "cach", "PTU", "no list price", "Costs dashboard"):
+        for caveat in ("estimate", "cach", "PTU", "no list price", "Cost Management"):
             self.assertIn(caveat, panel["description"])
         by_ref = {target["refId"]: target for target in panel["targets"]}
         self.assertEqual(set(by_ref), {"A", "B", "C"})
@@ -457,7 +403,7 @@ class DashboardTests(unittest.TestCase):
     def test_agent_run_panels_disclose_per_interval_counts(self):
         panels = (
             self.dashboards["foundry-agents.json"]["panels"][1],
-            self.dashboards["business-overview.json"]["panels"][2],
+            self.dashboards["business-overview.json"]["panels"][0],
         )
         for panel in panels:
             with self.subTest(title=panel["title"]):

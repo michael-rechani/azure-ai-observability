@@ -26,16 +26,6 @@ output "action_group_resource_id" {
   value = azurerm_monitor_action_group.notifications.id
 }
 
-output "cost_function_name" {
-  description = "Cost collector Function App name, or null when the pipeline is disabled."
-  value       = try(azurerm_function_app_flex_consumption.cost[0].name, null)
-}
-
-output "cost_identity_principal_id" {
-  description = "Cost collector managed identity object ID, or null when the pipeline is disabled."
-  value       = try(azurerm_user_assigned_identity.cost[0].principal_id, null)
-}
-
 output "cost_infinity_tenant_id" {
   description = "Tenant ID for the Grafana stage's cost_infinity_tenant_id, or null when Infinity is disabled."
   value       = var.enable_cost_infinity ? azurerm_dashboard_grafana.monitoring.identity[0].tenant_id : null

@@ -48,8 +48,7 @@ $files = [ordered]@{
     'foundry-agents.json' = 'agents'
     'openai-ptu.json' = 'ptu'
 }
-if ($DashboardConfiguration.enableCostDashboard) {
-    $files['azure-ai-costs.json'] = 'cost'
+if ($DashboardConfiguration.enableBusinessOverview) {
     $files['business-overview.json'] = 'business'
 }
 $adxClusterUri = $null
@@ -172,13 +171,11 @@ foreach ($entry in $files.GetEnumerator()) {
         }
         'agents' { @{ workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId } }
         'ptu' { Get-AccountDefaults $DashboardConfiguration.ptuAccount }
-        'cost' { @{ workspaceResourceId = $DashboardConfiguration.monitoringWorkspaceResourceId } }
         'native' { @{} }
         'infinity' { @{ costScope = $infinityScope } }
         'business' {
             $values = @{
                 workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId
-                monitoringWorkspaceResourceId = $DashboardConfiguration.monitoringWorkspaceResourceId
             }
             if ($DashboardConfiguration.ptuAccount) {
                 $values['ptuSubscription'] = $DashboardConfiguration.ptuAccount.subscriptionId

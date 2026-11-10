@@ -1119,15 +1119,6 @@
       "keepTime": true,
       "includeVars": false,
       "targetBlank": false
-    },
-    {
-      "type": "link",
-      "title": "Cost details",
-      "url": "/d/azure-ai-costs/_",
-      "icon": "external link alt",
-      "keepTime": true,
-      "includeVars": false,
-      "targetBlank": false
     }
   ]
 }

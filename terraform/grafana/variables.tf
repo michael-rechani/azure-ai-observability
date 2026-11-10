@@ -23,7 +23,7 @@ variable "dashboard_directory" {
 }
 
 variable "dashboard_defaults" {
-  description = "Optional real Azure workspace and account defaults for the deployed dashboards."
+  description = "Optional real Azure workspace and account defaults for the deployed dashboards. monitoring_workspace_resource_id is the telemetry workspace default when telemetry_workspace_resource_id is not set."
   type = object({
     monitoring_workspace_resource_id = optional(string)
     telemetry_workspace_resource_id  = optional(string)
@@ -65,8 +65,8 @@ variable "dashboard_defaults" {
   }
 }
 
-variable "enable_cost_dashboard" {
-  description = "Provision the cost dashboard after enabling the Azure cost pipeline and its custom table."
+variable "enable_business_overview" {
+  description = "Provision the Business overview dashboard (agent and PTU signals). It no longer includes cost panels."
   type        = bool
   default     = false
 }
