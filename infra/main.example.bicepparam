@@ -80,3 +80,8 @@ param enableCostExport = false
 // param costInfinityServicePrincipalObjectId = '00000000-0000-0000-0000-000000000000'
 // 'subscription' grants Cost Management Reader; 'resourceGroupManaged' grants a query-only role per monitored group.
 // param costInfinityScope = 'resourceGroupManaged'
+// On by default with Infinity: an alert rule that fires when the data source cannot query Cost Management (for example
+// the secret expired). It needs a contact point that routes component=cost-infinity; see docs/costs.md.
+// param enableCostInfinityAlert = true
+// param costInfinityAlertIntervalMinutes = 60
+// param costInfinityAlertPendingMinutes = 60

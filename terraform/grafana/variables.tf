@@ -135,3 +135,29 @@ variable "cost_infinity_scope" {
     error_message = "cost_infinity_scope must be /subscriptions/<id> or /subscriptions/<id>/resourceGroups/<name>."
   }
 }
+
+variable "enable_cost_infinity_alert" {
+  description = "Create an alert rule that fires when the Infinity data source can no longer query Cost Management, which is how an expired, revoked or wrong client secret shows up. Applies only with enable_cost_infinity_dashboard. Alerts need a contact point or notification policy that routes component=cost-infinity; see docs/costs.md."
+  type        = bool
+  default     = true
+}
+
+variable "cost_infinity_alert_interval_minutes" {
+  description = "How often the alert rule queries Cost Management, in minutes. Hourly is plenty for a secret that lasts months, and every evaluation is one Cost Management query."
+  type        = number
+  default     = 60
+  validation {
+    condition     = var.cost_infinity_alert_interval_minutes >= 5 && var.cost_infinity_alert_interval_minutes <= 1440 && floor(var.cost_infinity_alert_interval_minutes) == var.cost_infinity_alert_interval_minutes
+    error_message = "cost_infinity_alert_interval_minutes must be a whole number between 5 and 1440."
+  }
+}
+
+variable "cost_infinity_alert_pending_minutes" {
+  description = "How long the query must keep failing before the alert fires, in minutes. It absorbs Cost Management throttling (HTTP 429) and one-off failures. With the default hourly interval, 60 means two failed evaluations in a row."
+  type        = number
+  default     = 60
+  validation {
+    condition     = var.cost_infinity_alert_pending_minutes >= 0 && var.cost_infinity_alert_pending_minutes <= 1440 && floor(var.cost_infinity_alert_pending_minutes) == var.cost_infinity_alert_pending_minutes
+    error_message = "cost_infinity_alert_pending_minutes must be a whole number between 0 and 1440."
+  }
+}

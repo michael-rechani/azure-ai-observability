@@ -258,6 +258,129 @@ run "cost_infinity_dashboard_uses_the_configured_scope" {
   }
 }
 
+run "cost_infinity_alert_watches_the_data_source_and_never_triggers_on_cost" {
+  command = plan
+  variables {
+    enable_cost_infinity_dashboard = true
+    cost_infinity_tenant_id        = "00000000-0000-0000-0000-0000000000b1"
+    cost_infinity_client_id        = "00000000-0000-0000-0000-0000000000b2"
+    cost_infinity_client_secret    = "unit-test-secret-value"
+    cost_infinity_scope            = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg"
+  }
+  assert {
+    condition = (
+      length(grafana_folder.infinity_alert) == 1 &&
+      length(grafana_rule_group.infinity_alert) == 1 &&
+      grafana_rule_group.infinity_alert[0].interval_seconds == 3600 &&
+      grafana_rule_group.infinity_alert[0].rule[0].for == "60m"
+    )
+    error_message = "By default the alert must evaluate hourly and wait one extra hour before firing, so a throttled query does not page anyone."
+  }
+  assert {
+    condition = (
+      grafana_rule_group.infinity_alert[0].rule[0].exec_err_state == "Alerting" &&
+      grafana_rule_group.infinity_alert[0].rule[0].no_data_state == "OK" &&
+      grafana_rule_group.infinity_alert[0].rule[0].condition == "C"
+    )
+    error_message = "A query error must raise the alert, and an empty result must not."
+  }
+  assert {
+    condition = (
+      grafana_rule_group.infinity_alert[0].rule[0].labels.component == "cost-infinity" &&
+      grafana_rule_group.infinity_alert[0].rule[0].labels.severity == "warning"
+    )
+    error_message = "The rule needs stable labels so a notification policy can route it."
+  }
+  assert {
+    condition = (
+      [for d in grafana_rule_group.infinity_alert[0].rule[0].data : d.ref_id] == ["A", "B", "C"] &&
+      grafana_rule_group.infinity_alert[0].rule[0].data[0].datasource_uid == "ai-observability-cost-infinity" &&
+      jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[0].model).parser == "jq-backend" &&
+      jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[0].model).datasource.uid == "ai-observability-cost-infinity"
+    )
+    error_message = "The query must use the Infinity data source with the backend parser that alert rules require."
+  }
+  assert {
+    condition = (
+      jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[0].model).url == "https://management.azure.com/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry-rg/providers/Microsoft.CostManagement/query?api-version=2023-11-01" &&
+      !strcontains(grafana_rule_group.infinity_alert[0].rule[0].data[0].model, "costScope")
+    )
+    error_message = "The query must target the configured scope, with no template variable left in it."
+  }
+  assert {
+    condition = (
+      jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[0].model).url_options.method == "POST" &&
+      strcontains(jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[0].model).url_options.data, "microsoft.cognitiveservices/accounts")
+    )
+    error_message = "The alert must send the dashboard's own Cost Management request."
+  }
+  assert {
+    condition = (
+      jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[2].model).conditions[0].evaluator.type == "gt" &&
+      jsondecode(grafana_rule_group.infinity_alert[0].rule[0].data[2].model).conditions[0].evaluator.params[0] >= 1000000000
+    )
+    error_message = "The threshold must be unreachable, so only a failing query can raise the alert."
+  }
+  assert {
+    condition     = !anytrue([for d in grafana_rule_group.infinity_alert[0].rule[0].data : strcontains(d.model, "unit-test-secret-value")])
+    error_message = "The client secret must not appear in the alert rule."
+  }
+}
+
+run "cost_infinity_alert_follows_the_configured_timing" {
+  command = plan
+  variables {
+    enable_cost_infinity_dashboard       = true
+    cost_infinity_tenant_id              = "00000000-0000-0000-0000-0000000000b1"
+    cost_infinity_client_id              = "00000000-0000-0000-0000-0000000000b2"
+    cost_infinity_client_secret          = "unit-test-secret-value"
+    cost_infinity_alert_interval_minutes = 120
+    cost_infinity_alert_pending_minutes  = 0
+  }
+  assert {
+    condition = (
+      grafana_rule_group.infinity_alert[0].interval_seconds == 7200 &&
+      grafana_rule_group.infinity_alert[0].rule[0].for == "0m"
+    )
+    error_message = "The interval and pending period must come from the variables."
+  }
+}
+
+run "cost_infinity_alert_can_be_turned_off" {
+  command = plan
+  variables {
+    enable_cost_infinity_dashboard = true
+    cost_infinity_tenant_id        = "00000000-0000-0000-0000-0000000000b1"
+    cost_infinity_client_id        = "00000000-0000-0000-0000-0000000000b2"
+    cost_infinity_client_secret    = "unit-test-secret-value"
+    enable_cost_infinity_alert     = false
+  }
+  assert {
+    condition     = length(grafana_folder.infinity_alert) == 0 && length(grafana_rule_group.infinity_alert) == 0
+    error_message = "Turning the alert off must create no folder or rule."
+  }
+}
+
+run "cost_infinity_alert_is_absent_without_the_infinity_dashboard" {
+  command = plan
+  assert {
+    condition     = length(grafana_folder.infinity_alert) == 0 && length(grafana_rule_group.infinity_alert) == 0
+    error_message = "The alert must not exist unless the Infinity data source does."
+  }
+}
+
+run "cost_infinity_alert_rejects_unreasonable_timing" {
+  command = plan
+  variables {
+    cost_infinity_alert_interval_minutes = 1
+    cost_infinity_alert_pending_minutes  = -5
+  }
+  expect_failures = [
+    var.cost_infinity_alert_interval_minutes,
+    var.cost_infinity_alert_pending_minutes,
+  ]
+}
+
 run "cost_infinity_dashboard_requires_the_principal_and_secret" {
   command = plan
   variables {

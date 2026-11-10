@@ -31,6 +31,13 @@ $configuration = @{
     costInfinityTenantId = '55555555-5555-5555-5555-555555555555'
     costInfinityClientId = if ($env:TEST_INFINITY_CLIENT_ID) { $env:TEST_INFINITY_CLIENT_ID } else { '66666666-6666-6666-6666-666666666666' }
     costInfinityScope = if ($env:TEST_INFINITY_SCOPE) { $env:TEST_INFINITY_SCOPE } else { "/subscriptions/$subscription" }
+    enableCostInfinityAlert = $env:TEST_INFINITY_ALERT -ne 'false'
+}
+if ($env:TEST_ALERT_INTERVAL) {
+    $configuration['costInfinityAlertIntervalMinutes'] = $env:TEST_ALERT_INTERVAL
+}
+if ($env:TEST_ALERT_PENDING) {
+    $configuration['costInfinityAlertPendingMinutes'] = $env:TEST_ALERT_PENDING
 }
 
 function global:az {
@@ -143,6 +150,33 @@ function global:Invoke-WebRequest {
                 [void]$content.dashboard.Remove('tags')
             }
         }
+    }
+    elseif ($Method -eq 'Get' -and $path -like '/api/folders/*') {
+        if ($mode -eq 'new') {
+            $status = 404
+        }
+        else {
+            $content = @{ id = 20; uid = $path.Split('/')[-1]; title = 'AI observability alerts'; version = 1 }
+        }
+    }
+    elseif ($Method -eq 'Get' -and $path -like '/api/v1/provisioning/folder/*/rule-groups/*') {
+        if ($mode -eq 'new') {
+            $status = 404
+        }
+        else {
+            $content = @{
+                title = [uri]::UnescapeDataString($path.Split('/')[-1])
+                folderUid = $path.Split('/')[4]
+                interval = 3600
+                rules = @(@{
+                    uid = 'ai-observability-infinity-cost'
+                    labels = if ($mode -eq 'unmanaged-alert-group') { @{ team = 'other' } } else { @{ managed_by = 'azure-ai-observability-bicep-v1' } }
+                })
+            }
+        }
+    }
+    elseif ($Method -eq 'Post' -and $path -eq '/api/folders') {
+        $content = @{ id = 20; uid = $parsedBody.uid; title = $parsedBody.title }
     }
     elseif ($Method -eq 'Post' -and $path -eq '/api/dashboards/db') {
         if ($mode -eq 'version-conflict') {

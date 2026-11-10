@@ -177,3 +177,20 @@ resource "grafana_dashboard" "monitoring" {
 output "dashboard_urls" {
   value = { for key, dashboard in grafana_dashboard.monitoring : key => dashboard.url }
 }
+
+locals {
+  infinity_alert_enabled = var.enable_cost_infinity_dashboard && var.enable_cost_infinity_alert
+  infinity_alert_scope   = local.dashboard_default_values.azure_ai_costs_infinity.costScope
+  # The alert sends the dashboard's own request, so a failure here is a failure the panels would show too.
+  infinity_alert_target = local.infinity_alert_enabled ? one(flatten([
+    for panel in local.source_dashboards["azure_ai_costs_infinity"].panels : [
+      for target in try(panel.targets, []) : target if panel.title == "Month-to-date actual cost by currency"
+    ]
+  ])) : null
+}
+
+resource "grafana_folder" "infinity_alert" {
+  count = local.infinity_alert_enabled ? 1 : 0
+  title = "AI observability alerts"
+  uid   = "ai-observability-alerts"
+}
