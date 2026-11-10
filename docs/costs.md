@@ -166,12 +166,38 @@ Delete the Infinity data source and dashboard in Grafana if you no longer want t
 
 - **It is a shared identity, not per-viewer access.** Every viewer of the dashboard sees what the principal can read. Anyone who can edit queries on the Infinity data source (Grafana Editor and Admin) can run any Cost Management query the principal's role allows, so use `resourceGroupManaged` where you can and restrict those roles.
 - **The secret lives in Grafana, and in Terraform state.** Grafana never returns it through its API, but the Terraform Grafana stage records it in state. Supply it as `TF_VAR_cost_infinity_client_secret`, never in a `.tfvars` file, and protect the state like a credential. The Bicep path keeps it out of the parameters: the helper reads it from `AI_OBSERVABILITY_COST_CLIENT_SECRET` or `-CostInfinityClientSecret` and sends it only to Grafana.
-- **Expiry silently breaks the panels, and the health check will not tell you.** Nothing alerts you by default when the secret expires or is revoked. The panels fail with an authentication error (`AADSTS7000222` expired, `AADSTS7000215` wrong or revoked), but the data source's **Save & test** keeps reporting "Health check successful" with a wrong, revoked or expired secret, so it cannot be used to check the secret. Check the panels. You can add a Grafana alert rule on the data source that fires when the query fails (see [the live results](#what-has-been-validated-1)); it detects a failure, it does not warn before expiry, because Grafana cannot see the credential's end date. Until that rule ships with the repo ([issue #28](https://github.com/michael-rechani/azure-ai-observability/issues/28)), set a calendar reminder for the end date.
+- **Expiry silently breaks the panels, and the health check will not tell you.** The panels fail with an authentication error (`AADSTS7000222` expired, `AADSTS7000215` wrong or revoked), but the data source's **Save & test** keeps reporting "Health check successful" with a wrong, revoked or expired secret, so it cannot be used to check the secret. The repo therefore ships a Grafana alert rule that fires when the Cost Management query fails (see [Get alerted when the secret fails](#get-alerted-when-the-secret-fails)). It detects a failure; it cannot warn before expiry, because Grafana cannot see the credential's end date, so still set a calendar reminder for the end date.
 - **A cached token can hide a bad secret for up to an hour.** Grafana keeps using the access token it already has after the secret is revoked or expires. The failure appears when the token expires (about an hour) or when the data source is updated, so a rotation can look fine until later. Always confirm after you update the data source.
 - **The Query API is throttled.** It returns HTTP 429 often. Infinity does not retry, so a panel can fail intermittently on refresh. Reload after a short wait. The daily panel is capped at 31 days per query (the API's limit for daily granularity), so the dashboard's time range should stay within a month.
 - **It is live, not historical storage.** Nothing is kept outside Cost Management. If you need long history or alerting on cost data, use the export or the Function.
 - **A continuation link fails the query** instead of silently showing a partial total.
 - **Plugin installation by ARM is a preview feature** (`grafanaPlugins` on the Grafana workspace). If it is unavailable in your tenant, install **Infinity** from the Grafana plugin catalog and rerun; the helper stops with that instruction when the plugin is missing.
+
+### Get alerted when the secret fails
+
+The Infinity dashboard deployment also creates one Grafana-managed alert rule, **Infinity cost data source cannot query Cost Management**, in the folder **AI observability alerts** (rule group **Infinity cost data source**). It runs the dashboard's own month-to-date cost query, reduced to a single row count, so it checks the same scope, URL and credential the panels use. A failed query (expired, revoked or wrong secret, a removed Cost Management role, a network error) puts the rule in the `Alerting` state. An empty result counts as healthy, and the threshold on the count can never be reached, so the size of your bill never triggers it.
+
+| Setting | Terraform variable | Bicep parameter | Default |
+|---|---|---|---|
+| Create the rule | `enable_cost_infinity_alert` | `enableCostInfinityAlert` | `true` |
+| Evaluation interval (minutes, 5-1440) | `cost_infinity_alert_interval_minutes` | `costInfinityAlertIntervalMinutes` | `60` |
+| Failure must last this long before it fires (minutes, 0-1440) | `cost_infinity_alert_pending_minutes` | `costInfinityAlertPendingMinutes` | `60` |
+
+The defaults evaluate hourly and fire when two evaluations in a row fail. That is deliberate: the Cost Management Query API throttles with HTTP 429 and Infinity does not retry, so a single failure should not page anyone. Lowering the interval makes the rule hit that API more often. The minimum is 5 minutes so you can test the rule without waiting an hour. Setting the pending period to `0` fires on the first failed evaluation.
+
+**You must add a contact point.** The repo creates the rule, not a way to notify anyone. In Azure Managed Grafana the default notification policy sends to a contact point named `empty` that has no integration, so a firing rule is visible in **Alerting** but nothing is delivered until you act. SMTP is also off by default, so an email contact point needs SMTP configured first; a webhook, Teams, Slack or similar contact point works without it. Create the contact point, then add a notification policy that routes the rule's labels to it:
+
+- `component = cost-infinity` (the rule always carries this label)
+- `severity = warning`
+- `managed_by` is `azure-ai-observability-terraform` or `azure-ai-observability-bicep-v1`, depending on how it was deployed
+
+**Ownership and removal.** Terraform owns the rule group it creates and removes it on `terraform destroy` or when the switch is false. The Bicep helper owns a rule group only if every rule in it carries its `managed_by` label; it stops before changing anything if a group with the same name belongs to someone else. Because the helper never deletes Grafana resources, setting `enableCostInfinityAlert` to false stops creating the rule but does not remove one that already exists; delete the **Infinity cost data source** group in **Alerting** yourself. A rule is created only together with the Infinity dashboard.
+
+**What it will not do.**
+
+- It does not warn before the secret expires. It fires after something has already failed, so keep the calendar reminder.
+- Grafana keeps using the access token it already has, so a secret that is revoked or expires in Entra can take up to about an hour (the token lifetime) to surface through the rule. That delay is inferred from the cached-token behavior described above; it was not measured through the rule. Updating the data source, which a rotation does, makes Grafana request a new token, and a wrong secret written that way fired the rule at the next evaluation.
+- A transient 429 fails the evaluation it hits (seen once in a preview evaluation). With the default pending period that only fires if failures continue for the whole period; how often real scheduled evaluations hit a 429 was not measured.
 
 ### Alternatives that were checked
 
@@ -218,12 +244,14 @@ A throwaway deployment in a sandbox subscription used the real `scripts\deploy_b
 - **Rotation through Terraform.** A second secret was created with `--append`. Changing only `TF_VAR_cost_infinity_client_secret` and reapplying the Grafana stage produced one in-place change to the data source and took about 4 seconds. The panels kept working, and they still worked after the old secret was deleted, which Entra then rejected with `AADSTS7000215`.
 - **Destroy.** `terraform destroy` removed both stages cleanly, including the role definition and assignment. This used a resource group that was not created by Terraform; the earlier finding that a Terraform-created group cannot be destroyed because of the Failure Anomalies alert rule is unchanged.
 
-**Alert on a failing secret, verified live** in the same deployment, using a Grafana-managed alert rule created through the provisioning API. It queries the Infinity data source with the month-to-date query, has error handling set to `Alerting`, and is evaluated every minute:
+**Alert on a failing secret, verified live.** A prototype rule created through the provisioning API in the Terraform deployment above showed the mechanism: with a good secret it stayed `inactive`; after a bad secret was written it went to `firing` with `health=error` and the `AADSTS7000215` message within one evaluation; after the good secret was restored it cleared. The rule that ships with the repo ([issue #28](https://github.com/michael-rechani/azure-ai-observability/issues/28)) was then tested in a fourth throwaway deployment, with the evaluation interval and pending period both set to 5 minutes so the test was practical:
 
-- With a good secret the rule stayed `inactive` and healthy.
-- After a bad secret was written to the data source, the rule went to `firing` with `health=error` at the next evaluation (under 35 seconds), with the `AADSTS7000215` message, and the alert showed in Grafana's Alertmanager.
-- After a good secret was restored, the rule cleared after one more evaluation.
-- Alerting works in Azure Managed Grafana, but SMTP is off by default, so you must configure a contact point. Notification delivery, a real expiry, behavior with a transient 429 and a Terraform-managed rule were not tested; see [issue #28](https://github.com/michael-rechani/azure-ai-observability/issues/28).
+- **Terraform rule.** The Grafana stage created the folder and the rule group. The stored rule had the intended interval, pending period, no-data and error handling, and labels, and its query returned one numeric row-count frame. With a good secret it stayed `inactive` and healthy.
+- **Failure, Terraform path.** Applying a wrong secret changed only the data source; the rule itself was untouched. At the first failed evaluation the rule went to `pending` with `health=error` (the pending period applies to error evaluations), and to `firing` at the second, with the `AADSTS7000215` message. Alertmanager listed one active alert with the expected labels and annotations.
+- **Notification delivery.** Because the default contact point has no integration, a temporary Logic App with an HTTP trigger was created as a webhook contact point, with a notification policy that routed `component = cost-infinity` to it. A `firing` webhook arrived with the right labels and summary. After the good secret was restored through Terraform the rule cleared at the next evaluation and a `resolved` webhook arrived. The Logic App was a test receiver only and is not part of the repo. Email delivery was not tested.
+- **Empty and non-empty results.** The cost query returned zero rows in this deployment. The rule evaluates the same way in both cases: with the query's row count overridden to 5 (the real URL and plugin still used) in a rule preview, the condition stayed false, so a result with data does not fire it.
+- **Bicep helper.** A pre-existing rule group with the same name but a different `managed_by` label made the helper stop before any write, with a message naming the group and no data source or dashboard created. With the foreign group removed, the first run created the dashboards, the data source and the rule. A second run updated the same rule in place (still one rule, same UID), so the helper is idempotent.
+- **Teardown.** `terraform destroy` of the Grafana stage removed the rule group and folder, and none of the repo's data sources or dashboards remained.
 
 **Not verified:**
 
@@ -231,6 +259,10 @@ A throwaway deployment in a sandbox subscription used the real `scripts\deploy_b
 - How the panels render in a browser, including the daily time series.
 - Whether an in-place update of the Grafana workspace by the azurerm provider keeps the installed plugin. The Terraform stage reinstalls it if the `azapi` resource is replaced.
 - How long Grafana keeps a cached token beyond the update that was tested (the token lifetime is about an hour).
+- The alert rule on a real expiry (`AADSTS7000222`). The rule was exercised with a wrong secret (`AADSTS7000215`), not with a secret that expired on its own.
+- The alert rule against real billed cost rows. The sandbox has none; the non-empty case was tested only by overriding the row count in a rule preview.
+- How often real scheduled evaluations hit a transient 429, and whether the default pending period absorbs them in practice.
+- Email delivery of the alert. SMTP is off in Azure Managed Grafana by default and was not configured.
 
 ## Direct Grafana queries and per-viewer access
 

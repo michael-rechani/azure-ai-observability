@@ -86,7 +86,8 @@ class BicepDeploymentTests(unittest.TestCase):
 
     def run_harness(self, action, values=None, mode="new", endpoint=None, what_if=False, cost_dashboard=True,
                     fail_function=False, cost_export=False, cost_export_uri=None, cost_infinity=False,
-                    infinity_secret=None, plugin_missing=False, infinity_scope=None):
+                    infinity_secret=None, plugin_missing=False, infinity_scope=None, infinity_alert=True,
+                    alert_interval=None, alert_pending=None):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             parameter_data = parameters() if values is None else values
@@ -117,6 +118,9 @@ class BicepDeploymentTests(unittest.TestCase):
                 "TEST_COST_INFINITY": str(cost_infinity).lower(),
                 "TEST_PLUGIN_MISSING": str(plugin_missing).lower(),
                 "TEST_INFINITY_SCOPE": infinity_scope or "",
+                "TEST_INFINITY_ALERT": str(infinity_alert).lower(),
+                "TEST_ALERT_INTERVAL": str(alert_interval or ""),
+                "TEST_ALERT_PENDING": str(alert_pending if alert_pending is not None else ""),
                 "TEST_INFINITY_SECRET_PARAMETER": str(infinity_secret == "parameter").lower(),
             })
             environment.pop("AI_OBSERVABILITY_COST_CLIENT_SECRET", None)
@@ -462,9 +466,108 @@ class BicepDeploymentTests(unittest.TestCase):
         self.assertIn("not managed", result.stderr)
         self.assertFalse(any(call["method"] in ("Post", "Put") for call in calls["http"]))
 
+    def alert_group_calls(self, calls):
+        return [
+            call for call in calls["http"]
+            if call["method"] == "Put" and "/rule-groups/" in call["path"]
+        ]
+
+    def test_grafana_creates_the_infinity_alert_from_the_dashboards_query(self):
+        scope = f"/subscriptions/{SUBSCRIPTION}/resourceGroups/foundry-rg"
+        result, calls = self.run_harness(
+            "grafana", cost_infinity=True, infinity_secret="env", infinity_scope=scope,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(INFINITY_SECRET, result.stdout + result.stderr)
+        folders = [call for call in calls["http"] if call["method"] == "Post" and call["path"] == "/api/folders"]
+        self.assertEqual([call["body"]["uid"] for call in folders], ["ai-observability-alerts"])
+        puts = self.alert_group_calls(calls)
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(
+            puts[0]["path"],
+            "/api/v1/provisioning/folder/ai-observability-alerts/rule-groups/Infinity%20cost%20data%20source",
+        )
+        group = puts[0]["body"]
+        self.assertEqual(group["interval"], 3600)
+        self.assertEqual(group["folderUid"], "ai-observability-alerts")
+        rule = group["rules"][0]
+        self.assertEqual(len(group["rules"]), 1)
+        self.assertEqual(rule["condition"], "C")
+        self.assertEqual(rule["execErrState"], "Alerting")
+        self.assertEqual(rule["noDataState"], "OK")
+        self.assertEqual(rule["for"], "60m")
+        self.assertEqual(rule["labels"]["component"], "cost-infinity")
+        self.assertEqual(rule["labels"]["managed_by"], "azure-ai-observability-bicep-v1")
+        self.assertEqual([item["refId"] for item in rule["data"]], ["A", "B", "C"])
+        query = rule["data"][0]
+        self.assertEqual(query["datasourceUid"], "ai-observability-cost-infinity")
+        self.assertEqual(query["model"]["parser"], "jq-backend")
+        self.assertEqual(
+            query["model"]["url"],
+            f"https://management.azure.com{scope}/providers/Microsoft.CostManagement/query?api-version=2023-11-01",
+        )
+        self.assertEqual(query["model"]["url_options"]["method"], "POST")
+        self.assertIn("microsoft.cognitiveservices/accounts", query["model"]["url_options"]["data"])
+        self.assertNotIn("costScope", json.dumps(query["model"]))
+        threshold = rule["data"][2]["model"]["conditions"][0]["evaluator"]
+        self.assertEqual(threshold["type"], "gt")
+        self.assertGreaterEqual(threshold["params"][0], 1_000_000_000)
+        self.assertNotIn(INFINITY_SECRET, json.dumps(group))
+        order = [(call["method"], call["path"]) for call in calls["http"] if call["method"] in ("Post", "Put")]
+        datasource = order.index(("Post", "/api/datasources"))
+        self.assertLess(datasource, order.index(("Post", "/api/folders")))
+        self.assertLess(
+            max(index for index, item in enumerate(order) if item[1] == "/api/dashboards/db"),
+            order.index(("Post", "/api/folders")),
+        )
+
+    def test_grafana_updates_an_owned_alert_group_in_place_and_rejects_an_unowned_one(self):
+        result, calls = self.run_harness("grafana", mode="existing", cost_infinity=True, infinity_secret="env")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any(call["method"] == "Post" and call["path"] == "/api/folders" for call in calls["http"]))
+        puts = self.alert_group_calls(calls)
+        self.assertEqual(len(puts), 1)
+        self.assertEqual(puts[0]["body"]["rules"][0]["uid"], "ai-observability-infinity-cost")
+
+        result, calls = self.run_harness(
+            "grafana", mode="unmanaged-alert-group", cost_infinity=True, infinity_secret="env",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not managed", result.stderr)
+        self.assertIn("alert rule group", result.stderr)
+        self.assertFalse(any(call["method"] in ("Post", "Put") for call in calls["http"]))
+
+    def test_grafana_alert_can_be_disabled_and_follows_the_configured_timing(self):
+        result, calls = self.run_harness("grafana", cost_infinity=True, infinity_secret="env", infinity_alert=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.alert_group_calls(calls), [])
+        self.assertFalse(any(call["path"] == "/api/folders" or call["path"].startswith("/api/v1/provisioning") for call in calls["http"]))
+        self.assertTrue(any(call["path"] == "/api/datasources" for call in calls["http"]))
+
+        result, calls = self.run_harness(
+            "grafana", cost_infinity=True, infinity_secret="env", alert_interval=120, alert_pending=0,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        group = self.alert_group_calls(calls)[0]["body"]
+        self.assertEqual(group["interval"], 7200)
+        self.assertEqual(group["rules"][0]["for"], "0m")
+
+    def test_grafana_rejects_unreasonable_alert_timing_before_changing_anything(self):
+        for name, interval, pending in (("interval", 1, None), ("interval", 2000, None), ("pending", None, -1), ("pending", None, "soon")):
+            with self.subTest(setting=name, interval=interval, pending=pending):
+                result, calls = self.run_harness(
+                    "grafana", cost_infinity=True, infinity_secret="env",
+                    alert_interval=interval, alert_pending=pending,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("costInfinityAlert", result.stderr)
+                self.assertEqual(calls["http"], [])
+
     def test_grafana_omits_infinity_by_default(self):
         result, calls = self.run_harness("grafana", infinity_secret="env")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.alert_group_calls(calls), [])
+        self.assertFalse(any(call["path"] == "/api/folders" for call in calls["http"]))
         self.assertFalse(any(
             call["body"] and call["body"].get("type") == "yesoreyeram-infinity-datasource"
             for call in calls["http"] if call["path"] == "/api/datasources"
@@ -755,6 +858,17 @@ class BicepTemplateTests(unittest.TestCase):
         self.assertIn("resourceGroupManaged", group["condition"])
         for output in ("enableCostInfinityDashboard", "costInfinityTenantId", "costInfinityClientId", "costInfinityScope"):
             self.assertIn(output, template["outputs"]["dashboardConfiguration"]["value"])
+        self.assertTrue(parameters_["enableCostInfinityAlert"]["defaultValue"])
+        self.assertEqual(parameters_["costInfinityAlertIntervalMinutes"]["defaultValue"], 60)
+        self.assertEqual(parameters_["costInfinityAlertIntervalMinutes"]["minValue"], 5)
+        self.assertEqual(parameters_["costInfinityAlertPendingMinutes"]["defaultValue"], 60)
+        configuration = template["outputs"]["dashboardConfiguration"]["value"]
+        self.assertEqual(
+            configuration["enableCostInfinityAlert"],
+            "[and(parameters('enableCostInfinity'), parameters('enableCostInfinityAlert'))]",
+        )
+        self.assertEqual(configuration["costInfinityAlertIntervalMinutes"], "[parameters('costInfinityAlertIntervalMinutes')]")
+        self.assertEqual(configuration["costInfinityAlertPendingMinutes"], "[parameters('costInfinityAlertPendingMinutes')]")
         self.assertNotIn("secret", json.dumps(template["outputs"]).lower())
 
     def test_default_group_cost_role_names_are_unchanged_by_the_role_label(self):

@@ -16,6 +16,12 @@ The default utilization rule averages other dimensions (including stream type); 
 
 **Live behaviour.** In a Lab test on a real provisioned deployment, the 429 rule fired during a short burst of requests. The utilization rule averages over five minutes, so it fired only after the load was sustained for several minutes; a brief spike that the maximum panel shows will not necessarily page anyone. All four PTU rules, in both the Bicep and Terraform stacks, evaluated and fired.
 
+## Included Grafana alert rule (Infinity cost path only)
+
+When the opt-in Infinity cost dashboard is deployed, the repo also creates one Grafana-managed rule, **Infinity cost data source cannot query Cost Management**, in the **AI observability alerts** folder. It fires when the Cost Management query fails, for example after the client secret expires or is revoked. It evaluates hourly and fires after a second consecutive failure by default, and it carries the labels `component = cost-infinity` and `severity = warning`.
+
+Unlike the metric alerts above, it does not use the Azure Monitor action group. Azure Managed Grafana's default contact point has no integration, so add a Grafana contact point and a notification policy that routes `component = cost-infinity`, or nothing is delivered. It cannot warn before the secret expires. Settings, ownership rules and limits are in [Get alerted when the secret fails](costs.md#get-alerted-when-the-secret-fails).
+
 ## Capacity runbook
 
 1. Confirm the correct account, provisioned deployment, model/SKU, and matching metric dimensions.

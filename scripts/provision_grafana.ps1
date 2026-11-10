@@ -35,6 +35,11 @@ $adxSourceName = 'AI observability - Azure Data Explorer'
 $infinityUid = 'ai-observability-cost-infinity'
 $infinityName = 'AI observability - Cost Management (Infinity)'
 $infinityPluginId = 'yesoreyeram-infinity-datasource'
+$alertFolderUid = 'ai-observability-alerts'
+$alertFolderTitle = 'AI observability alerts'
+$alertGroup = 'Infinity cost data source'
+$alertRuleUid = 'ai-observability-infinity-cost'
+$alertCostPanelTitle = 'Month-to-date actual cost by currency'
 $owner = 'azure-ai-observability-bicep-v1'
 $ownerTag = 'managed-by-azure-ai-observability-bicep'
 $root = Split-Path -Parent $PSScriptRoot
@@ -64,6 +69,9 @@ $infinityTenantId = $null
 $infinityClientId = $null
 $infinityScope = $null
 $infinitySecret = $null
+$infinityAlertEnabled = $true
+$infinityAlertIntervalMinutes = 60
+$infinityAlertPendingMinutes = 60
 if ($DashboardConfiguration.enableCostInfinityDashboard) {
     $infinityTenantId = [string]$DashboardConfiguration.costInfinityTenantId
     $infinityClientId = [string]$DashboardConfiguration.costInfinityClientId
@@ -85,7 +93,23 @@ if ($DashboardConfiguration.enableCostInfinityDashboard) {
     }
     $infinitySecret = [System.Net.NetworkCredential]::new('', $CostInfinityClientSecret).Password
     $files['azure-ai-costs-infinity.json'] = 'infinity'
+    if ($DashboardConfiguration.Contains('enableCostInfinityAlert')) {
+        $infinityAlertEnabled = [bool]$DashboardConfiguration.enableCostInfinityAlert
+    }
+    foreach ($setting in @(
+        @('costInfinityAlertIntervalMinutes', 5, 1440),
+        @('costInfinityAlertPendingMinutes', 0, 1440)
+    )) {
+        if ($DashboardConfiguration.Contains($setting[0])) {
+            $minutes = 0
+            if (-not [int]::TryParse([string]$DashboardConfiguration[$setting[0]], [ref] $minutes) -or $minutes -lt $setting[1] -or $minutes -gt $setting[2]) {
+                throw "$($setting[0]) must be a whole number between $($setting[1]) and $($setting[2])."
+            }
+            if ($setting[0] -eq 'costInfinityAlertIntervalMinutes') { $infinityAlertIntervalMinutes = $minutes } else { $infinityAlertPendingMinutes = $minutes }
+        }
+    }
 }
+$infinityAlertEnabled = $infinityAlertEnabled -and $null -ne $infinitySecret
 
 function Get-AccountDefaults {
     param($Account)
@@ -274,6 +298,20 @@ if ($infinitySecret) {
     $existingInfinitySource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$infinityUid" -AllowNotFound
     Assert-OwnedDataSource -Existing $existingInfinitySource -Uid $infinityUid -Name $infinityName -Type $infinityPluginId
 }
+$existingAlertFolder = $null
+$alertGroupPath = "/api/v1/provisioning/folder/$alertFolderUid/rule-groups/$([uri]::EscapeDataString($alertGroup))"
+if ($infinityAlertEnabled) {
+    $existingAlertFolder = Invoke-GrafanaApi -Method 'Get' -Path "/api/folders/$alertFolderUid" -AllowNotFound
+    $existingAlertGroup = Invoke-GrafanaApi -Method 'Get' -Path $alertGroupPath -AllowNotFound
+    if ($null -ne $existingAlertGroup) {
+        foreach ($existingRule in @($existingAlertGroup.rules)) {
+            if ($null -eq $existingRule -or -not $existingRule.Contains('labels') -or $null -eq $existingRule.labels -or
+                -not $existingRule.labels.Contains('managed_by') -or $existingRule.labels.managed_by -ne $owner) {
+                throw "Grafana alert rule group '$alertGroup' already exists but is not managed by this Bicep deployment. Resolve the ownership conflict before rerunning."
+            }
+        }
+    }
+}
 foreach ($item in $prepared) {
     $current = Invoke-GrafanaApi -Method 'Get' -Path "/api/dashboards/uid/$($item.dashboard.uid)" -AllowNotFound
     if ($null -ne $current) {
@@ -364,4 +402,64 @@ foreach ($item in $prepared) {
         throw "Grafana did not return a URL for dashboard '$($item.dashboard.uid)'."
     }
     Write-Host "Dashboard ready: $Endpoint$($result.url)"
+}
+
+if ($infinityAlertEnabled) {
+    $costTarget = $null
+    foreach ($item in $prepared) {
+        foreach ($panel in @($item.dashboard.panels)) {
+            if ($panel.title -eq $alertCostPanelTitle -and $panel.targets) {
+                $costTarget = $panel.targets[0]
+            }
+        }
+    }
+    if ($null -eq $costTarget) {
+        throw "The Infinity dashboard has no '$alertCostPanelTitle' panel to base the alert on."
+    }
+    $queryModel = $costTarget | ConvertTo-Json -Depth 100 | ConvertFrom-Json -AsHashtable -Depth 100
+    $queryModel['refId'] = 'A'
+    $queryModel['datasource'] = @{ type = $infinityPluginId; uid = $infinityUid }
+    $queryModel['url'] = ([string]$queryModel.url).Replace('${costScope}', $infinityScope)
+    $queryModel['root_selector'] = 'if .properties.rows then [{rows: (.properties.rows | length)}] else error("no_cost_rows_property") end'
+    $queryModel['columns'] = @(@{ selector = 'rows'; text = 'rows'; type = 'number' })
+    $queryModel['intervalMs'] = 1000
+    $queryModel['maxDataPoints'] = 43200
+    if ($null -eq $existingAlertFolder) {
+        [void](Invoke-GrafanaApi -Method 'Post' -Path '/api/folders' -Body @{ uid = $alertFolderUid; title = $alertFolderTitle })
+    }
+    $expression = @{ type = '__expr__'; uid = '__expr__' }
+    $rule = @{
+        uid = $alertRuleUid
+        title = 'Infinity cost data source cannot query Cost Management'
+        ruleGroup = $alertGroup
+        folderUID = $alertFolderUid
+        orgID = 1
+        condition = 'C'
+        noDataState = 'OK'
+        execErrState = 'Alerting'
+        'for' = "${infinityAlertPendingMinutes}m"
+        isPaused = $false
+        labels = @{ component = 'cost-infinity'; severity = 'warning'; managed_by = $owner }
+        annotations = @{
+            summary = 'The AI observability cost panels cannot reach Cost Management'
+            description = "The Infinity data source's Cost Management query failed. The usual cause is an expired, revoked or wrong service principal client secret (AADSTS7000215 or AADSTS7000222), or a removed Cost Management role. Rotate the secret as described in docs/costs.md. Grafana caches the access token, so a secret that has just expired can take up to an hour to surface."
+        }
+        data = @(
+            @{ refId = 'A'; datasourceUid = $infinityUid; relativeTimeRange = @{ from = 600; to = 0 }; model = $queryModel },
+            @{ refId = 'B'; datasourceUid = '__expr__'; relativeTimeRange = @{ from = 0; to = 0 }; model = @{
+                refId = 'B'; type = 'reduce'; datasource = $expression; expression = 'A'; reducer = 'count'; settings = @{ mode = 'dropNN' }
+            } },
+            @{ refId = 'C'; datasourceUid = '__expr__'; relativeTimeRange = @{ from = 0; to = 0 }; model = @{
+                refId = 'C'; type = 'threshold'; datasource = $expression; expression = 'B'
+                conditions = @(@{ evaluator = @{ type = 'gt'; params = @(1000000000) } })
+            } }
+        )
+    }
+    [void](Invoke-GrafanaApi -Method 'Put' -Path $alertGroupPath -Body @{
+        title = $alertGroup
+        folderUid = $alertFolderUid
+        interval = $infinityAlertIntervalMinutes * 60
+        rules = @($rule)
+    })
+    Write-Host "Alert rule ready: $alertGroup (evaluates every $infinityAlertIntervalMinutes minutes, fires after $infinityAlertPendingMinutes more minutes of failure)"
 }

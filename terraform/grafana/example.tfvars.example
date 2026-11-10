@@ -13,6 +13,11 @@ enable_cost_infinity_dashboard = false
 # cost_infinity_tenant_id = "00000000-0000-0000-0000-000000000000"
 # cost_infinity_client_id = "00000000-0000-0000-0000-000000000000"
 # cost_infinity_scope     = "/subscriptions/00000000-0000-0000-0000-000000000000"
+# Alert when the data source can no longer query Cost Management (for example the secret expired). On by default
+# with the Infinity dashboard. It still needs a contact point that routes component=cost-infinity; see docs/costs.md.
+# enable_cost_infinity_alert          = true
+# cost_infinity_alert_interval_minutes = 60
+# cost_infinity_alert_pending_minutes  = 60
 
 dashboard_defaults = {
   # Use workspace_resource_id from the Azure Terraform stage.

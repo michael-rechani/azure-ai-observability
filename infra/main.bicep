@@ -154,6 +154,19 @@ param costInfinityScope string = 'subscription'
 @allowed([true])
 param costInfinityConfigured bool = any(!enableCostInfinity || (length(costInfinityClientId) == 36 && length(costInfinityServicePrincipalObjectId) == 36 && (costInfinityScope == 'subscription' || length(monitoredAccounts) > 0)))
 
+@description('With enableCostInfinity, have the Grafana provisioning step create an alert rule that fires when the Infinity data source can no longer query Cost Management (for example an expired client secret). It still needs a contact point that routes component=cost-infinity.')
+param enableCostInfinityAlert bool = true
+
+@description('How often the Infinity alert rule queries Cost Management, in minutes. Every evaluation is one Cost Management query.')
+@minValue(5)
+@maxValue(1440)
+param costInfinityAlertIntervalMinutes int = 60
+
+@description('How long the Infinity query must keep failing before the alert fires, in minutes. It absorbs Cost Management throttling (HTTP 429) and one-off failures.')
+@minValue(0)
+@maxValue(1440)
+param costInfinityAlertPendingMinutes int = 60
+
 @description('Initial account controls for the Foundry overview dashboard.')
 param foundryDashboardAccount DashboardAccount?
 
@@ -514,6 +527,9 @@ output dashboardConfiguration object = {
   costExportClusterUri: enableCostExport ? costExport!.outputs.clusterUri : ''
   costExportDatabase: enableCostExport ? costExport!.outputs.databaseName : ''
   enableCostInfinityDashboard: enableCostInfinity
+  enableCostInfinityAlert: enableCostInfinity && enableCostInfinityAlert
+  costInfinityAlertIntervalMinutes: costInfinityAlertIntervalMinutes
+  costInfinityAlertPendingMinutes: costInfinityAlertPendingMinutes
   costInfinityTenantId: enableCostInfinity ? tenant().tenantId : ''
   costInfinityClientId: enableCostInfinity && costInfinityConfigured ? costInfinityClientId : ''
   costInfinityScope: enableCostInfinity ? (costInfinityScope == 'subscription' || length(monitoredAccounts) == 0 ? subscription().id : '${subscription().id}/resourceGroups/${monitoredAccounts[0].resourceGroup}') : ''
