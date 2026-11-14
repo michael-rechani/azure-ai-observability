@@ -71,10 +71,12 @@ run "business_overview_is_opt_in" {
   }
   assert {
     condition = (
-      one(jsondecode(grafana_dashboard.monitoring["foundry_agents"].config_json).templating.list).current.value ==
-      var.dashboard_defaults.monitoring_workspace_resource_id
+      { for v in jsondecode(grafana_dashboard.monitoring["foundry_agents"].config_json).templating.list : v.name => v.current.value } == {
+        workspaceResourceId = var.dashboard_defaults.monitoring_workspace_resource_id
+        agent               = "*"
+      }
     )
-    error_message = "Agent dashboards should use the monitoring workspace unless a separate telemetry workspace is configured."
+    error_message = "Agent dashboards should use the monitoring workspace unless a separate telemetry workspace is configured, and show every agent by default."
   }
   assert {
     condition = one([
@@ -132,9 +134,13 @@ run "dashboard_defaults_target_real_resources" {
   }
   assert {
     condition = (
-      one(jsondecode(grafana_dashboard.monitoring["foundry_agents"].config_json).templating.list).current.value == var.dashboard_defaults.telemetry_workspace_resource_id &&
+      { for v in jsondecode(grafana_dashboard.monitoring["foundry_agents"].config_json).templating.list : v.name => v.current.value } == {
+        workspaceResourceId = var.dashboard_defaults.telemetry_workspace_resource_id
+        agent               = "*"
+      } &&
       { for v in jsondecode(grafana_dashboard.monitoring["business_overview"].config_json).templating.list : v.name => v.current.value } == {
         workspaceResourceId = var.dashboard_defaults.telemetry_workspace_resource_id
+        agent               = "*"
         ptuSubscription     = var.subscription_id
         ptuResourceGroup    = "ptu-rg"
         ptuAccount          = "openai-prod"

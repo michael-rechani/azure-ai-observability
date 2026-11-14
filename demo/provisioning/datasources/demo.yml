@@ -1,6 +1,6 @@
 apiVersion: 1
 datasources:
-  - name: Simulated data only
+  - name: TestData
     uid: ai-demo-data
     type: grafana-testdata-datasource
     access: proxy

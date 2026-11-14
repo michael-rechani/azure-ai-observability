@@ -1,13 +1,12 @@
 {
   "uid": "demo-azure-ai-business-overview",
-  "title": "DEMO - Azure AI - Business overview",
+  "title": "Azure AI - Business overview",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
   "tags": [
     "azure",
-    "ai-observability",
-    "demo-simulated-data"
+    "ai-observability"
   ],
   "timezone": "utc",
   "refresh": false,
@@ -16,21 +15,6 @@
     "to": "now"
   },
   "panels": [
-    {
-      "id": 999,
-      "type": "text",
-      "title": "SIMULATED DATA ONLY",
-      "gridPos": {
-        "h": 3,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "**Preview only.** Not connected to Azure; filters do not change the sample data."
-      }
-    },
     {
       "id": 1,
       "title": "Observed agent runs per interval",
@@ -56,7 +40,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 3
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -133,7 +117,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 3
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -150,7 +134,28 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 100
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
           }
         },
         "overrides": []
@@ -214,7 +219,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -231,7 +236,27 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2500
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
           }
         },
         "overrides": []
@@ -285,7 +310,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -346,7 +371,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -423,7 +448,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -440,9 +465,29 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
           },
-          "min": 0
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
         },
         "overrides": [
           {
@@ -511,7 +556,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -546,6 +591,335 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "id": 8,
+      "title": "Agent summary - selected period",
+      "type": "stat",
+      "description": "Whole-period figures over retained invoke_agent spans for the selected agent. Runs are weighted by ItemCount, the failure rate uses runs with a known outcome, and p95 is taken over retained spans without sampling weights. No data is not evidence of health: the agent may be idle, sampled out or uninstrumented. Threshold colours mirror the default alerts.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "ObservedRuns,FailureRatePercent,P95_ms\n25920,1.03,1260\n"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ObservedRuns$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Observed runs"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^FailureRatePercent$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Failure rate"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^P95_ms$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "P95 latency"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2500
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Peak PTU utilization",
+      "type": "stat",
+      "description": "Highest per-interval maximum utilization in the selected period. Threshold colours mirror the default alert (orange from 85%, red at 100%) and do not follow alert overrides. Azure platform metric; availability varies by model and SKU. A * deployment shows one tile per deployment.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "Maximum",
+          "stringInput": "75,78,76,80,82,79,83,87,91,94,88,85,89,84,87,86,88,85,83,84"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "max"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Throttled (429) - period total",
+      "type": "stat",
+      "description": "Sum of 429 responses in the selected period, orange once any were returned. Azure platform metric. No data can mean no throttling, no matching traffic or an unavailable metric.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "429",
+          "stringInput": "10,12,9,15,18,12,20,25,30,21,28,36,27,24,33,22,18,26,23,19"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
     }
   ],
   "templating": {
@@ -554,10 +928,21 @@
         "name": "workspaceResourceId",
         "label": "Agent telemetry workspace ARM ID",
         "type": "textbox",
-        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs",
         "current": {
-          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
-          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs"
+        },
+        "hide": 0
+      },
+      {
+        "name": "agent",
+        "label": "Agent (agent panels only; * for all)",
+        "type": "textbox",
+        "query": "*",
+        "current": {
+          "text": "*",
+          "value": "*"
         },
         "hide": 0
       },
@@ -576,10 +961,10 @@
         "name": "ptuResourceGroup",
         "label": "ptuResourceGroup",
         "type": "textbox",
-        "query": "existing-openai-rg",
+        "query": "ai-prod-rg",
         "current": {
-          "text": "existing-openai-rg",
-          "value": "existing-openai-rg"
+          "text": "ai-prod-rg",
+          "value": "ai-prod-rg"
         },
         "hide": 0
       },
@@ -587,10 +972,10 @@
         "name": "ptuAccount",
         "label": "ptuAccount",
         "type": "textbox",
-        "query": "existing-openai-account",
+        "query": "contoso-openai",
         "current": {
-          "text": "existing-openai-account",
-          "value": "existing-openai-account"
+          "text": "contoso-openai",
+          "value": "contoso-openai"
         },
         "hide": 0
       },
@@ -609,10 +994,10 @@
         "name": "ptuDeployment",
         "label": "ptuDeployment",
         "type": "textbox",
-        "query": "replace-with-provisioned-deployment-name",
+        "query": "gpt-4o-prod",
         "current": {
-          "text": "replace-with-provisioned-deployment-name",
-          "value": "replace-with-provisioned-deployment-name"
+          "text": "gpt-4o-prod",
+          "value": "gpt-4o-prod"
         },
         "hide": 0
       }
@@ -622,7 +1007,7 @@
     {
       "type": "link",
       "title": "Agent operations",
-      "url": "/d/demo-foundry-agent-operations/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "url": "/d/demo-foundry-agent-operations/_?var-workspaceResourceId=${workspaceResourceId:percentencode}&var-agent=${agent:percentencode}",
       "icon": "external link alt",
       "keepTime": true,
       "includeVars": false,
@@ -638,5 +1023,5 @@
       "targetBlank": false
     }
   ],
-  "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
+  "description": "A concise view of observed agent activity and Azure OpenAI PTU signals. The agent filter applies only to the agent panels; PTU panels cover the configured deployment. It does not calculate a blended health score and shows no cost; use Azure Cost Management or the optional cost dashboard for billed cost. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
 }

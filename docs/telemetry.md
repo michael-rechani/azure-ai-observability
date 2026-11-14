@@ -7,7 +7,7 @@ The dashboards query workspace tables `AppRequests`, `AppDependencies`, and opti
 | Span | Attribute | Expected value |
 | --- | --- | --- |
 | Agent execution | `gen_ai.operation.name` | `invoke_agent` |
-| Agent execution | `gen_ai.agent.name` | Actual agent name |
+| Agent execution | `gen_ai.agent.name` | Actual agent name. The dashboards' optional `agent` control matches it case-insensitively and exactly (see [Reading the dashboards](setup.md#reading-the-dashboards)) |
 | Tool execution | `gen_ai.operation.name` | `execute_tool` |
 | Tool execution | `gen_ai.tool.name` | Actual tool name |
 | Model request | `gen_ai.operation.name` | `chat` or `text_completion`; for Foundry prompt agents, the `invoke_agent` span itself carries the usage |

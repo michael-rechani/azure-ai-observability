@@ -1,13 +1,12 @@
 {
   "uid": "demo-foundry-agent-operations",
-  "title": "DEMO - Foundry - Agent operations",
+  "title": "Foundry - Agent operations",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
   "tags": [
     "azure",
-    "ai-observability",
-    "demo-simulated-data"
+    "ai-observability"
   ],
   "timezone": "browser",
   "refresh": false,
@@ -16,21 +15,6 @@
     "to": "now"
   },
   "panels": [
-    {
-      "id": 999,
-      "type": "text",
-      "title": "SIMULATED DATA ONLY",
-      "gridPos": {
-        "h": 3,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "**Preview only.** Not connected to Azure; filters do not change the sample data."
-      }
-    },
     {
       "id": 1,
       "title": "Agent run latency",
@@ -76,7 +60,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 3
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -93,7 +77,27 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2500
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
           }
         },
         "overrides": [
@@ -193,7 +197,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 3
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -268,7 +272,7 @@
       "id": 3,
       "title": "Tool performance",
       "type": "table",
-      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -288,7 +292,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -318,7 +322,7 @@
       "id": 4,
       "title": "Model token usage and missing usage spans",
       "type": "timeseries",
-      "description": "Input/output token totals are derived from retained model spans. Missing usage spans use the right axis; absent usage is not evidence of zero token consumption.",
+      "description": "Input/output token totals are derived from retained model spans. Missing usage spans use the right axis; absent usage is not evidence of zero token consumption. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -359,7 +363,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -449,7 +453,7 @@
       "id": 5,
       "title": "Failed operations - trace IDs",
       "type": "table",
-      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -469,7 +473,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -589,7 +593,7 @@
       "id": 6,
       "title": "Observed instrumentation",
       "type": "timeseries",
-      "description": "Counts of observed and recognized spans, not a coverage percentage. A completely silent workspace cannot establish telemetry health.",
+      "description": "Counts of observed and recognized spans, not a coverage percentage. A completely silent workspace cannot establish telemetry health. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -640,7 +644,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -680,7 +684,7 @@
       "id": 7,
       "title": "Evaluation results (optional custom events)",
       "type": "table",
-      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -693,14 +697,14 @@
           },
           "refId": "A",
           "scenarioId": "csv_content",
-          "csvContent": "Evaluator,EvaluatedSamples,PassRatePercent,AverageScore,PassedSamples,FailedSamples,InvalidSamples\nexample-evaluator,80,90,0.84,72,8,0\n"
+          "csvContent": "Evaluator,EvaluatedSamples,PassRatePercent,AverageScore,PassedSamples,FailedSamples,InvalidSamples\ngroundedness,80,90,0.84,72,8,0\n"
         }
       ],
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -717,7 +721,7 @@
       "id": 8,
       "title": "Dependency performance",
       "type": "table",
-      "description": "Client-observed calls and latency to external dependencies. Hostnames in Target are telemetry metadata; do not emit secrets or customer data there.",
+      "description": "Client-observed calls and latency to external dependencies. Hostnames in Target are telemetry metadata; do not emit secrets or customer data there. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -730,14 +734,14 @@
           },
           "refId": "A",
           "scenarioId": "csv_content",
-          "csvContent": "DependencyType,Dependency,ObservedCalls,FailedCalls,P95_ms\nHTTP,search.example.invalid,120,2,340\nHTTP,storage.example.invalid,86,1,210\n"
+          "csvContent": "DependencyType,Dependency,ObservedCalls,FailedCalls,P95_ms\nHTTP,search.contoso.com,120,2,340\nHTTP,storage.contoso.com,86,1,210\n"
         }
       ],
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -749,6 +753,175 @@
       "options": {
         "showHeader": true
       }
+    },
+    {
+      "id": 9,
+      "title": "Agent summary - selected period",
+      "type": "stat",
+      "description": "Whole-period figures over retained invoke_agent spans for the selected agent. Runs are weighted by ItemCount, the failure rate uses runs with a known outcome, and p95 is taken over retained spans without sampling weights. No data is not evidence of health: the agent may be idle, sampled out or uninstrumented. Threshold colours mirror the default alerts.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_content",
+          "csvContent": "ObservedRuns,FailureRatePercent,P95_ms\n25920,1.03,1260\n"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ObservedRuns$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Observed runs"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^FailureRatePercent$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Failure rate"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^P95_ms$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "P95 latency"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2500
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
     }
   ],
   "templating": {
@@ -757,10 +930,21 @@
         "name": "workspaceResourceId",
         "label": "Telemetry workspace ARM ID",
         "type": "textbox",
-        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
+        "query": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs",
         "current": {
-          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
-          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+          "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs",
+          "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs"
+        },
+        "hide": 0
+      },
+      {
+        "name": "agent",
+        "label": "Agent (or * for all)",
+        "type": "textbox",
+        "query": "*",
+        "current": {
+          "text": "*",
+          "value": "*"
         },
         "hide": 0
       }
@@ -779,12 +963,11 @@
     {
       "type": "link",
       "title": "Business overview",
-      "url": "/d/demo-azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "url": "/d/demo-azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}&var-agent=${agent:percentencode}",
       "icon": "external link alt",
       "keepTime": true,
       "includeVars": false,
       "targetBlank": false
     }
-  ],
-  "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
+  ]
 }

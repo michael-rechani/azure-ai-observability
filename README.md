@@ -10,17 +10,19 @@ New to Azure or this repository? Start with the [step-by-step deployment guide](
 
 ## Dashboards
 
+Screenshots come from a local Grafana with sample data, not from a live Azure deployment.
+
 ### Foundry agent operations
 
-![Grafana preview of Foundry agent operations with simulated data](docs/images/foundry-grafana-preview.png)
+![Grafana dashboard: Foundry agent operations](docs/images/foundry-grafana-preview.png)
 
 ### Azure OpenAI PTU performance
 
-![Grafana preview of Azure OpenAI PTU performance with simulated data](docs/images/ptu-grafana-preview.png)
+![Grafana dashboard: Azure OpenAI PTU performance](docs/images/ptu-grafana-preview.png)
 
 ### Business overview
 
-![Grafana preview of the Azure AI business overview with simulated data](docs/images/business-overview-preview.png)
+![Grafana dashboard: Azure AI business overview](docs/images/business-overview-preview.png)
 
 ## Architecture
 
@@ -94,14 +96,14 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Area | Included | Prerequisite / boundary |
 | --- | --- | --- |
 | Foundry estate | Accessible accounts, projects, and ML workspace inventory | Resource Graph returns only resources visible to the Grafana identity |
-| Foundry agents | Run latency percentiles, failures, tool performance, token usage, trace IDs, observed telemetry counts | Application Insights instrumentation matching the documented contract |
+| Foundry agents | Period summary tile (runs, failure rate, p95 latency), run latency percentiles and failures with warning thresholds, tool performance, token usage, trace IDs, observed telemetry counts, optional agent-name filter | Application Insights instrumentation matching the documented contract. The agent filter narrows the run charts and the summary tile, not tool, model, evaluation or dependency panels |
 | Foundry model usage | OpenAI requests and inference tokens on a selected Foundry account | OpenAI-specific metrics; not a universal endpoint for all Foundry model providers |
 | Estimated token cost | Per-model table of tokens × list price on the Foundry overview, with no secret | An estimate, not billed cost: prices are a table you maintain in `queries/model-prices.kql`, prompt caching overstates input, and PTU, batch, regional and negotiated pricing are not covered. See [cost interpretation](docs/costs.md#native-estimate-from-azure-monitor-metrics-no-secret) |
 | Billed cost, direct query (opt-in) | Grafana's Infinity plugin queries the Cost Management API directly for month-to-date, daily, per-account and per-meter actual cost, with the `azure-ai-costs-infinity` dashboard. No cluster or storage | **Not secretless:** it needs a service principal client secret that Grafana stores (and Terraform state records) and you must rotate. The deployment creates the principal and a read-only custom role (`Microsoft.CostManagement/query/read` only), but it needs Entra app-registration rights. A shared identity, so anyone who can edit queries on the data source inherits its cost access. Throttled live API, 31-day daily limit, no stored history. See [direct queries with Infinity](docs/costs.md#direct-cost-management-queries-with-infinity-opt-in) for its validation status |
 | Evaluations | Optional evaluator score / pass-fail dashboard | Publish evaluation events explicitly; this repo does not run evaluations |
-| Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate, and the deployments reporting utilization | Existing provisioned deployments and supported metric definitions. Allocated PTUs and regional quota are not exposed by Azure Monitor or Resource Graph |
+| Azure OpenAI PTUs | Peak utilization and 429 tiles, Utilization V2 with 85% and 100% thresholds, requests by status, 429s, input/output tokens, gateway latency, cache hit rate, and the deployments reporting utilization | Existing provisioned deployments and supported metric definitions. Allocated PTUs and regional quota are not exposed by Azure Monitor or Resource Graph |
 | Alerting | Per-deployment PTU utilization and 429 metric alerts; opt-in agent failure-rate, p95 latency, and heartbeat alerts | Agent rules require matching telemetry; heartbeat also requires guaranteed expected traffic |
-| Business overview | Agent runs per interval and failure rate over known outcomes, PTU utilization, requests, throttles, and tokens; no cost data | Opt-in (`enable_business_overview` / `enableBusinessOverview`); needs only the agent telemetry workspace; missing telemetry is not zero or proof of health |
+| Business overview | Summary tiles (agent runs, failure rate and p95 latency; peak PTU utilization; 429 total), agent runs per interval and failure rate over known outcomes, PTU utilization, requests, throttles, and tokens; no cost data | Opt-in (`enable_business_overview` / `enableBusinessOverview`); needs only the agent telemetry workspace; missing telemetry is not zero or proof of health |
 | Cost budget | Optional account-scoped monthly budget with threshold notifications through the existing action group | A budget notifies, it does not cap spending; costs are not invoice totals, reservation coverage, or deployment-level spend; billing can be delayed |
 | Operations | Terraform or Bicep deployment, reproducible dashboard generator, queries, telemetry demo, CI, troubleshooting runbooks | No Azure credentials needed to validate source locally |
 
@@ -119,8 +121,8 @@ This repository combines deployable Terraform or Bicep monitoring infrastructure
 infra/       Bicep monitoring resources, access, alerts, budget and optional cost route
 terraform/   Native Azure resources and Grafana data source/dashboard deployment
 dashboards/  Importable Foundry, agent, PTU, business overview, and opt-in cost dashboard
-demo/        Local-only Grafana preview using simulated data
-docs/images/ Actual Grafana screenshots with simulated data (no live Azure connection)
+demo/        Local-only Grafana layout preview (TestData, no Azure connection)
+docs/images/ README screenshots (rendered from the local preview) and the architecture diagram
 queries/     Workspace KQL and the Azure Resource Graph inventory query (accounts, projects, ML workspaces)
 scripts/     Bicep/Grafana deployment helper and optional dashboard generators
 examples/    Synthetic OpenTelemetry example (no model calls)
@@ -165,8 +167,8 @@ For repository security checks and private vulnerability reporting, see [SECURIT
 - [Azure Cost Management query API](https://learn.microsoft.com/rest/api/cost-management/query/usage)
 
 <details>
-<summary>Optional local layout preview with simulated data</summary>
+<summary>Optional local layout preview</summary>
 
-This preview does not deploy to Azure or validate live data. With Docker Compose installed, run `docker compose -f .\demo\docker-compose.yml up -d`, open [Grafana at localhost:3100](http://127.0.0.1:3100), and open the **Simulated preview** folder. The preview listens on localhost with anonymous Viewer access; never expose it publicly. Stop it with `docker compose -f .\demo\docker-compose.yml down`.
+This preview draws the dashboards from Grafana TestData sample series. It does not connect to Azure, deploy anything or validate live data. With Docker Compose installed, run `docker compose -f .\demo\docker-compose.yml up -d`, open [Grafana at localhost:3100](http://127.0.0.1:3100), and open the **Azure AI Observatory** folder. The preview listens on localhost with anonymous Viewer access; never expose it publicly. Stop it with `docker compose -f .\demo\docker-compose.yml down`.
 
 </details>

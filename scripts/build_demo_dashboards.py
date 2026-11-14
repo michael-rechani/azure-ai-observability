@@ -1,4 +1,4 @@
-"""Build separate, clearly labeled Grafana TestData previews from the real dashboard layouts."""
+"""Build Grafana TestData previews that copy the real dashboard layouts, with sample series instead of Azure queries."""
 
 import copy
 import json
@@ -12,6 +12,19 @@ DEMO_DASHBOARD_UIDS = {
     "demo-foundry-agent-operations",
     "demo-azure-openai-ptu",
     "demo-azure-ai-business-overview",
+}
+# The checked-in defaults are deployment placeholders; the preview shows plausible names instead.
+DEMO_VARIABLES = {
+    "deployment": "gpt-4o-prod",
+    "ptuDeployment": "gpt-4o-prod",
+    "resourceGroup": "ai-prod-rg",
+    "ptuResourceGroup": "ai-prod-rg",
+    "account": "contoso-openai",
+    "ptuAccount": "contoso-openai",
+    "workspaceResourceId": (
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg"
+        "/providers/Microsoft.OperationalInsights/workspaces/ai-observability-logs"
+    ),
 }
 
 
@@ -49,6 +62,9 @@ PTU_DATA = {
         "gpt-4o-mini-prod,52,71,58.4\n"
     ),
 }
+# The summary tiles reduce the same sample series the charts draw.
+PTU_DATA[13] = PTU_DATA[2]
+PTU_DATA[14] = PTU_DATA[4]
 
 AGENT_RUN_COUNTS = [
     1100, 1150, 1130, 1200, 1250, 1230, 1280, 1320, 1400, 1350,
@@ -78,9 +94,14 @@ AGENT_DATA = {
         ("AgentRuns", AGENT_RUN_COUNTS),
         ("UnnamedAgentRuns", [4, 5, 4, 5, 6, 5, 5, 6, 7, 6, 5, 6, 5, 5, 6, 5, 4, 5, 5, 4]),
     ],
-    7: "Evaluator,EvaluatedSamples,PassRatePercent,AverageScore,PassedSamples,FailedSamples,InvalidSamples\nexample-evaluator,80,90,0.84,72,8,0\n",
-    8: "DependencyType,Dependency,ObservedCalls,FailedCalls,P95_ms\nHTTP,search.example.invalid,120,2,340\nHTTP,storage.example.invalid,86,1,210\n",
+    7: "Evaluator,EvaluatedSamples,PassRatePercent,AverageScore,PassedSamples,FailedSamples,InvalidSamples\ngroundedness,80,90,0.84,72,8,0\n",
+    8: "DependencyType,Dependency,ObservedCalls,FailedCalls,P95_ms\nHTTP,search.contoso.com,120,2,340\nHTTP,storage.contoso.com,86,1,210\n",
 }
+# Whole-period figures consistent with the charts: total runs, failed share of runs, and a p95 within the per-interval p95 range.
+AGENT_DATA[9] = (
+    "ObservedRuns,FailureRatePercent,P95_ms\n"
+    f"{sum(AGENT_RUN_COUNTS)},{100 * sum(AGENT_DATA[2][1][1]) / sum(AGENT_RUN_COUNTS):.2f},1260\n"
+)
 
 BUSINESS_DATA = {
     1: AGENT_DATA[2][:1],
@@ -96,17 +117,22 @@ BUSINESS_DATA = {
         ("Input tokens", PTU_DATA[5][0][1]),
         ("Output tokens", PTU_DATA[6][0][1]),
     ],
+    8: AGENT_DATA[9],
+    9: PTU_DATA[13],
+    10: PTU_DATA[14],
 }
 
 
 def demo_dashboard(source, samples):
     result = copy.deepcopy(source)
+    # The uid prefix keeps the preview from ever replacing a live dashboard that shares a Grafana.
     result["uid"] = f"demo-{source['uid']}"
-    result["title"] = f"DEMO - {source['title']}"
-    result["description"] = "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
-    result["tags"].append("demo-simulated-data")
     result.pop("__inputs", None)
     result["refresh"] = False
+    for variable in result["templating"]["list"]:
+        if variable["name"] in DEMO_VARIABLES:
+            value = DEMO_VARIABLES[variable["name"]]
+            variable.update({"query": value, "current": {"text": value, "value": value}})
     result["links"] = [
         {
             **link,
@@ -121,7 +147,6 @@ def demo_dashboard(source, samples):
         or f"demo-{link['url'].split('/')[2]}" in DEMO_DASHBOARD_UIDS
     ]
     for item in result["panels"]:
-        item["gridPos"]["y"] += 3
         item["datasource"] = DEMO_DS
         if item["type"] == "text":
             continue
@@ -135,13 +160,6 @@ def demo_dashboard(source, samples):
             [table(sample)] if isinstance(sample, str)
             else [series(name, values, chr(65 + index)) for index, (name, values) in enumerate(sample)]
         )
-    result["panels"].insert(0, {
-        "id": 999, "type": "text", "title": "SIMULATED DATA ONLY",
-        "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
-        "options": {"mode": "markdown", "content": (
-            "**Preview only.** Not connected to Azure; filters do not change the sample data."
-        )},
-    })
     return result
 
 
@@ -160,7 +178,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     for name, content in build().items():
         (output / name).write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8")
-    print(f"Generated simulated-data dashboards in {output}")
+    print(f"Generated preview dashboards in {output}")
 
 
 if __name__ == "__main__":
