@@ -132,7 +132,7 @@ param costExportEndDate string = dateTimeAdd(utcNow(), 'P5Y', 'yyyy-MM-dd')
 @description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. It needs no export or cluster, but it is NOT secretless: Infinity supports only a service principal client secret, which you create, pass to the Grafana provisioning step (never to this template) and rotate.')
 param enableCostInfinity bool = false
 
-@description('Application (client) ID of the service principal Infinity signs in as. scripts/new_cost_infinity_principal.ps1 creates it.')
+@description('Application (client) ID of the service principal Infinity signs in as. docs/costs.md shows how to create it.')
 param costInfinityClientId string = ''
 
 @description('Object ID of the same principal in Enterprise applications, used for the Cost Management role assignment.')

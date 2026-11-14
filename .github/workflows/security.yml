@@ -40,7 +40,7 @@ jobs:
           python-version: "3.12"
       - name: Audit resolved example dependencies
         run: |
-          python -m pip install -r .github/requirements-audit.txt
+          python -m pip install --require-hashes -r .github/requirements-audit.txt
           python -m pip_audit --requirement examples/requirements.txt
 
   infrastructure:
@@ -63,7 +63,7 @@ jobs:
         # --skip-path: checkov's HCL parser cannot read the `for` attribute the Grafana alert rule requires;
         # see the comment in terraform/grafana/infinity-alert.tf. Parse errors in every other file still fail the scan.
         run: |
-          python -m pip install -r .github/requirements-iac.txt
+          python -m pip install --require-hashes -r .github/requirements-iac.txt
           checkov --directory terraform --framework terraform --skip-download \
             --skip-path 'terraform[/\\]grafana[/\\]infinity-alert\.tf' \
             --quiet --compact --soft-fail --output cli --output sarif \
