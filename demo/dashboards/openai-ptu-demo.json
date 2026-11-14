@@ -473,7 +473,7 @@
       "id": 7,
       "title": "Time to response - gateway average",
       "type": "timeseries",
-      "description": "Azure platform metric. Availability varies by model/SKU. Counts are per time bucket, not per second.",
+      "description": "Azure platform metric. Availability varies by model/SKU. Counts are per time bucket, not per second. Azure reports it for streaming requests, so the panel stays empty when traffic is not streaming.",
       "datasource": {
         "type": "grafana-testdata-datasource",
         "uid": "ai-demo-data"
@@ -748,7 +748,18 @@
       },
       "options": {
         "showHeader": true
-      }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "Field": "Deployment",
+              "Last *": "Last"
+            }
+          }
+        }
+      ]
     },
     {
       "id": 12,
