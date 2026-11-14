@@ -4,7 +4,7 @@ This walkthrough takes you from an existing Azure AI account to dashboards in Az
 
 **Jump to:** [Preparation](#1-install-the-tools-and-get-the-repository) · [Bicep](#3a-deploy-with-bicep) · [Terraform](#3b-deploy-with-terraform) · [Verify](#4-open-and-verify-the-dashboards) · [Troubleshooting](#troubleshooting-and-cleanup)
 
-> **Before you start:** Both the Bicep and the Terraform path were deployed in an isolated Lab subscription and read live Foundry metrics, PTU metrics and agent traces. That run predates the removal of the optional cost pipeline. The opt-in Infinity cost route is the least-proven part (the Infinity route returned no rows in its live run because the test resource group had no billed cost); see [billed cost options](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end. The README screenshots use sample data; this deployment uses real Azure data.
+> **Before you start:** Both the Bicep and the Terraform path were deployed in an isolated Lab subscription and read live Foundry metrics, PTU metrics and agent traces. That run predates the removal of the optional cost pipeline. The opt-in Infinity cost route is the least-proven part (the Infinity route returned no rows in its live run because the test resource group had no billed cost); see [billed cost options](costs.md). Start in a nonproduction subscription, review the resources and estimated charges with your Azure administrator, and complete the checks at the end.
 
 ## What you need and what will be created
 
