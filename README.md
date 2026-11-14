@@ -10,8 +10,6 @@ New to Azure or this repository? Start with the [step-by-step deployment guide](
 
 ## Dashboards
 
-Screenshots come from a local Grafana with sample data, not from a live Azure deployment.
-
 ### Foundry agent operations
 
 ![Grafana dashboard: Foundry agent operations](docs/images/foundry-grafana-preview.png)

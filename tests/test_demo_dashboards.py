@@ -34,12 +34,10 @@ class DemoDashboardTests(unittest.TestCase):
                     dashboard,
                 )
 
-    def test_readme_leads_with_grafana_screenshots_and_says_where_they_come_from(self):
+    def test_readme_leads_with_grafana_screenshots(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         introduction = readme.split("## What is included", 1)[0]
         self.assertIn("## Dashboards", introduction)
-        self.assertIn("with sample data", introduction)
-        self.assertIn("not from a live azure deployment", introduction.lower())
         for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png",
                      "business-overview-preview.png"):
             path = f"docs/images/{name}"
