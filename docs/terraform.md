@@ -14,7 +14,7 @@ The Grafana stage needs an existing endpoint and a propagated Grafana Admin role
 - Existing Foundry/OpenAI accounts. All monitored accounts must be in the **same subscription** as this Terraform Azure stage. Deploy separate stacks for other subscriptions. Existing telemetry workspace IDs can be specified separately; permissions must exist at those scopes.
 - The identity that runs the Grafana stage needs the Grafana Admin role; use its Entra **object ID** as `grafana_admin_object_id`, or assign it separately. The Azure subscription role alone is not Grafana data-plane access.
 - The environment must reach both Azure APIs and the Grafana endpoint. Public endpoints are enabled by this starter; private networking requires a separate design.
-- For the opt-in Infinity route, the default `subscription` scope requires permission to assign **Cost Management Reader at subscription scope**. Its `resourceGroupManaged` scope creates custom roles automatically, which needs role-definition write/delete permission at subscription scope and role-assignment write/delete permission in each monitored group.
+- For the opt-in Infinity route, the identity that runs the Azure stage also needs permission to create app registrations in Microsoft Entra (for example Application Developer or Application Administrator) and to create role definitions and assignments at the scope: subscription scope for the default `subscription` setting, or each monitored group for `resourceGroupManaged`. Owner or User Access Administrator covers the Azure side.
 
 **State contains sensitive information.** AzureRM stores Application Insights connection strings and workspace keys in state even though they are not output here, and email addresses/resource metadata may also appear. Neither root configures a backend by default. Follow the [remote-state walkthrough](getting-started.md#prepare-remote-state-for-terraform) to configure separate encrypted, access-controlled, locked state blobs before real use. Local state is for evaluation only; never commit state, plans, credentials, or real `.tfvars`. Treat Terraform debug logs and plan files as sensitive.
 
@@ -66,21 +66,20 @@ An optional monthly Azure Cost Management budget is disabled by default (`monthl
 
 ### Optional direct cost queries with Infinity
 
-The billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin, with no cluster or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret that Grafana stores and you must rotate, and **the Grafana stage's Terraform state will contain that secret**. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first.
+The billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin, with no cluster or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret that Grafana stores, and **both stages' Terraform state will contain that secret**. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first.
 
-Create the service principal with the `az ad` commands in [Set it up](costs.md#set-it-up). In the Azure stage's `local.tfvars`:
+Terraform creates the principal for you (azuread provider): an app registration and service principal named `<name_prefix>-cost-query`, a rotating client secret, and a custom role whose **only action is `Microsoft.CostManagement/query/read`**. In the Azure stage's `local.tfvars`:
 
 ```hcl
-enable_cost_infinity                      = true
-cost_infinity_client_id                   = "00000000-0000-0000-0000-000000000000" # $app.appId
-cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-000000000000" # $sp.id, the enterprise application's object ID
-cost_infinity_scope                       = "resourceGroupManaged"                  # Or "subscription" (Cost Management Reader)
+enable_cost_infinity               = true
+cost_infinity_scope                = "resourceGroupManaged" # Or "subscription"; both use the same single-action role
+cost_infinity_secret_rotation_days = 90                     # 7 to 300; the old secret stays valid 30 more days
 ```
 
-Terraform installs the Infinity plugin on the Grafana workspace through `azapi` (`grafanaPlugins`, a preview property) and grants the principal either **Cost Management Reader** on the subscription or a one-action `Microsoft.CostManagement/query/read` role on each monitored resource group. In the Grafana stage, enable the dashboard and pass the Azure stage's outputs. Give the secret through the environment, never a `.tfvars` file:
+Terraform installs the Infinity plugin on the Grafana workspace through `azapi` (`grafanaPlugins`, a preview property) and assigns the role at the subscription or on each monitored resource group. In the Grafana stage, enable the dashboard and pass the Azure stage's outputs. Give the secret through the environment, never a `.tfvars` file:
 
 ```powershell
-$env:TF_VAR_cost_infinity_client_secret = $env:AI_OBSERVABILITY_COST_CLIENT_SECRET
+$env:TF_VAR_cost_infinity_client_secret = terraform -chdir=terraform\azure output -raw cost_infinity_client_secret
 terraform -chdir=terraform\azure output -raw cost_infinity_tenant_id
 terraform -chdir=terraform\azure output -raw cost_infinity_client_id
 terraform -chdir=terraform\azure output -raw cost_infinity_scope
@@ -88,9 +87,11 @@ terraform -chdir=terraform\azure output -raw cost_infinity_scope
 
 Set `enable_cost_infinity_dashboard = true`, `cost_infinity_tenant_id`, `cost_infinity_client_id` and (optionally) `cost_infinity_scope` in the Grafana stage's `local.tfvars`. Terraform then creates the Infinity data source (uid `ai-observability-cost-infinity`, client-credentials OAuth, the secret held only in the data source's secure data), the `azure-ai-costs-infinity` dashboard and an alert rule, **Infinity cost data source cannot query Cost Management**, that fires when the cost query fails (for example after the secret expires). A missing tenant ID, client ID or secret fails the plan.
 
+The identity that runs the Azure stage needs permission to create app registrations in Microsoft Entra and to create role definitions and assignments (see [what the deployer needs](costs.md#set-it-up)). To rotate, run `terraform apply` on the Azure stage after the rotation period and then the Grafana stage again; nothing applies on its own.
+
 The alert rule is on by default. Tune or disable it with `enable_cost_infinity_alert`, `cost_infinity_alert_interval_minutes` (5-1440, default 60) and `cost_infinity_alert_pending_minutes` (0-1440, default 60). Terraform creates the rule, not a way to notify anyone: add a Grafana contact point and a notification policy that routes `component = cost-infinity`, because Azure Managed Grafana's default contact point has no integration. See [Get alerted when the secret fails](costs.md#get-alerted-when-the-secret-fails).
 
-**This path has been applied live** in a throwaway deployment, with both stages applied, re-planned with no changes, and destroyed (see [what has been validated](costs.md#what-has-been-validated)). The `azapi` resource installed the Infinity plugin, the single-action role limited queries to the monitored resource group, and all four panels returned HTTP 200 through Grafana. Rotating the secret changed the data source in place. The monitored group had no billed Azure AI cost, so no panel returned rows in that run. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
+**This path has been applied live** in throwaway deployments (see [what has been validated](costs.md#what-has-been-validated)). The Azure stage, including the app registration, secret and single-action role, was applied, re-planned with no changes and destroyed with the principal in code. An earlier deployment also applied the Grafana stage with a hand-made principal: the `azapi` resource installed the Infinity plugin, the role limited queries to the monitored resource group, all four panels returned HTTP 200 through Grafana, and rotating the secret changed the data source in place. The monitored group had no billed Azure AI cost, so no panel returned rows in that run. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
 
 From the repository root in PowerShell:
 

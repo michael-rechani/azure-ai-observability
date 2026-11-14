@@ -104,8 +104,6 @@ function Test-BicepDeploymentParameters {
     }
 
     if ([bool](Get-BicepParameter $Parameters 'enableCostInfinity' $false)) {
-        Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costInfinityClientId' '')) 'costInfinityClientId (the application ID of the Infinity service principal)'
-        Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costInfinityServicePrincipalObjectId' '')) 'costInfinityServicePrincipalObjectId (the object ID of the same principal in Enterprise applications)'
         $infinityScope = [string](Get-BicepParameter $Parameters 'costInfinityScope' 'subscription')
         if ($infinityScope -cnotin @('subscription', 'resourceGroupManaged')) {
             throw 'costInfinityScope must be subscription or resourceGroupManaged.'

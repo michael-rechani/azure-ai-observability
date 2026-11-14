@@ -55,13 +55,12 @@ param costBudgetStartDate = ''
 param costBudgetEndDate = ''
 
 // Optional billed-cost path: Grafana queries Cost Management directly through the Infinity plugin.
-// It adds no cluster or storage, but it is NOT secretless: Infinity signs in with a service principal
-// client secret that you create, supply only to the provisioning step (never to this template) and rotate.
-// Create the principal with the `az ad` commands in docs/costs.md, then fill in its client ID and service principal object ID.
+// This template creates the app registration and service principal and grants one read-only action
+// (Microsoft.CostManagement/query/read) through a custom role. The deployer needs an Entra role that can
+// create applications, plus Owner or User Access Administrator. It is NOT secretless: Infinity supports only a
+// client secret, which Bicep cannot create, so scripts/provision_grafana.ps1 creates it with your own sign-in.
 // param enableCostInfinity = true
-// param costInfinityClientId = '00000000-0000-0000-0000-000000000000'
-// param costInfinityServicePrincipalObjectId = '00000000-0000-0000-0000-000000000000'
-// 'subscription' grants Cost Management Reader; 'resourceGroupManaged' grants a query-only role per monitored group.
+// 'subscription' assigns the query-only role on the subscription; 'resourceGroupManaged' assigns it per monitored group.
 // param costInfinityScope = 'resourceGroupManaged'
 // On by default with Infinity: an alert rule that fires when the data source cannot query Cost Management (for example
 // the secret expired). It needs a contact point that routes component=cost-infinity; see docs/costs.md.

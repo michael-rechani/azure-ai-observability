@@ -1,5 +1,15 @@
 mock_provider "azapi" {}
 
+mock_provider "time" {}
+
+mock_provider "azuread" {
+  mock_data "azuread_client_config" {
+    defaults = {
+      object_id = "00000000-0000-0000-0000-0000000000b1"
+    }
+  }
+}
+
 mock_provider "azurerm" {
   mock_data "azurerm_resource_group" {
     defaults = {
@@ -279,10 +289,8 @@ run "reject_other_subscription" {
 run "cost_infinity_group_role_rejects_parent_scope" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/../providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -296,10 +304,8 @@ run "cost_infinity_group_role_rejects_parent_scope" {
 run "cost_infinity_group_role_rejects_escaped_scope" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry%2fother/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -313,10 +319,8 @@ run "cost_infinity_group_role_rejects_escaped_scope" {
 run "cost_infinity_group_role_rejects_query_delimiter" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry?other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -330,10 +334,8 @@ run "cost_infinity_group_role_rejects_query_delimiter" {
 run "cost_infinity_group_role_rejects_fragment_delimiter" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry#other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -347,10 +349,8 @@ run "cost_infinity_group_role_rejects_fragment_delimiter" {
 run "cost_infinity_group_role_rejects_backslash_scope" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry\\other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -364,10 +364,8 @@ run "cost_infinity_group_role_rejects_backslash_scope" {
 run "cost_infinity_group_role_rejects_control_character_scope" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       invalid = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/foundry\u0001other/providers/Microsoft.CognitiveServices/accounts/foundry"
@@ -383,23 +381,62 @@ run "cost_infinity_is_opt_in" {
   assert {
     condition = (
       length(azapi_update_resource.grafana_infinity_plugin) == 0 &&
-      length(azurerm_role_assignment.cost_infinity_reader) == 0 &&
-      length(azurerm_role_definition.cost_infinity_group_query) == 0 &&
-      length(azurerm_role_assignment.cost_infinity_group_query) == 0 &&
+      length(azuread_application.cost_infinity) == 0 &&
+      length(azuread_service_principal.cost_infinity) == 0 &&
+      length(azuread_application_password.cost_infinity) == 0 &&
+      length(time_rotating.cost_infinity_secret) == 0 &&
+      length(azurerm_role_definition.cost_infinity_query) == 0 &&
+      length(azurerm_role_assignment.cost_infinity_query) == 0 &&
       output.cost_infinity_scope == null &&
       output.cost_infinity_client_id == null &&
+      output.cost_infinity_client_secret == null &&
       output.cost_infinity_tenant_id == null
     )
-    error_message = "The Infinity plugin, its roles and its outputs must be opt-in."
+    error_message = "The Infinity plugin, its principal, its roles and its outputs must be opt-in."
   }
 }
 
-run "cost_infinity_subscription_scope_installs_the_plugin_and_grants_cost_reader" {
+run "cost_infinity_subscription_scope_installs_the_plugin_and_creates_a_query_only_principal" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
+    enable_cost_infinity = true
+  }
+  override_resource {
+    target          = azuread_application.cost_infinity[0]
+    override_during = plan
+    values = {
+      id        = "/applications/00000000-0000-0000-0000-0000000000a0"
+      client_id = "00000000-0000-0000-0000-0000000000a1"
+    }
+  }
+  override_resource {
+    target          = azuread_service_principal.cost_infinity[0]
+    override_during = plan
+    values = {
+      object_id = "00000000-0000-0000-0000-0000000000a2"
+    }
+  }
+  override_resource {
+    target          = time_rotating.cost_infinity_secret[0]
+    override_during = plan
+    values = {
+      id               = "2027-02-11T00:00:00Z"
+      rotation_rfc3339 = "2027-02-11T00:00:00Z"
+    }
+  }
+  override_resource {
+    target          = azuread_application_password.cost_infinity[0]
+    override_during = plan
+    values = {
+      value = "mock-secret-value"
+    }
+  }
+  override_resource {
+    target          = azurerm_role_definition.cost_infinity_query["/subscriptions/00000000-0000-0000-0000-000000000000"]
+    override_during = plan
+    values = {
+      role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000021"
+    }
   }
   assert {
     condition = (
@@ -410,31 +447,52 @@ run "cost_infinity_subscription_scope_installs_the_plugin_and_grants_cost_reader
   }
   assert {
     condition = (
-      length(azurerm_role_assignment.cost_infinity_reader) == 1 &&
-      azurerm_role_assignment.cost_infinity_reader[0].scope == "/subscriptions/00000000-0000-0000-0000-000000000000" &&
-      azurerm_role_assignment.cost_infinity_reader[0].role_definition_name == "Cost Management Reader" &&
-      azurerm_role_assignment.cost_infinity_reader[0].principal_id == "00000000-0000-0000-0000-0000000000a2" &&
-      azurerm_role_assignment.cost_infinity_reader[0].principal_type == "ServicePrincipal" &&
-      length(azurerm_role_definition.cost_infinity_group_query) == 0
+      azuread_application.cost_infinity[0].sign_in_audience == "AzureADMyOrg" &&
+      azuread_application.cost_infinity[0].display_name == "ai-observe-cost-query" &&
+      azuread_application_password.cost_infinity[0].display_name == "grafana-infinity" &&
+      time_rotating.cost_infinity_secret[0].rotation_days == 90 &&
+      azuread_application_password.cost_infinity[0].end_date == "2027-03-13T00:00:00Z"
     )
-    error_message = "Subscription scope must grant only Cost Management Reader to the supplied service principal."
+    error_message = "Terraform must create a single-tenant application and a secret that expires 30 days after its 90-day rotation."
+  }
+  assert {
+    condition = (
+      length(azurerm_role_definition.cost_infinity_query) == 1 &&
+      length(azurerm_role_assignment.cost_infinity_query) == 1 &&
+      azurerm_role_assignment.cost_infinity_query["/subscriptions/00000000-0000-0000-0000-000000000000"].scope == "/subscriptions/00000000-0000-0000-0000-000000000000" &&
+      azurerm_role_assignment.cost_infinity_query["/subscriptions/00000000-0000-0000-0000-000000000000"].principal_id == "00000000-0000-0000-0000-0000000000a2" &&
+      azurerm_role_assignment.cost_infinity_query["/subscriptions/00000000-0000-0000-0000-000000000000"].principal_type == "ServicePrincipal"
+    )
+    error_message = "Subscription scope must assign one custom role to the created service principal."
+  }
+  assert {
+    condition = alltrue([
+      for scope, role in azurerm_role_definition.cost_infinity_query :
+      length(role.assignable_scopes) == 1 && role.assignable_scopes[0] == scope &&
+      length(role.permissions) == 1 &&
+      length(role.permissions[0].actions) == 1 &&
+      role.permissions[0].actions[0] == "Microsoft.CostManagement/query/read" &&
+      length(role.permissions[0].not_actions) == 0 &&
+      length(role.permissions[0].data_actions) == 0 &&
+      length(role.permissions[0].not_data_actions) == 0
+    ])
+    error_message = "The subscription role must contain only the Cost Management query action, not a built-in reader role."
   }
   assert {
     condition = (
       output.cost_infinity_scope == "/subscriptions/00000000-0000-0000-0000-000000000000" &&
-      output.cost_infinity_client_id == "00000000-0000-0000-0000-0000000000a1"
+      output.cost_infinity_client_id == "00000000-0000-0000-0000-0000000000a1" &&
+      output.cost_infinity_client_secret == "mock-secret-value"
     )
-    error_message = "The outputs must carry the values the Grafana stage needs, and never a secret."
+    error_message = "The outputs must carry the values the Grafana stage needs."
   }
 }
 
 run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
     monitored_accounts = {
       first = {
         resource_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Foundry/providers/Microsoft.CognitiveServices/accounts/first"
@@ -451,14 +509,21 @@ run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" 
     }
   }
   override_resource {
-    target          = azurerm_role_definition.cost_infinity_group_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry"]
+    target          = azuread_service_principal.cost_infinity[0]
+    override_during = plan
+    values = {
+      object_id = "00000000-0000-0000-0000-0000000000a2"
+    }
+  }
+  override_resource {
+    target          = azurerm_role_definition.cost_infinity_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/foundry"]
     override_during = plan
     values = {
       role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000021"
     }
   }
   override_resource {
-    target          = azurerm_role_definition.cost_infinity_group_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/openai"]
+    target          = azurerm_role_definition.cost_infinity_query["/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/openai"]
     override_during = plan
     values = {
       role_definition_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000022"
@@ -466,15 +531,15 @@ run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" 
   }
   assert {
     condition = (
-      length(azurerm_role_assignment.cost_infinity_reader) == 0 &&
-      length(azurerm_role_definition.cost_infinity_group_query) == 2 &&
-      length(azurerm_role_assignment.cost_infinity_group_query) == 2
+      length(azurerm_role_definition.cost_infinity_query) == 2 &&
+      length(azurerm_role_assignment.cost_infinity_query) == 2 &&
+      !contains(keys(azurerm_role_definition.cost_infinity_query), "/subscriptions/00000000-0000-0000-0000-000000000000")
     )
     error_message = "Group scope must omit the subscription role and deduplicate groups."
   }
   assert {
     condition = alltrue([
-      for scope, role in azurerm_role_definition.cost_infinity_group_query :
+      for scope, role in azurerm_role_definition.cost_infinity_query :
       length(role.assignable_scopes) == 1 && role.assignable_scopes[0] == scope &&
       length(role.permissions) == 1 &&
       length(role.permissions[0].actions) == 1 &&
@@ -488,10 +553,10 @@ run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" 
   }
   assert {
     condition = alltrue([
-      for scope, assignment in azurerm_role_assignment.cost_infinity_group_query :
+      for scope, assignment in azurerm_role_assignment.cost_infinity_query :
       assignment.principal_id == "00000000-0000-0000-0000-0000000000a2" &&
       assignment.principal_type == "ServicePrincipal" &&
-      assignment.role_definition_id == azurerm_role_definition.cost_infinity_group_query[scope].role_definition_resource_id
+      assignment.role_definition_id == azurerm_role_definition.cost_infinity_query[scope].role_definition_resource_id
     ])
     error_message = "Each assignment must bind the matching group role to the Infinity service principal."
   }
@@ -499,30 +564,6 @@ run "cost_infinity_group_scope_grants_a_query_only_role_per_deduplicated_group" 
     condition     = output.cost_infinity_scope == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/Foundry"
     error_message = "The default dashboard scope must be the first monitored resource group."
   }
-}
-
-run "cost_infinity_requires_real_principal_ids" {
-  command = plan
-  variables {
-    enable_cost_infinity = true
-  }
-  expect_failures = [
-    var.cost_infinity_client_id,
-    var.cost_infinity_service_principal_object_id,
-  ]
-}
-
-run "cost_infinity_rejects_the_placeholder_ids" {
-  command = plan
-  variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-000000000000"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-000000000000"
-  }
-  expect_failures = [
-    var.cost_infinity_client_id,
-    var.cost_infinity_service_principal_object_id,
-  ]
 }
 
 run "cost_infinity_rejects_unknown_scope" {
@@ -533,13 +574,19 @@ run "cost_infinity_rejects_unknown_scope" {
   expect_failures = [var.cost_infinity_scope]
 }
 
+run "cost_infinity_rejects_unsafe_secret_rotation" {
+  command = plan
+  variables {
+    cost_infinity_secret_rotation_days = 3
+  }
+  expect_failures = [var.cost_infinity_secret_rotation_days]
+}
+
 run "cost_infinity_group_scope_requires_monitored_accounts" {
   command = plan
   variables {
-    enable_cost_infinity                      = true
-    cost_infinity_client_id                   = "00000000-0000-0000-0000-0000000000a1"
-    cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-0000000000a2"
-    cost_infinity_scope                       = "resourceGroupManaged"
+    enable_cost_infinity = true
+    cost_infinity_scope  = "resourceGroupManaged"
   }
   expect_failures = [azapi_update_resource.grafana_infinity_plugin]
 }

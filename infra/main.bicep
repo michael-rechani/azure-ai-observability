@@ -104,22 +104,16 @@ param costBudgetThresholdPercent int = 80
 @description('Provision the Business overview dashboard (agent and PTU signals) when Grafana is provisioned from dashboardConfiguration. It has no cost panels.')
 param enableBusinessOverview bool = false
 
-@description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. It needs no export or cluster, but it is NOT secretless: Infinity supports only a service principal client secret, which you create, pass to the Grafana provisioning step (never to this template) and rotate.')
+@description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. This template creates the app registration and service principal (needs an Entra role that can create applications) and grants it one read-only action. It is NOT secretless: Infinity supports only a client secret, which Bicep cannot create, so the Grafana provisioning step creates it with your own sign-in and never returns it to this template.')
 param enableCostInfinity bool = false
 
-@description('Application (client) ID of the service principal Infinity signs in as. docs/costs.md shows how to create it.')
-param costInfinityClientId string = ''
-
-@description('Object ID of the same principal in Enterprise applications, used for the Cost Management role assignment.')
-param costInfinityServicePrincipalObjectId string = ''
-
-@description('Where Infinity may query cost: subscription (Cost Management Reader) or resourceGroupManaged (a query-only custom role per monitored resource group).')
+@description('Where Infinity may query cost: subscription or resourceGroupManaged (each monitored resource group). Both grant a custom role whose only action is Microsoft.CostManagement/query/read.')
 @allowed(['subscription', 'resourceGroupManaged'])
 param costInfinityScope string = 'subscription'
 
-@description('Reject incomplete Infinity settings before any role is created.')
+@description('Reject incomplete Infinity settings before any application or role is created.')
 @allowed([true])
-param costInfinityConfigured bool = any(!enableCostInfinity || (length(costInfinityClientId) == 36 && length(costInfinityServicePrincipalObjectId) == 36 && (costInfinityScope == 'subscription' || length(monitoredAccounts) > 0)))
+param costInfinityConfigured bool = any(!enableCostInfinity || costInfinityScope == 'subscription' || length(monitoredAccounts) > 0)
 
 @description('With enableCostInfinity, have the Grafana provisioning step create an alert rule that fires when the Infinity data source can no longer query Cost Management (for example an expired client secret). It still needs a contact point that routes component=cost-infinity.')
 param enableCostInfinityAlert bool = true
@@ -365,11 +359,22 @@ resource agentAlerts 'Microsoft.Insights/scheduledQueryRules@2023-12-01' = [for 
   }
 }]
 
-module costInfinityReader 'modules/cost-reader.bicep' = if (enableCostInfinity && costInfinityScope == 'subscription') {
-  name: '${namePrefix}-cost-infinity-reader'
+module costInfinityPrincipal 'modules/cost-infinity-principal.bicep' = if (enableCostInfinity && costInfinityConfigured) {
+  name: '${namePrefix}-cost-infinity-principal'
+  params: {
+    displayName: '${namePrefix}-cost-query'
+    uniqueName: '${namePrefix}-cost-query-${uniqueString(tenant().tenantId, subscription().id, resourceGroup().id)}'
+    ownerObjectId: deployer().objectId
+  }
+}
+
+module costInfinitySubscriptionQuery 'modules/cost-subscription-query.bicep' = if (enableCostInfinity && costInfinityScope == 'subscription') {
+  name: '${namePrefix}-cost-infinity-subscription'
   scope: subscription()
   params: {
-    principalId: costInfinityServicePrincipalObjectId
+    stackResourceGroupId: resourceGroup().id
+    namePrefix: namePrefix
+    principalId: costInfinityPrincipal!.outputs.servicePrincipalObjectId
   }
 }
 
@@ -380,7 +385,7 @@ module costInfinityGroupReaders 'modules/cost-group-reader.bicep' = [for group i
     resourceGroupName: group.name
     stackResourceGroupId: resourceGroup().id
     namePrefix: namePrefix
-    principalId: costInfinityServicePrincipalObjectId
+    principalId: costInfinityPrincipal!.outputs.servicePrincipalObjectId
     subscriptionMatches: group.subscriptionId == toLower(subscription().subscriptionId)
     roleLabel: 'infinity-cost'
   }
@@ -418,6 +423,6 @@ output dashboardConfiguration object = {
   costInfinityAlertIntervalMinutes: costInfinityAlertIntervalMinutes
   costInfinityAlertPendingMinutes: costInfinityAlertPendingMinutes
   costInfinityTenantId: enableCostInfinity ? tenant().tenantId : ''
-  costInfinityClientId: enableCostInfinity && costInfinityConfigured ? costInfinityClientId : ''
+  costInfinityClientId: enableCostInfinity && costInfinityConfigured ? costInfinityPrincipal!.outputs.clientId : ''
   costInfinityScope: enableCostInfinity ? (costInfinityScope == 'subscription' || length(monitoredAccounts) == 0 ? subscription().id : '${subscription().id}/resourceGroups/${monitoredAccounts[0].resourceGroup}') : ''
 }
