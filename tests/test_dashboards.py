@@ -422,6 +422,10 @@ class DashboardTests(unittest.TestCase):
         reduce = panel["transformations"][0]
         self.assertEqual(reduce["id"], "reduce")
         self.assertEqual(reduce["options"]["mode"], "seriesToRows")
+        self.assertEqual(target["azureMonitor"]["alias"], "{{ dimensionvalue }}")
+        organize = panel["transformations"][1]
+        self.assertEqual(organize["id"], "organize")
+        self.assertEqual(organize["options"]["renameByName"], {"Field": "Deployment", "Last *": "Last"})
         self.assertIn("allocated PTUs", panel["description"])
         self.assertFalse((ROOT / "queries" / "ptu-deployments.kql").exists())
 

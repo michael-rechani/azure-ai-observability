@@ -32,7 +32,7 @@ Customers deploy into their own Azure subscriptions. Grafana uses a managed iden
 
 ## Evidence on Hand
 
-The repository contains Grafana dashboard JSON, preview screenshots, Terraform and Bicep deployment paths, offline tests, and CI. Both deployment paths were applied once in an isolated Lab subscription, where the Foundry, PTU and agent-trace panels and the PTU alerts returned or fired on real data. That run predates the removal of the optional cost pipeline, and the opt-in billed-cost route is the least-proven part (see [billed cost options](docs/costs.md)).
+The repository contains Grafana dashboard JSON, preview screenshots, Terraform and Bicep deployment paths, offline tests, and CI. Both deployment paths were applied once in an isolated Lab subscription, where the Foundry, PTU and agent-trace panels and the PTU alerts returned or fired on real data. That run predates the removal of the optional cost pipeline, and the opt-in billed-cost route is the least-proven part (see [billed cost options](docs/costs.md)). A later short run on the Terraform stack re-checked the PTU dashboard and both PTU alerts, including auto-resolve (see [alerting](docs/alerts.md#included-azure-monitor-metric-alerts)).
 
 ## Product Principles
 

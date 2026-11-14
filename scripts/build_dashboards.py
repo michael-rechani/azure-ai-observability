@@ -424,9 +424,13 @@ def build(config):
         ("Time between tokens - average", "AzureOpenAINormalizedTBTInMS", "Average", "ms", None),
         ("Prompt cache match rate", "AzureOpenAIContextTokensCacheMatchRate", "Average", "percent", None),
     ]
+    description_notes = {
+        "AzureOpenAITimeToResponse": " Azure reports it for streaming requests, so the panel stays empty when traffic is not streaming.",
+    }
     ptu = dashboard("azure-openai-ptu", "Azure OpenAI - PTU performance", ptu_variables, [
         panel(i, title, metric(name, agg, dimensions), unit,
-              description="Azure platform metric. Availability varies by model/SKU. Counts are per time bucket, not per second.")
+              description="Azure platform metric. Availability varies by model/SKU. Counts are per time bucket, not per second."
+              + description_notes.get(name, ""))
         for i, (title, name, agg, unit, dimensions) in enumerate(specifications, 1)
     ], related=(
         ("Foundry agent operations", "foundry-agent-operations", ()),
@@ -447,10 +451,12 @@ def build(config):
         "Neither Azure Monitor nor Azure Resource Graph exposes allocated PTUs or regional quota; read those "
         "from the deployment (portal, CLI or ARM) and Azure Quotas.",
     ))
-    ptu["panels"][-1]["transformations"] = [{
-        "id": "reduce",
-        "options": {"mode": "seriesToRows", "reducers": ["lastNotNull", "max", "mean"]},
-    }]
+    # The alias names each series after its deployment; without it the Field column shows a long label that clips.
+    ptu["panels"][-1]["targets"][0]["azureMonitor"]["alias"] = "{{ dimensionvalue }}"
+    ptu["panels"][-1]["transformations"] = [
+        {"id": "reduce", "options": {"mode": "seriesToRows", "reducers": ["lastNotNull", "max", "mean"]}},
+        {"id": "organize", "options": {"renameByName": {"Field": "Deployment", "Last *": "Last"}}},
+    ]
     ptu["panels"].append({
         "id": 12, "type": "text", "title": "Cost and quota",
         "description": "Use Azure Cost Management for actual billed and amortized reservation costs.",
