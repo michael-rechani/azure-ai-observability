@@ -36,7 +36,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedRuns = sum(ItemCount)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize ObservedRuns = sum(ItemCount)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
             "resultFormat": "time_series",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -47,7 +47,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -148,7 +148,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -165,7 +165,28 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 100
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
           }
         },
         "overrides": []
@@ -205,7 +226,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize P50_ms = percentile(DurationMs, 50),\n    P95_ms = percentile(DurationMs, 95),\n    P99_ms = percentile(DurationMs, 99)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize P50_ms = percentile(DurationMs, 50),\n    P95_ms = percentile(DurationMs, 95),\n    P99_ms = percentile(DurationMs, 99)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
             "resultFormat": "time_series",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -216,7 +237,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -233,7 +254,27 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2500
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
           }
         },
         "overrides": []
@@ -308,7 +349,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -400,7 +441,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -473,7 +514,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| where isnotnull(Success)\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize KnownOutcomeRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| extend FailureRatePercent = iff(\n    KnownOutcomeRuns > 0,\n    100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),\n    real(null)\n)\n| project TimeGenerated, FailureRatePercent, Agent\n| order by TimeGenerated asc\n",
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| where isnotnull(Success)\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize KnownOutcomeRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| extend FailureRatePercent = iff(\n    KnownOutcomeRuns > 0,\n    100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),\n    real(null)\n)\n| project TimeGenerated, FailureRatePercent, Agent\n| order by TimeGenerated asc\n",
             "resultFormat": "time_series",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -484,7 +525,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -501,9 +542,29 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
           },
-          "min": 0
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
         },
         "overrides": [
           {
@@ -620,7 +681,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -655,6 +716,398 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "id": 8,
+      "title": "Agent summary - selected period",
+      "type": "stat",
+      "description": "Whole-period figures over retained invoke_agent spans for the selected agent. Runs are weighted by ItemCount, the failure rate uses runs with a known outcome, and p95 is taken over retained spans without sampling weights. No data is not evidence of health: the agent may be idle, sampled out or uninstrumented. Threshold colours mirror the default alerts.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize Runs = sum(ItemCount),\n    KnownOutcomeRuns = sumif(ItemCount, isnotnull(Success)),\n    FailedRuns = sumif(ItemCount, Success == false),\n    P95_ms = percentile(DurationMs, 95)\n| project ObservedRuns = iff(Runs > 0, Runs, long(null)),\n    FailureRatePercent = iff(\n        KnownOutcomeRuns > 0,\n        100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),\n        real(null)\n    ),\n    P95_ms\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ObservedRuns$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Observed runs"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^FailureRatePercent$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Failure rate"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^P95_ms$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "P95 latency"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2500
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "title": "Peak PTU utilization",
+      "type": "stat",
+      "description": "Highest per-interval maximum utilization in the selected period. Threshold colours mirror the default alert (orange from 85%, red at 100%) and do not follow alert overrides. Azure platform metric; availability varies by model and SKU. A * deployment shows one tile per deployment.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIProvisionedManagedUtilizationV2",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "max"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Throttled (429) - period total",
+      "type": "stat",
+      "description": "Sum of 429 responses in the selected period, orange once any were returned. Azure platform metric. No data can mean no throttling, no matching traffic or an unavailable metric.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$ptuSubscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$ptuSubscription",
+                "resourceGroup": "$ptuResourceGroup",
+                "resourceName": "$ptuAccount",
+                "region": "$ptuRegion",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIRequests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$ptuDeployment"
+                ]
+              },
+              {
+                "dimension": "StatusCode",
+                "operator": "eq",
+                "filters": [
+                  "429"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
     }
   ],
   "templating": {
@@ -667,6 +1120,17 @@
         "current": {
           "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
           "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      },
+      {
+        "name": "agent",
+        "label": "Agent (agent panels only; * for all)",
+        "type": "textbox",
+        "query": "*",
+        "current": {
+          "text": "*",
+          "value": "*"
         },
         "hide": 0
       },
@@ -740,7 +1204,7 @@
     {
       "type": "link",
       "title": "Agent operations",
-      "url": "/d/foundry-agent-operations/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "url": "/d/foundry-agent-operations/_?var-workspaceResourceId=${workspaceResourceId:percentencode}&var-agent=${agent:percentencode}",
       "icon": "external link alt",
       "keepTime": true,
       "includeVars": false,
@@ -756,5 +1220,5 @@
       "targetBlank": false
     }
   ],
-  "description": "A concise view of observed agent activity and Azure OpenAI PTU signals. It does not calculate a blended health score and shows no cost; use Azure Cost Management or the optional cost dashboard for billed cost. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
+  "description": "A concise view of observed agent activity and Azure OpenAI PTU signals. The agent filter applies only to the agent panels; PTU panels cover the configured deployment. It does not calculate a blended health score and shows no cost; use Azure Cost Management or the optional cost dashboard for billed cost. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
 }

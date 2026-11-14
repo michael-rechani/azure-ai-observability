@@ -22,10 +22,27 @@ The deployment guides provision these automatically. For an existing Grafana ins
 1. Open the Grafana endpoint and sign in as the assigned administrator. RBAC propagation can take several minutes.
 2. Configure the built-in **Azure Monitor** data source for **Managed Identity** authentication. Run **Save & test**. No client secret is required.
 3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. Also import `dashboards/business-overview.json` if you want the optional Business overview. Select the Azure Monitor data source for each import. If you use the opt-in direct Cost Management query, deploy it through the Bicep or Terraform path rather than importing by hand: that path creates the service principal and its read-only custom role and configures the Infinity data source and the `dashboards/azure-ai-costs-infinity.json` dashboard (see [Costs](costs.md#direct-cost-management-queries-with-infinity-opt-in) for the secret-rotation requirement and the access caveat).
-4. Set the top textbox controls to real values. `workspaceResourceId` is a **Log Analytics workspace ARM resource ID**, not a workspace GUID or an Application Insights ID; set it to the agent-telemetry workspace. The Business overview needs only that control. Resource/region values must match the target account.
+4. Set the top textbox controls to real values. `workspaceResourceId` is a **Log Analytics workspace ARM resource ID**, not a workspace GUID or an Application Insights ID; set it to the agent-telemetry workspace. The Business overview needs only that control. Resource/region values must match the target account. The optional `agent` control on the Foundry agents and Business overview dashboards is `*` (all agents) by default; see [Reading the dashboards](#reading-the-dashboards).
 5. Optionally generate personalized files using `config.local.json` and the Python dashboard generator. This is not required: the shared subscription default can be changed independently in each dashboard, and the workspace ARM ID can point to another subscription.
 
 Managed Grafana APIs require their own Entra authentication and appropriate roles. This starter does not enable API keys or store a Grafana admin token.
+
+## Reading the dashboards
+
+**Summary tiles.** The Foundry agents, PTU and Business overview dashboards open with stat tiles that cover the whole selected time range: agent runs, failure rate and p95 latency; peak PTU utilization; and the 429 total. A tile with nothing to show reads **No data** in a neutral colour. That is not evidence of health: the agent may be idle, sampled out or uninstrumented, or the metric may be unavailable for that deployment.
+
+**Threshold colours.** The tiles and the dashed lines on the charts use fixed defaults that mirror the default alert thresholds. They do **not** follow `ptu_utilization_threshold`, `agent_failure_rate_threshold_percent` or `agent_p95_latency_threshold_ms` (`ptuUtilizationThreshold`, `agentFailureRateThresholdPercent` and `agentP95LatencyThresholdMs` in Bicep), so change the generator or dashboard JSON if you tune the alerts. See [alerting](alerts.md).
+
+| Signal | Orange | Red | Basis |
+| --- | --- | --- | --- |
+| PTU utilization | 85% | 100% | 85% is the default alert threshold; 100% is full capacity |
+| Agent failure rate | 5% | 10% | 10% is the default alert threshold; orange is half of it |
+| Agent p95 latency | 2500 ms | 5000 ms | 5000 ms is the default alert threshold; orange is half of it |
+| Throttled requests (429) | 1 | none | The default alert fires on any 429 |
+
+**Agent filter.** Empty or `*` shows every agent; any other value is a case-insensitive exact match on `gen_ai.agent.name`. It narrows the agent summary, run-volume, latency and failure-rate panels. On the Foundry agents dashboard the tool, model-token, failed-operation, instrumentation, evaluation and dependency panels are **not** filtered by it, and their descriptions say so. It is defence in depth, not a privilege boundary: anyone who can view a dashboard can already run their own queries through the data source.
+
+The filtered queries read the value as `url_decode("${agent:percentencode}")` instead of putting it inside a string literal. Grafana's macro engine runs over the whole interpolated query text, even inside quotes, so a value such as `$__timeFilter(` would otherwise rewrite the query. Keep that form if you edit these queries or fill the control from a query variable.
 
 ## Connect Foundry agents
 

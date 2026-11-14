@@ -1,0 +1,17 @@
+let selectedAgent = url_decode("${agent:percentencode}");
+union AppRequests, AppDependencies
+| where $__timeFilter(TimeGenerated)
+| where tostring(Properties["gen_ai.operation.name"]) == "invoke_agent"
+| extend Agent = tostring(Properties["gen_ai.agent.name"])
+| where selectedAgent in ("", "*") or Agent =~ selectedAgent
+| summarize Runs = sum(ItemCount),
+    KnownOutcomeRuns = sumif(ItemCount, isnotnull(Success)),
+    FailedRuns = sumif(ItemCount, Success == false),
+    P95_ms = percentile(DurationMs, 95)
+| project ObservedRuns = iff(Runs > 0, Runs, long(null)),
+    FailureRatePercent = iff(
+        KnownOutcomeRuns > 0,
+        100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),
+        real(null)
+    ),
+    P95_ms

@@ -1,13 +1,12 @@
 {
   "uid": "demo-azure-openai-ptu",
-  "title": "DEMO - Azure OpenAI - PTU performance",
+  "title": "Azure OpenAI - PTU performance",
   "schemaVersion": 39,
   "version": 1,
   "editable": true,
   "tags": [
     "azure",
-    "ai-observability",
-    "demo-simulated-data"
+    "ai-observability"
   ],
   "timezone": "browser",
   "refresh": false,
@@ -16,21 +15,6 @@
     "to": "now"
   },
   "panels": [
-    {
-      "id": 999,
-      "type": "text",
-      "title": "SIMULATED DATA ONLY",
-      "gridPos": {
-        "h": 3,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "**Preview only.** Not connected to Azure; filters do not change the sample data."
-      }
-    },
     {
       "id": 1,
       "title": "PTU utilization - average",
@@ -56,7 +40,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 3
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -74,7 +58,11 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 100
           },
           "thresholds": {
             "mode": "absolute",
@@ -135,7 +123,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 3
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -153,7 +141,28 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 100
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
           }
         },
         "overrides": []
@@ -207,7 +216,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 11
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -299,7 +308,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 11
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -361,7 +370,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -423,7 +432,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -485,7 +494,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 27
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -546,7 +555,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 27
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -607,7 +616,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 36
       },
       "fieldConfig": {
         "defaults": {
@@ -668,7 +677,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 36
       },
       "fieldConfig": {
         "defaults": {
@@ -728,7 +737,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 43
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -755,7 +764,7 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {},
@@ -764,6 +773,166 @@
       "options": {
         "mode": "markdown",
         "content": "PTU utilization describes consumed versus deployed throughput; it is **not a cost estimate**. For actual charges and reservation coverage, open [Azure Cost Management](https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/overview). Use Azure Quotas to review regional deployment availability. Optional Terraform budgets can alert on actual month-to-date costs for the selected AI accounts."
+      }
+    },
+    {
+      "id": 13,
+      "title": "Peak PTU utilization",
+      "type": "stat",
+      "description": "Highest per-interval maximum utilization in the selected period. Threshold colours mirror the default alert (orange from 85%, red at 100%) and do not follow alert overrides. Azure platform metric; availability varies by model and SKU. A * deployment shows one tile per deployment.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "Maximum",
+          "stringInput": "75,78,76,80,82,79,83,87,91,94,88,85,89,84,87,86,88,85,83,84"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "max"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "title": "Throttled (429) - period total",
+      "type": "stat",
+      "description": "Sum of 429 responses in the selected period, orange once any were returned. Azure platform metric. No data can mean no throttling, no matching traffic or an unavailable metric.",
+      "datasource": {
+        "type": "grafana-testdata-datasource",
+        "uid": "ai-demo-data"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-testdata-datasource",
+            "uid": "ai-demo-data"
+          },
+          "refId": "A",
+          "scenarioId": "csv_metric_values",
+          "alias": "429",
+          "stringInput": "10,12,9,15,18,12,20,25,30,21,28,36,27,24,33,22,18,26,23,19"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
       }
     }
   ],
@@ -784,10 +953,10 @@
         "name": "resourceGroup",
         "label": "resourceGroup",
         "type": "textbox",
-        "query": "existing-openai-rg",
+        "query": "ai-prod-rg",
         "current": {
-          "text": "existing-openai-rg",
-          "value": "existing-openai-rg"
+          "text": "ai-prod-rg",
+          "value": "ai-prod-rg"
         },
         "hide": 0
       },
@@ -795,10 +964,10 @@
         "name": "account",
         "label": "account",
         "type": "textbox",
-        "query": "existing-openai-account",
+        "query": "contoso-openai",
         "current": {
-          "text": "existing-openai-account",
-          "value": "existing-openai-account"
+          "text": "contoso-openai",
+          "value": "contoso-openai"
         },
         "hide": 0
       },
@@ -817,10 +986,10 @@
         "name": "deployment",
         "label": "PTU deployment (or * to split all)",
         "type": "textbox",
-        "query": "replace-with-provisioned-deployment-name",
+        "query": "gpt-4o-prod",
         "current": {
-          "text": "replace-with-provisioned-deployment-name",
-          "value": "replace-with-provisioned-deployment-name"
+          "text": "gpt-4o-prod",
+          "value": "gpt-4o-prod"
         },
         "hide": 0
       }
@@ -845,6 +1014,5 @@
       "includeVars": false,
       "targetBlank": false
     }
-  ],
-  "description": "SIMULATED DATA ONLY. This dashboard is not connected to Azure."
+  ]
 }

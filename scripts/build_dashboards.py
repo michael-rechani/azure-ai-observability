@@ -271,6 +271,100 @@ def infinity_cost_query(columns, *, month_to_date=False, daily=False, grouping=(
     }
 
 
+def thresholds(*steps):
+    """Green below the first step; each (value, colour) step starts at its value."""
+    return {"mode": "absolute", "steps": [{"color": "green", "value": None}] + [
+        {"color": color, "value": value} for value, color in steps
+    ]}
+
+
+def set_thresholds(item, *steps, soft_max=None):
+    defaults = item["fieldConfig"]["defaults"]
+    defaults["thresholds"] = thresholds(*steps)
+    if item["type"] == "timeseries":
+        # Time series draw thresholds only when a style is set.
+        defaults["custom"]["thresholdsStyle"] = {"mode": "dashed"}
+        if soft_max is not None:
+            defaults["custom"]["axisSoftMax"] = soft_max
+
+
+def stat_panel(number, title, target, position, description, unit="short",
+               calcs=("lastNotNull",), text_mode="auto", graph_mode="none"):
+    item = panel(number, title, target, unit, "stat", description)
+    item["gridPos"] = position
+    item["fieldConfig"]["defaults"].update({
+        "color": {"mode": "thresholds"}, "thresholds": thresholds(),
+        # A missing value would take the green base threshold colour, and a green "No data" reads as healthy.
+        "mappings": [{"type": "special", "options": {
+            "match": "null+nan", "result": {"text": "No data", "color": "text", "index": 0},
+        }}],
+    })
+    item["options"] = {
+        "reduceOptions": {"values": False, "calcs": list(calcs), "fields": ""},
+        "colorMode": "value", "graphMode": graph_mode, "textMode": text_mode,
+        "justifyMode": "center", "orientation": "auto",
+    }
+    return item
+
+
+def agent_summary_panel(number, position):
+    item = stat_panel(
+        number, "Agent summary - selected period", logs("agent-summary.kql", table=True), position,
+        "Whole-period figures over retained invoke_agent spans for the selected agent. Runs are weighted by "
+        "ItemCount, the failure rate uses runs with a known outcome, and p95 is taken over retained spans "
+        "without sampling weights. No data is not evidence of health: the agent may be idle, sampled out or "
+        "uninstrumented. Threshold colours mirror the default alerts.",
+        text_mode="value_and_name",
+    )
+    override(item, "/^ObservedRuns$/", {
+        "displayName": "Observed runs", "color": {"mode": "fixed", "fixedColor": "blue"},
+    })
+    override(item, "/^FailureRatePercent$/", {
+        "displayName": "Failure rate", "unit": "percent", "decimals": 1,
+        "thresholds": thresholds((5, "orange"), (10, "red")),
+    })
+    override(item, "/^P95_ms$/", {
+        "displayName": "P95 latency", "unit": "ms",
+        "thresholds": thresholds((2500, "orange"), (5000, "red")),
+    })
+    return item
+
+
+def ptu_summary_panels(first_number, positions, variable_prefix=""):
+    deployment = "$ptuDeployment" if variable_prefix else "$deployment"
+    peak = stat_panel(
+        first_number, "Peak PTU utilization",
+        metric("AzureOpenAIProvisionedManagedUtilizationV2", "Maximum", variable_prefix=variable_prefix),
+        positions[0],
+        "Highest per-interval maximum utilization in the selected period. Threshold colours mirror the default "
+        "alert (orange from 85%, red at 100%) and do not follow alert overrides. Azure platform metric; "
+        "availability varies by model and SKU. A * deployment shows one tile per deployment.",
+        unit="percent", calcs=("max",), graph_mode="area",
+    )
+    set_thresholds(peak, (85, "orange"), (100, "red"))
+    throttled = stat_panel(
+        first_number + 1, "Throttled (429) - period total",
+        metric("AzureOpenAIRequests", "Total", [
+            {"dimension": "ModelDeploymentName", "operator": "eq", "filters": [deployment]},
+            {"dimension": "StatusCode", "operator": "eq", "filters": ["429"]},
+        ], variable_prefix=variable_prefix),
+        positions[1],
+        "Sum of 429 responses in the selected period, orange once any were returned. Azure platform metric. "
+        "No data can mean no throttling, no matching traffic or an unavailable metric.",
+        calcs=("sum",),
+    )
+    set_thresholds(throttled, (1, "orange"))
+    return [peak, throttled]
+
+
+def add_summary_row(panels, tiles):
+    """Place summary tiles above the existing panels, which move down by the tiles' height."""
+    height = max(tile["gridPos"]["h"] for tile in tiles)
+    for item in panels:
+        item["gridPos"]["y"] += height
+    panels.extend(tiles)
+
+
 def dashboard(uid, title, variables, panels, related=(), inputs=None):
     result = {
         "uid": uid, "title": title, "schemaVersion": 39, "version": 1,
@@ -376,12 +470,13 @@ def build(config):
         fixed_color(ptu["panels"][index], color)
     override(ptu["panels"][2], "/.*200.*/", {"color": {"mode": "fixed", "fixedColor": "green"}})
     override(ptu["panels"][2], "/.*429.*/", {"color": {"mode": "fixed", "fixedColor": "orange"}})
-    ptu["panels"][0]["fieldConfig"]["defaults"]["thresholds"] = {
-        "mode": "absolute", "steps": [
-            {"color": "green", "value": None}, {"color": "orange", "value": 85},
-            {"color": "red", "value": 100},
-        ],
-    }
+    # Dashboard thresholds mirror the default alert thresholds (docs/alerts.md); they do not follow IaC overrides.
+    for index in (0, 1):
+        set_thresholds(ptu["panels"][index], (85, "orange"), (100, "red"), soft_max=100)
+    add_summary_row(ptu["panels"], ptu_summary_panels(13, (
+        {"h": 4, "w": 12, "x": 0, "y": 0},
+        {"h": 4, "w": 12, "x": 12, "y": 0},
+    )))
     agent_specs = [
         ("Agent run latency", "agent-latency.kql", "ms", False),
         ("Agent runs per interval and failures", "agent-runs.kql", "short", False),
@@ -391,14 +486,19 @@ def build(config):
         ("Observed instrumentation", "telemetry-coverage.kql", "short", False),
         ("Evaluation results (optional custom events)", "evaluations.kql", "short", True),
     ]
-    agents = dashboard("foundry-agent-operations", "Foundry - Agent operations", [workspace], [
+    agents = dashboard("foundry-agent-operations", "Foundry - Agent operations", [
+        workspace, textbox("agent", "*", "Agent (or * for all)"),
+    ], [
         panel(i, title, logs(filename, table), unit, "table" if table else "timeseries",
               "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.")
         for i, (title, filename, unit, table) in enumerate(agent_specs, 1)
     ], related=(
         ("Foundry overview", "foundry-overview", (("workspaceResourceId", "workspaceResourceId"),)),
         ("PTU performance", "azure-openai-ptu", ()),
-        ("Business overview", "azure-ai-business-overview", (("workspaceResourceId", "workspaceResourceId"),)),
+        ("Business overview", "azure-ai-business-overview", (
+            ("workspaceResourceId", "workspaceResourceId"),
+            ("agent", "agent"),
+        )),
     ))
     agents["panels"].append(panel(
         8, "Dependency performance",
@@ -461,6 +561,10 @@ def build(config):
         "Counts of observed and recognized spans, not a coverage percentage. A completely silent "
         "workspace cannot establish telemetry health."
     )
+    for item in agents["panels"][2:]:
+        item["description"] += " Not filtered by the agent variable."
+    set_thresholds(agents["panels"][0], (2500, "orange"), (5000, "red"))
+    add_summary_row(agents["panels"], [agent_summary_panel(9, {"h": 4, "w": 24, "x": 0, "y": 0})])
     foundry_variables = [subscription, workspace] + [
         textbox(name, config["foundry"][key])
         for name, key in (("resourceGroup", "resourceGroup"), ("account", "account"), ("region", "region"))
@@ -487,6 +591,7 @@ def build(config):
     foundry["panels"].append(token_cost_panel(5))
     business_variables = [
         textbox("workspaceResourceId", config["workspaceResourceId"], "Agent telemetry workspace ARM ID"),
+        textbox("agent", "*", "Agent (agent panels only; * for all)"),
         textbox("ptuSubscription", config["subscription"]),
         textbox("ptuResourceGroup", config["ptu"]["resourceGroup"]),
         textbox("ptuAccount", config["ptu"]["account"]),
@@ -576,11 +681,24 @@ def build(config):
             "color": {"mode": "fixed", "fixedColor": color},
         })
     business_panels[5]["fieldConfig"]["defaults"]["min"] = 0
+    set_thresholds(business_panels[1], (85, "orange"), (100, "red"), soft_max=100)
+    set_thresholds(business_panels[2], (2500, "orange"), (5000, "red"))
+    set_thresholds(business_panels[5], (5, "orange"), (10, "red"))
+    add_summary_row(business_panels, [
+        agent_summary_panel(8, {"h": 4, "w": 12, "x": 0, "y": 0}),
+        *ptu_summary_panels(9, (
+            {"h": 4, "w": 6, "x": 12, "y": 0},
+            {"h": 4, "w": 6, "x": 18, "y": 0},
+        ), variable_prefix="ptu"),
+    ])
     business = dashboard(
         "azure-ai-business-overview", "Azure AI - Business overview",
         business_variables, business_panels,
         related=(
-            ("Agent operations", "foundry-agent-operations", (("workspaceResourceId", "workspaceResourceId"),)),
+            ("Agent operations", "foundry-agent-operations", (
+                ("workspaceResourceId", "workspaceResourceId"),
+                ("agent", "agent"),
+            )),
             ("PTU performance", "azure-openai-ptu", (
                 ("subscription", "ptuSubscription"),
                 ("resourceGroup", "ptuResourceGroup"),
@@ -592,6 +710,7 @@ def build(config):
     )
     business["description"] = (
         "A concise view of observed agent activity and Azure OpenAI PTU signals. "
+        "The agent filter applies only to the agent panels; PTU panels cover the configured deployment. "
         "It does not calculate a blended health score and shows no cost; use Azure Cost Management or the "
         "optional cost dashboard for billed cost. No data can indicate no traffic, missing permissions, "
         "unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."

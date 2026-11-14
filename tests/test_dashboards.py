@@ -1,5 +1,6 @@
 import copy
 import importlib.util
+import itertools
 import json
 from pathlib import Path
 import re
@@ -34,7 +35,9 @@ class DashboardTests(unittest.TestCase):
                 scanned = copy.deepcopy(panel)
                 for target in scanned["targets"]:
                     target.pop("root_selector", None)  # jq variables such as $p are not dashboard variables
-                references = re.findall(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))", json.dumps(scanned))
+                references = re.findall(
+                    r"\$(?:\{([A-Za-z_]\w*)(?::[^}]*)?\}|([A-Za-z_]\w*))", json.dumps(scanned)
+                )
                 for braced, plain in references:
                     name = braced or plain
                     if not name.startswith("__"):
@@ -149,8 +152,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(dashboard["time"], {"from": "now-7d", "to": "now"})
         self.assertIn("does not calculate a blended health score", dashboard["description"])
         self.assertIn("shows no cost", dashboard["description"])
+        self.assertIn("filter applies only to the agent panels", dashboard["description"])
         self.assertEqual(len({item["id"] for item in panels}), len(panels))
-        self.assertEqual(len(panels), 7)
+        self.assertEqual(len(panels), 10)
+        self.assertEqual([item["id"] for item in panels[7:]], [8, 9, 10])
         self.assertEqual(panels[0]["title"], "Observed agent runs per interval")
         self.assertIn("not the total for the selected range", panels[0]["description"])
         self.assertEqual(
@@ -189,7 +194,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(
             [item["name"] for item in dashboard["templating"]["list"]],
             [
-                "workspaceResourceId", "ptuSubscription",
+                "workspaceResourceId", "agent", "ptuSubscription",
                 "ptuResourceGroup", "ptuAccount", "ptuRegion", "ptuDeployment",
             ],
         )
@@ -445,6 +450,190 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("PassRatePercent", query)
         self.assertIn("ValidSamples > 0", query)
         self.assertIn("InvalidSamples", query)
+
+    def test_agent_filter_is_injection_safe_and_declared_per_panel(self):
+        reference = re.compile(r"\$(?:\{agent(?::[^}]*)?\}|agent\b)")
+        declaration = 'let selectedAgent = url_decode("${agent:percentencode}");'
+        filter_line = '| where selectedAgent in ("", "*") or Agent =~ selectedAgent'
+        filtered = {
+            "agent-latency.kql", "agent-runs.kql", "agent-run-volume.kql",
+            "agent-failure-rate.kql", "agent-summary.kql",
+        }
+        for path in sorted((ROOT / "queries").glob("*.kql")):
+            query = path.read_text()
+            with self.subTest(query=path.name):
+                if path.name in filtered:
+                    # Grafana expands $__ macros after variable interpolation, even inside string literals,
+                    # so a JSON-quoted value is not enough. Percent-encoding leaves no quote, backslash,
+                    # dollar sign or parenthesis in the substituted text, and Kusto decodes it.
+                    self.assertEqual(reference.findall(query), ["${agent:percentencode}"])
+                    self.assertTrue(query.startswith(declaration + "\n"))
+                    self.assertIn(filter_line, query)
+                    self.assertLess(query.index("extend Agent ="), query.index(filter_line))
+                else:
+                    self.assertEqual(reference.findall(query), [])
+        for dashboard in self.dashboards.values():
+            self.assertLessEqual(
+                set(reference.findall(json.dumps(dashboard["panels"]))), {"${agent:percentencode}"})
+        # A panel says it ignores the filter exactly when its query does.
+        for item in self.dashboards["foundry-agents.json"]["panels"]:
+            query = item["targets"][0]["azureLogAnalytics"]["query"]
+            with self.subTest(panel=item["title"]):
+                self.assertEqual(
+                    "${agent:percentencode}" in query,
+                    "Not filtered by the agent variable" not in item["description"],
+                )
+
+    def test_agent_variable_defaults_to_all_and_is_shared_only_between_agent_dashboards(self):
+        expected = {
+            "foundry-agents.json": True, "business-overview.json": True, "foundry-overview.json": False,
+            "openai-ptu.json": False, "azure-ai-costs-infinity.json": False,
+        }
+        for name, has_agent in expected.items():
+            variables = {item["name"]: item for item in self.dashboards[name]["templating"]["list"]}
+            with self.subTest(dashboard=name):
+                self.assertEqual("agent" in variables, has_agent)
+                if has_agent:
+                    self.assertEqual(variables["agent"]["type"], "textbox")
+                    self.assertEqual(variables["agent"]["current"]["value"], "*")
+        carrying = {
+            (dashboard["uid"], link["title"])
+            for dashboard in self.dashboards.values()
+            for link in dashboard.get("links", [])
+            if "var-agent=${agent:percentencode}" in link["url"]
+        }
+        self.assertEqual(carrying, {
+            ("foundry-agent-operations", "Business overview"),
+            ("azure-ai-business-overview", "Agent operations"),
+        })
+
+    def test_summary_tiles_are_whole_period_and_null_safe(self):
+        query = (ROOT / "queries" / "agent-summary.kql").read_text()
+        self.assertIn("$__timeFilter(TimeGenerated)", query)
+        self.assertNotIn("bin(", query)  # one row for the whole period, not one per interval
+        self.assertIn("Runs = sum(ItemCount)", query)
+        self.assertIn("KnownOutcomeRuns = sumif(ItemCount, isnotnull(Success))", query)
+        self.assertIn("FailedRuns = sumif(ItemCount, Success == false)", query)
+        self.assertIn("P95_ms = percentile(DurationMs, 95)", query)
+        # Nothing observed must read as "No data", not as zero runs or a division error.
+        self.assertIn("iff(Runs > 0, Runs, long(null))", query)
+        self.assertIn("KnownOutcomeRuns > 0", query)
+        self.assertIn("real(null)", query)
+        by_id = {
+            name: {item["id"]: item for item in self.dashboards[name]["panels"]}
+            for name in ("openai-ptu.json", "foundry-agents.json", "business-overview.json")
+        }
+        for tile in (by_id["foundry-agents.json"][9], by_id["business-overview.json"][8]):
+            with self.subTest(tile=tile["id"]):
+                self.assertEqual(tile["type"], "stat")
+                self.assertEqual(tile["targets"][0]["azureLogAnalytics"]["query"], query)
+                self.assertEqual(tile["targets"][0]["azureLogAnalytics"]["resultFormat"], "table")
+                self.assertEqual(tile["options"]["reduceOptions"]["calcs"], ["lastNotNull"])
+        for peak in (by_id["openai-ptu.json"][13], by_id["business-overview.json"][9]):
+            with self.subTest(tile=peak["id"]):
+                target = peak["targets"][0]["azureMonitor"]
+                self.assertEqual(target["metricName"], "AzureOpenAIProvisionedManagedUtilizationV2")
+                self.assertEqual(target["aggregation"], "Maximum")
+                self.assertEqual(peak["options"]["reduceOptions"]["calcs"], ["max"])
+        for throttled in (by_id["openai-ptu.json"][14], by_id["business-overview.json"][10]):
+            with self.subTest(tile=throttled["id"]):
+                target = throttled["targets"][0]["azureMonitor"]
+                self.assertEqual(target["metricName"], "AzureOpenAIRequests")
+                self.assertEqual(target["aggregation"], "Total")
+                self.assertIn(
+                    {"dimension": "StatusCode", "operator": "eq", "filters": ["429"]},
+                    target["dimensionFilters"],
+                )
+                self.assertEqual(throttled["options"]["reduceOptions"]["calcs"], ["sum"])
+        # A missing value must render as neutral "No data", not take the green base threshold colour.
+        no_data = [{"type": "special", "options": {
+            "match": "null+nan", "result": {"text": "No data", "color": "text", "index": 0},
+        }}]
+        for name, tile_ids in (
+            ("openai-ptu.json", (13, 14)), ("foundry-agents.json", (9,)), ("business-overview.json", (8, 9, 10)),
+        ):
+            for tile_id in tile_ids:
+                with self.subTest(dashboard=name, tile=tile_id):
+                    self.assertEqual(by_id[name][tile_id]["fieldConfig"]["defaults"]["mappings"], no_data)
+        # On the Business dashboard the PTU tiles follow the PTU variables, not the Foundry ones.
+        self.assertEqual(by_id["business-overview.json"][9]["targets"][0]["subscription"], "$ptuSubscription")
+        self.assertIn(
+            {"dimension": "ModelDeploymentName", "operator": "eq", "filters": ["$ptuDeployment"]},
+            by_id["business-overview.json"][10]["targets"][0]["azureMonitor"]["dimensionFilters"],
+        )
+
+    def test_summary_tiles_sit_above_existing_panels_without_overlap(self):
+        for name in ("openai-ptu.json", "foundry-agents.json", "business-overview.json"):
+            panels = self.dashboards[name]["panels"]
+            tiles = [item for item in panels if item["type"] == "stat"]
+            others = [item for item in panels if item["type"] != "stat"]
+            with self.subTest(dashboard=name):
+                self.assertTrue(tiles)
+                self.assertEqual({item["gridPos"]["y"] for item in tiles}, {0})
+                self.assertEqual(min(item["gridPos"]["y"] for item in others), 4)
+                for first, second in itertools.combinations(panels, 2):
+                    a, b = first["gridPos"], second["gridPos"]
+                    self.assertFalse(
+                        a["x"] < b["x"] + b["w"] and b["x"] < a["x"] + a["w"]
+                        and a["y"] < b["y"] + b["h"] and b["y"] < a["y"] + a["h"],
+                        f"{first['title']} overlaps {second['title']}",
+                    )
+
+    def test_dashboard_thresholds_mirror_the_default_alert_thresholds(self):
+        terraform = (ROOT / "terraform" / "azure" / "variables.tf").read_text()
+        bicep = (ROOT / "infra" / "main.bicep").read_text()
+
+        def alert_default(variable, parameter):
+            in_terraform = int(re.search(
+                rf'variable "{variable}" \{{[^}}]*?default\s*=\s*(\d+)', terraform).group(1))
+            in_bicep = int(re.search(rf"^param {parameter} int = (\d+)", bicep, re.MULTILINE).group(1))
+            self.assertEqual(in_terraform, in_bicep)
+            return in_terraform
+
+        utilization = alert_default("ptu_utilization_threshold", "ptuUtilizationThreshold")
+        failure = alert_default("agent_failure_rate_threshold_percent", "agentFailureRateThresholdPercent")
+        latency = alert_default("agent_p95_latency_threshold_ms", "agentP95LatencyThresholdMs")
+        utilization_steps = [("green", None), ("orange", utilization), ("red", 100)]
+        failure_steps = [("green", None), ("orange", failure // 2), ("red", failure)]
+        latency_steps = [("green", None), ("orange", latency // 2), ("red", latency)]
+
+        def steps(thresholds):
+            return [(step["color"], step["value"]) for step in thresholds["steps"]]
+
+        by_id = {
+            name: {item["id"]: item for item in self.dashboards[name]["panels"]}
+            for name in ("openai-ptu.json", "foundry-agents.json", "business-overview.json")
+        }
+        for name, panel_id, expected, soft_max in (
+            ("openai-ptu.json", 1, utilization_steps, 100),
+            ("openai-ptu.json", 2, utilization_steps, 100),
+            ("openai-ptu.json", 13, utilization_steps, None),
+            ("business-overview.json", 2, utilization_steps, 100),
+            ("business-overview.json", 9, utilization_steps, None),
+            ("foundry-agents.json", 1, latency_steps, None),
+            ("business-overview.json", 3, latency_steps, None),
+            ("business-overview.json", 6, failure_steps, None),
+            ("openai-ptu.json", 14, [("green", None), ("orange", 1)], None),
+            ("business-overview.json", 10, [("green", None), ("orange", 1)], None),
+        ):
+            item = by_id[name][panel_id]
+            defaults = item["fieldConfig"]["defaults"]
+            with self.subTest(dashboard=name, panel=item["title"]):
+                self.assertEqual(steps(defaults["thresholds"]), expected)
+                if item["type"] == "timeseries":
+                    # Time series draw thresholds only when a style is set.
+                    self.assertEqual(defaults["custom"]["thresholdsStyle"], {"mode": "dashed"})
+                    self.assertEqual(defaults["custom"].get("axisSoftMax"), soft_max)
+        self.assertEqual(
+            by_id["business-overview.json"][6]["fieldConfig"]["defaults"]["min"], 0)
+        for tile in (by_id["foundry-agents.json"][9], by_id["business-overview.json"][8]):
+            overrides = {
+                entry["matcher"]["options"]: {prop["id"]: prop["value"] for prop in entry["properties"]}
+                for entry in tile["fieldConfig"]["overrides"]
+            }
+            with self.subTest(tile=tile["id"]):
+                self.assertEqual(steps(overrides["/^FailureRatePercent$/"]["thresholds"]), failure_steps)
+                self.assertEqual(steps(overrides["/^P95_ms$/"]["thresholds"]), latency_steps)
 
 
 if __name__ == "__main__":

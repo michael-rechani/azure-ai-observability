@@ -36,7 +36,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize P50_ms = percentile(DurationMs, 50),\n    P95_ms = percentile(DurationMs, 95),\n    P99_ms = percentile(DurationMs, 99)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize P50_ms = percentile(DurationMs, 50),\n    P95_ms = percentile(DurationMs, 95),\n    P99_ms = percentile(DurationMs, 99)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
             "resultFormat": "time_series",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -47,7 +47,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -64,7 +64,27 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2500
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
           }
         },
         "overrides": [
@@ -150,7 +170,7 @@
             "resources": [
               "$workspaceResourceId"
             ],
-            "query": "union AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| summarize ObservedRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize ObservedRuns = sum(ItemCount),\n    FailedRuns = sumif(ItemCount, Success == false)\n    by bin(TimeGenerated, $__interval), Agent\n| order by TimeGenerated asc\n",
             "resultFormat": "time_series",
             "timeColumn": "TimeGenerated",
             "dashboardTime": true
@@ -161,7 +181,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -236,7 +256,7 @@
       "id": 3,
       "title": "Tool performance",
       "type": "table",
-      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -264,7 +284,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -294,7 +314,7 @@
       "id": 4,
       "title": "Model token usage and missing usage spans",
       "type": "timeseries",
-      "description": "Input/output token totals are derived from retained model spans. Missing usage spans use the right axis; absent usage is not evidence of zero token consumption.",
+      "description": "Input/output token totals are derived from retained model spans. Missing usage spans use the right axis; absent usage is not evidence of zero token consumption. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -322,7 +342,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -412,7 +432,7 @@
       "id": 5,
       "title": "Failed operations - trace IDs",
       "type": "table",
-      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -440,7 +460,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -560,7 +580,7 @@
       "id": 6,
       "title": "Observed instrumentation",
       "type": "timeseries",
-      "description": "Counts of observed and recognized spans, not a coverage percentage. A completely silent workspace cannot establish telemetry health.",
+      "description": "Counts of observed and recognized spans, not a coverage percentage. A completely silent workspace cannot establish telemetry health. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -588,7 +608,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -628,7 +648,7 @@
       "id": 7,
       "title": "Evaluation results (optional custom events)",
       "type": "table",
-      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans.",
+      "description": "Requires the documented telemetry contract. No data is not evidence of health. Latency percentiles reflect retained spans. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -656,7 +676,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -673,7 +693,7 @@
       "id": 8,
       "title": "Dependency performance",
       "type": "table",
-      "description": "Client-observed calls and latency to external dependencies. Hostnames in Target are telemetry metadata; do not emit secrets or customer data there.",
+      "description": "Client-observed calls and latency to external dependencies. Hostnames in Target are telemetry metadata; do not emit secrets or customer data there. Not filtered by the agent variable.",
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${DS_AZURE_MONITOR}"
@@ -701,7 +721,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -712,6 +732,183 @@
       },
       "options": {
         "showHeader": true
+      }
+    },
+    {
+      "id": 9,
+      "title": "Agent summary - selected period",
+      "type": "stat",
+      "description": "Whole-period figures over retained invoke_agent spans for the selected agent. Runs are weighted by ItemCount, the failure rate uses runs with a known outcome, and p95 is taken over retained spans without sampling weights. No data is not evidence of health: the agent may be idle, sampled out or uninstrumented. Threshold colours mirror the default alerts.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Log Analytics",
+          "azureLogAnalytics": {
+            "resources": [
+              "$workspaceResourceId"
+            ],
+            "query": "let selectedAgent = url_decode(\"${agent:percentencode}\");\nunion AppRequests, AppDependencies\n| where $__timeFilter(TimeGenerated)\n| where tostring(Properties[\"gen_ai.operation.name\"]) == \"invoke_agent\"\n| extend Agent = tostring(Properties[\"gen_ai.agent.name\"])\n| where selectedAgent in (\"\", \"*\") or Agent =~ selectedAgent\n| summarize Runs = sum(ItemCount),\n    KnownOutcomeRuns = sumif(ItemCount, isnotnull(Success)),\n    FailedRuns = sumif(ItemCount, Success == false),\n    P95_ms = percentile(DurationMs, 95)\n| project ObservedRuns = iff(Runs > 0, Runs, long(null)),\n    FailureRatePercent = iff(\n        KnownOutcomeRuns > 0,\n        100.0 * todouble(FailedRuns) / todouble(KnownOutcomeRuns),\n        real(null)\n    ),\n    P95_ms\n",
+            "resultFormat": "table",
+            "timeColumn": "TimeGenerated",
+            "dashboardTime": true
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^ObservedRuns$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Observed runs"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^FailureRatePercent$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Failure rate"
+              },
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 5
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/^P95_ms$/"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "P95 latency"
+              },
+              {
+                "id": "unit",
+                "value": "ms"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 2500
+                    },
+                    {
+                      "color": "red",
+                      "value": 5000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "auto"
       }
     }
   ],
@@ -725,6 +922,17 @@
         "current": {
           "text": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me",
           "value": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/monitoring-rg/providers/Microsoft.OperationalInsights/workspaces/replace-me"
+        },
+        "hide": 0
+      },
+      {
+        "name": "agent",
+        "label": "Agent (or * for all)",
+        "type": "textbox",
+        "query": "*",
+        "current": {
+          "text": "*",
+          "value": "*"
         },
         "hide": 0
       }
@@ -761,7 +969,7 @@
     {
       "type": "link",
       "title": "Business overview",
-      "url": "/d/azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}",
+      "url": "/d/azure-ai-business-overview/_?var-workspaceResourceId=${workspaceResourceId:percentencode}&var-agent=${agent:percentencode}",
       "icon": "external link alt",
       "keepTime": true,
       "includeVars": false,

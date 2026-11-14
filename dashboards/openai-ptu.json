@@ -64,7 +64,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -82,7 +82,11 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 100
           },
           "thresholds": {
             "mode": "absolute",
@@ -167,7 +171,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -185,7 +189,28 @@
             "gradientMode": "opacity",
             "showPoints": "never",
             "spanNulls": false,
-            "axisPlacement": "auto"
+            "axisPlacement": "auto",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 100
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
           }
         },
         "overrides": []
@@ -260,7 +285,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -383,7 +408,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 12
       },
       "fieldConfig": {
         "defaults": {
@@ -469,7 +494,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -555,7 +580,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 20
       },
       "fieldConfig": {
         "defaults": {
@@ -641,7 +666,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -726,7 +751,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 28
       },
       "fieldConfig": {
         "defaults": {
@@ -811,7 +836,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 36
       },
       "fieldConfig": {
         "defaults": {
@@ -896,7 +921,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 36
       },
       "fieldConfig": {
         "defaults": {
@@ -981,7 +1006,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 44
       },
       "fieldConfig": {
         "defaults": {
@@ -1021,7 +1046,7 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 52
       },
       "fieldConfig": {
         "defaults": {},
@@ -1030,6 +1055,221 @@
       "options": {
         "mode": "markdown",
         "content": "PTU utilization describes consumed versus deployed throughput; it is **not a cost estimate**. For actual charges and reservation coverage, open [Azure Cost Management](https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/overview). Use Azure Quotas to review regional deployment availability. Optional Terraform budgets can alert on actual month-to-date costs for the selected AI accounts."
+      }
+    },
+    {
+      "id": 13,
+      "title": "Peak PTU utilization",
+      "type": "stat",
+      "description": "Highest per-interval maximum utilization in the selected period. Threshold colours mirror the default alert (orange from 85%, red at 100%) and do not follow alert overrides. Azure platform metric; availability varies by model and SKU. A * deployment shows one tile per deployment.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resourceGroup",
+                "resourceName": "$account",
+                "region": "$region",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIProvisionedManagedUtilizationV2",
+            "aggregation": "Maximum",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$deployment"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "max"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "title": "Throttled (429) - period total",
+      "type": "stat",
+      "description": "Sum of 429 responses in the selected period, orange once any were returned. Azure platform metric. No data can mean no throttling, no matching traffic or an unavailable metric.",
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${DS_AZURE_MONITOR}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${DS_AZURE_MONITOR}"
+          },
+          "queryType": "Azure Monitor",
+          "subscription": "$subscription",
+          "azureMonitor": {
+            "resources": [
+              {
+                "subscription": "$subscription",
+                "resourceGroup": "$resourceGroup",
+                "resourceName": "$account",
+                "region": "$region",
+                "metricNamespace": "Microsoft.CognitiveServices/accounts"
+              }
+            ],
+            "metricNamespace": "Microsoft.CognitiveServices/accounts",
+            "metricName": "AzureOpenAIRequests",
+            "aggregation": "Total",
+            "timeGrain": "auto",
+            "top": "100",
+            "dimensionFilters": [
+              {
+                "dimension": "ModelDeploymentName",
+                "operator": "eq",
+                "filters": [
+                  "$deployment"
+                ]
+              },
+              {
+                "dimension": "StatusCode",
+                "operator": "eq",
+                "filters": [
+                  "429"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "match": "null+nan",
+                "result": {
+                  "text": "No data",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "sum"
+          ],
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "center",
+        "orientation": "auto"
       }
     }
   ],

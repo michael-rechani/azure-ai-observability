@@ -1,4 +1,3 @@
-import copy
 import csv
 import importlib.util
 import io
@@ -15,6 +14,12 @@ spec.loader.exec_module(demo_builder)
 
 
 class DemoDashboardTests(unittest.TestCase):
+    PAIRS = (
+        ("foundry-agents.json", "foundry-agents-demo.json"),
+        ("openai-ptu.json", "openai-ptu-demo.json"),
+        ("business-overview.json", "business-overview-demo.json"),
+    )
+
     @classmethod
     def setUpClass(cls):
         config = json.loads((ROOT / "config.example.json").read_text(encoding="utf-8"))
@@ -29,11 +34,12 @@ class DemoDashboardTests(unittest.TestCase):
                     dashboard,
                 )
 
-    def test_readme_leads_with_simulated_grafana_screenshots(self):
+    def test_readme_leads_with_grafana_screenshots_and_says_where_they_come_from(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         introduction = readme.split("## What is included", 1)[0]
         self.assertIn("## Dashboards", introduction)
-        self.assertIn("simulated data", introduction.lower())
+        self.assertIn("with sample data", introduction)
+        self.assertIn("not from a live azure deployment", introduction.lower())
         for name in ("foundry-grafana-preview.png", "ptu-grafana-preview.png",
                      "business-overview-preview.png"):
             path = f"docs/images/{name}"
@@ -41,19 +47,16 @@ class DemoDashboardTests(unittest.TestCase):
                 self.assertIn(f"]({path})", introduction)
                 self.assertTrue((ROOT / path).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
 
-    def test_demo_cannot_be_confused_with_live_dashboard(self):
+    def test_demo_is_isolated_from_live_dashboards(self):
         real_uids = {dashboard["uid"] for dashboard in self.real.values()}
         demo_uids = {dashboard["uid"] for dashboard in self.demo.values()}
         for dashboard in self.demo.values():
             self.assertTrue(dashboard["uid"].startswith("demo-"))
             self.assertNotIn(dashboard["uid"], real_uids)
-            self.assertIn("SIMULATED", dashboard["description"])
-            self.assertIn("SIMULATED DATA", dashboard["panels"][0]["title"])
-            self.assertIn("do not change the sample data", dashboard["panels"][0]["options"]["content"])
             for link in dashboard.get("links", []):
                 self.assertIn(link["url"].split("/")[2], demo_uids)
                 self.assertTrue(link["url"].split("/")[2].startswith("demo-"))
-            for panel in dashboard["panels"][1:]:
+            for panel in dashboard["panels"]:
                 self.assertEqual(panel["datasource"], demo_builder.DEMO_DS)
                 if panel["type"] == "text":
                     self.assertEqual(panel.get("targets", []), [])
@@ -64,22 +67,30 @@ class DemoDashboardTests(unittest.TestCase):
                     self.assertNotIn("azureMonitor", target)
                     self.assertNotIn("azureLogAnalytics", target)
 
+    def test_demo_dashboards_carry_no_preview_labelling(self):
+        for real_name, demo_name in self.PAIRS:
+            real, demo = self.real[real_name], self.demo[demo_name]
+            with self.subTest(dashboard=demo_name):
+                for key in ("title", "tags", "description"):
+                    self.assertEqual(demo.get(key), real.get(key))
+                self.assertEqual([p["id"] for p in demo["panels"]], [p["id"] for p in real["panels"]])
+                for variable in demo["templating"]["list"]:
+                    for placeholder in ("replace", "existing-"):
+                        self.assertNotIn(placeholder, variable.get("query", ""))
+        for path in (ROOT / "demo" / "provisioning").rglob("*.yml"):
+            with self.subTest(provisioning=path.name):
+                self.assertNotIn("simulated", path.read_text(encoding="utf-8").lower())
+
     def test_demo_uses_production_layout_and_style(self):
-        pairs = (
-            ("foundry-agents.json", "foundry-agents-demo.json"),
-            ("openai-ptu.json", "openai-ptu-demo.json"),
-            ("business-overview.json", "business-overview-demo.json"),
-        )
-        for real_name, demo_name in pairs:
+        for real_name, demo_name in self.PAIRS:
             real_panels = {panel["id"]: panel for panel in self.real[real_name]["panels"]}
-            demo_panels = {panel["id"]: panel for panel in self.demo[demo_name]["panels"][1:]}
+            demo_panels = {panel["id"]: panel for panel in self.demo[demo_name]["panels"]}
             self.assertEqual(set(real_panels), set(demo_panels))
             for panel_id, real_panel in real_panels.items():
                 with self.subTest(dashboard=real_name, panel=panel_id):
-                    rendered = copy.deepcopy(demo_panels[panel_id])
+                    rendered = demo_panels[panel_id]
                     self.assertEqual(rendered["fieldConfig"], real_panel["fieldConfig"])
                     self.assertEqual(rendered["options"], real_panel["options"])
-                    rendered["gridPos"]["y"] -= 3
                     self.assertEqual(rendered["gridPos"], real_panel["gridPos"])
 
     def test_simulated_series_are_coherent(self):
@@ -103,6 +114,13 @@ class DemoDashboardTests(unittest.TestCase):
             self.assertLessEqual(float(row["Last *"]), float(row["Max"]))
         self.assertNotIn("AllocatedPTUs", demo_builder.PTU_DATA[11])
         self.assertIn("PassRatePercent", demo_builder.AGENT_DATA[7])
+        # The summary tile agrees with the charts it summarizes.
+        summary = next(csv.DictReader(io.StringIO(demo_builder.AGENT_DATA[9])))
+        self.assertEqual(int(summary["ObservedRuns"]), sum(observed[1]))
+        self.assertAlmostEqual(
+            float(summary["FailureRatePercent"]), 100 * sum(failed[1]) / sum(observed[1]), places=2)
+        self.assertTrue(min(latency[1][1]) <= float(summary["P95_ms"]) <= max(latency[1][1]))
+        self.assertEqual(demo_builder.BUSINESS_DATA[8], demo_builder.AGENT_DATA[9])
 
     def test_dedicated_axes_distinguish_small_counts(self):
         agents = self.real["foundry-agents.json"]["panels"]

@@ -14,6 +14,8 @@ These are stateful Azure Monitor alerts with auto-mitigation and an email action
 
 The default utilization rule averages other dimensions (including stream type); the dashboard's maximum panel complements it. Adjust the aggregation or dimensions if your traffic mix requires a different saturation signal. Tune 429 thresholds for expected bursts and retry policy to reduce noise.
 
+The dashboards colour their tiles and chart lines from these same defaults (85% and 100% for PTU utilization, 5% and 10% for failure rate, 2.5 s and 5 s for p95 latency, any 429), but the colours are fixed and do not follow a threshold you override here. See [Reading the dashboards](setup.md#reading-the-dashboards).
+
 **Live behaviour.** In a Lab test on a real provisioned deployment, the 429 rule fired during a short burst of requests. The utilization rule averages over five minutes, so it fired only after the load was sustained for several minutes; a brief spike that the maximum panel shows will not necessarily page anyone. All four PTU rules, in both the Bicep and Terraform stacks, evaluated and fired.
 
 ## Included Grafana alert rule (Infinity cost path only)
