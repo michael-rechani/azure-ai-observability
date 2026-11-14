@@ -46,6 +46,17 @@ function global:az {
     if ($arguments[0] -eq 'account') {
         return 'fake-grafana-token'
     }
+    if ($arguments[0] -eq 'ad') {
+        if ($env:TEST_MINT_FAILS -eq 'true' -and $arguments[3] -eq 'reset') {
+            $global:LASTEXITCODE = 1
+            return
+        }
+        switch ($arguments[3]) {
+            'list' { return @('old-key-one', 'old-key-two') }
+            'reset' { return 'minted-secret-value' }
+            'delete' { return }
+        }
+    }
     if ($arguments[0] -eq 'deployment') {
         $index = [Array]::IndexOf($arguments, '--parameters')
         $global:TempParameters = $arguments[$index + 1]

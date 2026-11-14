@@ -8,7 +8,8 @@ The complete Bicep deployment was run live in an isolated Lab subscription: Graf
 
 - Azure CLI 2.60+ with Bicep installed (`az bicep install`) and PowerShell 7. The helper runs on the machine with the Azure CLI credentials.
 - An existing monitoring resource group in a region supporting Managed Grafana Standard and Application Insights.
-- Permission to create resources and role assignments in the monitoring resource group and each selected account/workspace. The opt-in Infinity route with its default `subscription` scope also requires permission to assign **Cost Management Reader at subscription scope**; its `resourceGroupManaged` scope creates custom roles automatically, which needs subscription deployment and role-definition write/delete permission at subscription scope, and role-assignment write/delete permission in each monitored group. A budget requires permission to create subscription budgets.
+- Permission to create resources and role assignments in the monitoring resource group and each selected account/workspace. The opt-in Infinity route also creates a Microsoft Entra app registration and a custom role in code, so it requires **permission to create app registrations** (for example Application Developer, Application Administrator or Global Administrator) and, at the chosen scope, permission to write role definitions and assignments (Owner or User Access Administrator). At the default `subscription` scope that is subscription deployment plus role-definition and role-assignment write/delete at subscription scope; the `resourceGroupManaged` scope needs the same in each monitored group. A budget requires permission to create subscription budgets.
+- Bicep 0.36.1 or later for the Infinity route (the Azure CLI's bundled Bicep is enough on current versions). `infra\bicepconfig.json` enables the Microsoft Graph Bicep extension, which Bicep restores from the Microsoft Container Registry on first build, so that build needs network access.
 - The signed-in identity must receive **Grafana Admin**. Use its Entra object ID for `grafanaAdminObjectId`, or grant it access separately. Azure subscription permissions alone are not Grafana data-plane access.
 - Network access to Azure management APIs and the public Grafana endpoint. This starter does not implement sovereign-cloud endpoints or private networking.
 
@@ -52,18 +53,27 @@ For an optional monthly account-filtered budget, set a positive whole-number `mo
 
 Set `enableCostInfinity = true` for the cheapest billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin. It adds no cluster or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret, which Grafana stores and you must rotate. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first: the secret, a shared identity that any query editor inherits, API throttling and the 31-day daily limit.
 
-Create the service principal with the `az ad` commands in [Set it up](costs.md#set-it-up), keep its secret in `AI_OBSERVABILITY_COST_CLIENT_SECRET`, then set:
+Nothing is created by hand. Set:
 
 ```bicep
 param enableCostInfinity = true
-param costInfinityClientId = '00000000-0000-0000-0000-000000000000'              // $app.appId
-param costInfinityServicePrincipalObjectId = '00000000-0000-0000-0000-000000000000' // $sp.id, the enterprise application's object ID
-param costInfinityScope = 'subscription' // Or 'resourceGroupManaged' (needs monitoredAccounts and role-definition permissions)
+param costInfinityScope = 'subscription' // Or 'resourceGroupManaged' (needs monitoredAccounts)
 ```
 
-The template installs the Infinity plugin on the Grafana workspace (`grafanaPlugins`, a preview property) and grants the principal either **Cost Management Reader** on the subscription or a one-action `Microsoft.CostManagement/query/read` role on each monitored resource group. The secret is **never** a Bicep parameter or output. `scripts\deploy_bicep.ps1` stops before calling Azure when it is missing, and passes it only to `scripts\provision_grafana.ps1`, which stores it in the Infinity data source's secure data (uid `ai-observability-cost-infinity`) and imports the `azure-ai-costs-infinity` dashboard. `-WhatIf` does not need the secret. On a rerun the helper updates only a data source it created, which is how a rotated secret is applied; it refuses an unrelated data source with the same UID.
+The template creates, in code:
 
-Setting the switch back to false does not remove the principal, role assignments, plugin, data source or dashboard. See [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret).
+- a single-tenant **Microsoft Entra app registration and service principal** named `<namePrefix>-cost-query` (Microsoft Graph Bicep extension), with the deployer as its owner so the helper can mint secrets as that user;
+- a **custom role whose only action is `Microsoft.CostManagement/query/read`**, assigned to the principal on the subscription or, for `resourceGroupManaged`, on each monitored resource group. The built-in Cost Management Reader role is not used, because it also includes `Microsoft.Support/*`;
+- the Infinity plugin on the Grafana workspace (`grafanaPlugins`, a preview property).
+
+**The secret is never a Bicep parameter or output.** The Graph extension cannot return secret text, so `scripts\provision_grafana.ps1` mints it with `az ad app credential reset --append` (180-day life) while signed in as the app's owner, stores it in the Infinity data source's secure data (uid `ai-observability-cost-infinity`), and then deletes the older `grafana-infinity` secrets on that app. It also imports the `azure-ai-costs-infinity` dashboard. To use a secret someone else created, pass `-CostInfinityClientSecret` (a `SecureString`) to `scripts\deploy_bicep.ps1` or set `AI_OBSERVABILITY_COST_CLIENT_SECRET`; the helper then mints and deletes nothing. `deploy_bicep.ps1` no longer stops when no secret is supplied. On a rerun the helper updates only a data source it created, which is how a rotated secret is applied; it refuses an unrelated data source with the same UID.
+
+Limits specific to Microsoft Graph resources in Bicep:
+
+- **Preview.** `-WhatIf` shows the role and the other Azure resources but marks the Graph resources unsupported, so the app registration is not previewed. Deployment stacks do not support them either.
+- **Replication delay.** A first deployment can fail once while Entra replicates the new app and service principal. Rerun it.
+- **Not removed with the resource group.** Setting the switch back to false, or deleting the group, leaves the app registration, its service principal and secrets, and the role assignments in place. See [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) for the cleanup commands.
+- **Moving from the earlier manual setup:** see [Moving from the earlier manual setup](costs.md#moving-from-the-earlier-manual-setup). `costInfinityClientId` and `costInfinityServicePrincipalObjectId` are no longer parameters, and Bicep rejects them in a parameter file.
 
 The helper also creates an alert rule, **Infinity cost data source cannot query Cost Management**, that fires when the cost query fails, for example after the secret expires. It is on by default; tune or disable it with `enableCostInfinityAlert`, `costInfinityAlertIntervalMinutes` (5-1440, default 60) and `costInfinityAlertPendingMinutes` (0-1440, default 60). You must add a Grafana contact point and a notification policy that routes `component = cost-infinity`, because Azure Managed Grafana's default contact point has no integration. The helper updates only a rule group it created (every rule labelled `managed_by = azure-ai-observability-bicep-v1`) and stops before any change if a group with the same name belongs to someone else. Setting `enableCostInfinityAlert` to false does not delete an existing rule group; remove it in Grafana. See [Get alerted when the secret fails](costs.md#get-alerted-when-the-secret-fails).
 

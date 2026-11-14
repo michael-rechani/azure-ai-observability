@@ -53,6 +53,7 @@ $infinityTenantId = $null
 $infinityClientId = $null
 $infinityScope = $null
 $infinitySecret = $null
+$infinityEnabled = $false
 $infinityAlertEnabled = $true
 $infinityAlertIntervalMinutes = 60
 $infinityAlertPendingMinutes = 60
@@ -72,10 +73,12 @@ if ($DashboardConfiguration.enableCostInfinityDashboard) {
     if ($null -eq $CostInfinityClientSecret -and $env:AI_OBSERVABILITY_COST_CLIENT_SECRET) {
         $CostInfinityClientSecret = ConvertTo-SecureString -String $env:AI_OBSERVABILITY_COST_CLIENT_SECRET -AsPlainText -Force
     }
-    if ($null -eq $CostInfinityClientSecret -or $CostInfinityClientSecret.Length -eq 0) {
-        throw 'The Infinity cost dashboard needs the service principal client secret. Pass -CostInfinityClientSecret or set AI_OBSERVABILITY_COST_CLIENT_SECRET; it is never stored in the Bicep parameters.'
+    # Bicep cannot create a client secret, so without a supplied one this script creates it for the
+    # Bicep-created application, using your own Azure CLI sign-in. It never leaves this process.
+    if ($null -ne $CostInfinityClientSecret -and $CostInfinityClientSecret.Length -gt 0) {
+        $infinitySecret = [System.Net.NetworkCredential]::new('', $CostInfinityClientSecret).Password
     }
-    $infinitySecret = [System.Net.NetworkCredential]::new('', $CostInfinityClientSecret).Password
+    $infinityEnabled = $true
     $files['azure-ai-costs-infinity.json'] = 'infinity'
     if ($DashboardConfiguration.Contains('enableCostInfinityAlert')) {
         $infinityAlertEnabled = [bool]$DashboardConfiguration.enableCostInfinityAlert
@@ -93,7 +96,7 @@ if ($DashboardConfiguration.enableCostInfinityDashboard) {
         }
     }
 }
-$infinityAlertEnabled = $infinityAlertEnabled -and $null -ne $infinitySecret
+$infinityAlertEnabled = $infinityAlertEnabled -and $infinityEnabled
 
 function Get-AccountDefaults {
     param($Account)
@@ -266,7 +269,7 @@ function Save-DataSource {
 $existingSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$sourceUid" -AllowNotFound
 Assert-OwnedDataSource -Existing $existingSource -Uid $sourceUid -Name $sourceName -Type 'grafana-azure-monitor-datasource'
 $existingInfinitySource = $null
-if ($infinitySecret) {
+if ($infinityEnabled) {
     $plugin = Invoke-GrafanaApi -Method 'Get' -Path "/api/plugins/$infinityPluginId/settings" -AllowNotFound
     if ($null -eq $plugin) {
         throw "The Infinity plugin ($infinityPluginId) is not installed on this Grafana workspace. Redeploy with enableCostInfinity = true, or install it from the Grafana plugin catalog, and rerun."
@@ -302,6 +305,23 @@ foreach ($item in $prepared) {
     }
 }
 
+$retiredInfinityKeyIds = @()
+if ($infinityEnabled -and $null -eq $infinitySecret) {
+    # Mint before any Grafana write so a permission problem leaves nothing half-provisioned. Earlier
+    # secrets with this name are removed only after Grafana holds the new one.
+    $infinitySecretName = 'grafana-infinity'
+    $listed = @(& az ad app credential list --id $infinityClientId --query "[?displayName=='$infinitySecretName'].keyId" --output tsv)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not list the Infinity application credentials. Sign in with az login as an owner of that application, or supply -CostInfinityClientSecret.'
+    }
+    $retiredInfinityKeyIds = @($listed | Where-Object { $_ })
+    $endDate = (Get-Date).ToUniversalTime().AddDays(180).ToString('yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+    $infinitySecret = (& az ad app credential reset --id $infinityClientId --append --display-name $infinitySecretName --end-date $endDate --query password --output tsv) -join ''
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($infinitySecret)) {
+        throw 'Could not create the Infinity client secret. Sign in with az login as an owner of the application, or supply -CostInfinityClientSecret.'
+    }
+}
+
 $source = @{
     uid = $sourceUid
     name = $sourceName
@@ -314,7 +334,7 @@ $source = @{
     }
 }
 Save-DataSource -Existing $existingSource -Source $source
-if ($infinitySecret) {
+if ($infinityEnabled) {
     Save-DataSource -Existing $existingInfinitySource -Source @{
         uid = $infinityUid
         name = $infinityName
@@ -336,6 +356,13 @@ if ($infinitySecret) {
         secureJsonData = @{
             oauth2ClientSecret = $infinitySecret
             oauth2EndPointParamsValue1 = 'https://management.azure.com/'
+        }
+    }
+    # Retire earlier secrets only after Grafana holds the new one.
+    foreach ($keyId in $retiredInfinityKeyIds) {
+        & az ad app credential delete --id $infinityClientId --key-id $keyId --output none
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Could not delete the earlier Infinity client secret $keyId. Remove it with az ad app credential delete."
         }
     }
 }

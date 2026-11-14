@@ -41,42 +41,65 @@ This is the only billed-cost path in Grafana, and it is **not secretless**. Graf
 
 ### Set it up
 
-1. **Create the service principal and a bounded secret.** No script is needed:
+1. **Deploy.** There is nothing to create by hand. Bicep: set `enableCostInfinity` and `costInfinityScope` ([Bicep](bicep.md#optional-direct-cost-queries-with-infinity)). Terraform: set `enable_cost_infinity` and `cost_infinity_scope` in the Azure stage and `enable_cost_infinity_dashboard` in the Grafana stage ([Terraform](terraform.md#optional-direct-cost-queries-with-infinity)). Either path creates, in code:
+   - a single-tenant **app registration and service principal** named `<name_prefix>-cost-query`;
+   - a **custom role whose only action is `Microsoft.CostManagement/query/read`**, assigned to that principal at the chosen scope (the built-in Cost Management Reader role is no longer used);
+   - the client secret ([who creates it](#who-creates-the-secret));
+   - the Infinity plugin on the workspace, the data source and the dashboard.
 
-   ```powershell
-   $app = az ad app create --display-name "ai-observability-cost-query" --sign-in-audience AzureADMyOrg | ConvertFrom-Json
-   $sp  = az ad sp create --id $app.appId | ConvertFrom-Json
-   # The secret is shown once. Keep it in your secret store, and give it a short, bounded life.
-   $env:AI_OBSERVABILITY_COST_CLIENT_SECRET = az ad app credential reset --id $app.appId --append --display-name grafana-infinity --end-date (Get-Date).AddMonths(6).ToString('yyyy-MM-dd') --query password -o tsv
-   $app.appId   # costInfinityClientId / cost_infinity_client_id
-   $sp.id       # costInfinityServicePrincipalObjectId / cost_infinity_service_principal_object_id
-   ```
+2. **Choose the scope.** Both scopes use the same single-action role, so access is read-only in either case.
+   - `subscription` (default) assigns it on the whole subscription. The dashboard then shows every AI account in the subscription, not only the monitored ones.
+   - `resourceGroupManaged` assigns it on each monitored resource group, which needs monitored accounts. The dashboard defaults to one monitored group; change `costScope` to `/subscriptions/<id>/resourceGroups/<name>` to see another.
 
-   Use the **service principal (enterprise application) object ID**, `$sp.id`, not the app registration's object ID. The service principal has no roles until you deploy.
+   The role name starts with `AI Observatory Cost Query infinity-cost` and ends with a hash, so you can find it in **Access control (IAM)**.
 
-2. **Deploy.** Bicep: set `enableCostInfinity`, `costInfinityClientId`, `costInfinityServicePrincipalObjectId` and `costInfinityScope` ([Bicep](bicep.md#optional-direct-cost-queries-with-infinity)). Terraform: set `enable_cost_infinity` and the matching variables in the Azure stage and `enable_cost_infinity_dashboard` in the Grafana stage ([Terraform](terraform.md#optional-direct-cost-queries-with-infinity)). Either path installs the Infinity plugin on the workspace, grants the principal read-only cost access, creates the data source and imports the dashboard.
+3. **Check what the deployer needs.** Creating the principal and the role takes two kinds of rights, and a deployment without them fails:
+   - **Microsoft Entra:** permission to create app registrations (for example Application Developer, Application Administrator or Global Administrator, or the Graph permission `Application.ReadWrite.All`).
+   - **Azure:** permission to create role definitions and assignments at the scope (Owner or User Access Administrator).
 
-3. **Choose the scope.**
-   - `subscription` (default) grants **Cost Management Reader** on the whole subscription. The dashboard then shows every AI account in the subscription, not only the monitored ones.
-   - `resourceGroupManaged` grants a custom role with the single action `Microsoft.CostManagement/query/read` on each monitored resource group, which needs monitored accounts and permission to create role definitions. The dashboard defaults to one monitored group; change `costScope` to `/subscriptions/<id>/resourceGroups/<name>` to see another. The role is named `AI Observatory Cost Query infinity-cost <hash>`.
+#### Who creates the secret
+
+Infinity needs a client secret, and the two paths differ because of what each tool can do:
+
+- **Terraform** creates it (`azuread_application_password`) and rotates it on a schedule, as described under [rotate or remove](#rotate-or-remove-the-secret). Both stages' state hold it, so protect the state as a credential.
+- **Bicep** cannot create it. The Microsoft Graph Bicep extension's credential type has no field that returns the secret text, so the resource would be created without a usable value. The provisioning helper `scripts\provision_grafana.ps1` mints one instead, as the deployer who owns the app registration (`az ad app credential reset --append`, 180-day life), sends it only to Grafana and never writes it to a parameter, output or deployment record. You can still supply your own with `-CostInfinityClientSecret` or `AI_OBSERVABILITY_COST_CLIENT_SECRET`, for example when an Entra administrator creates it for you.
 
 ### Rotate or remove the secret
 
-Rotate before the expiry you chose. Create a new secret with `az ad app credential reset --append`, put it in `AI_OBSERVABILITY_COST_CLIENT_SECRET` (Bicep helper) or `TF_VAR_cost_infinity_client_secret` (Terraform), redeploy to update the data source, confirm the dashboard still returns data (look at the panels, not the data source's **Save & test**), then delete the old secret with `az ad app credential delete --id <appId> --key-id <old-key-id>`. The Bicep helper rerun took about 72 seconds in testing. After the update, the first query may still fail once with `AADSTS7000215`; reload after a few seconds.
+**Terraform rotates it for you.** The secret is replaced when it is older than `cost_infinity_secret_rotation_days` (default 90, 7 to 300), and the old one stays valid for 30 more days. When the period passes, apply the Azure stage, then reapply the Grafana stage so the data source gets the new secret. Confirm the dashboard still returns data (look at the panels, not the data source's **Save & test**). Nothing applies on its own, so schedule the applies and keep a reminder.
 
-To remove the feature, set the switch to false and redeploy, then clean up explicitly because Bicep is incremental and Grafana resources are never deleted by the helper:
+**Bicep: rerun the helper.** `scripts\deploy_bicep.ps1` (or `scripts\provision_grafana.ps1` alone) mints a new 180-day secret, updates the data source and, only after the data source is saved, deletes the earlier secrets named `grafana-infinity` on that app. It never touches secrets with other names. The first query after the update may still fail once with `AADSTS7000215`; reload after a few seconds. A rerun took about 72 seconds in testing, when the secret was supplied.
 
-```powershell
-az role assignment delete --assignee <sp-object-id>       # then delete the AI Observatory Cost Query infinity-cost roles
-az ad app delete --id <app-id>                            # also removes the service principal and its secrets
-```
+**Bring your own secret.** For either path you can create a secret yourself with `az ad app credential reset --append` and supply it (`TF_VAR_cost_infinity_client_secret` for the Terraform Grafana stage, `AI_OBSERVABILITY_COST_CLIENT_SECRET` or `-CostInfinityClientSecret` for the Bicep helper), then delete the old key with `az ad app credential delete --id <appId> --key-id <old-key-id>`.
+
+**Remove the feature.** Set the switch to false and redeploy.
+
+- **Terraform** destroys the app registration, service principal, secret, custom role and assignment with the next apply. Review the plan first.
+- **Bicep** is incremental, and Microsoft Graph resources are not deleted with the resource group, so clean up explicitly:
+
+  ```powershell
+  az role assignment delete --assignee <sp-object-id>       # then delete the AI Observatory Cost Query infinity-cost roles
+  az ad app delete --id <app-id>                            # also removes the service principal and its secrets
+  ```
+
+  The app is named `<name_prefix>-cost-query`; `az ad app list --display-name <name_prefix>-cost-query` finds it.
 
 Delete the Infinity data source and dashboard in Grafana if you no longer want them. Delete the **Infinity cost data source** alert rule group (folder **AI observability alerts**, under **Alerting**) first or at the same time: once the data source or the service principal is gone the rule's query fails, and the rule fires on every evaluation until it is removed. With Terraform the rule group is destroyed together with the data source.
 
+### Moving from the earlier manual setup
+
+Earlier versions asked you to create the app registration and secret with `az ad` commands and pass their IDs in. Those inputs are gone.
+
+1. Delete `costInfinityClientId` and `costInfinityServicePrincipalObjectId` (Bicep), or `cost_infinity_client_id` and `cost_infinity_service_principal_object_id` (Terraform), from your parameter and variable files. They are no longer accepted: Bicep rejects an undeclared parameter, and Terraform only warns about an undeclared variable in a `.tfvars` file, so remove them rather than leave them.
+2. Redeploy. A **new** app registration, service principal and secret are created, and the Grafana data source is updated to use them. The `subscription` scope switches from the built-in Cost Management Reader to the single-action custom role; Terraform removes the old Reader assignment, while Bicep leaves it in place.
+3. After the dashboard works, delete the old hand-made app (`az ad app delete --id <old-app-id>`) and, for Bicep, its leftover Cost Management Reader assignment.
+
 ### Things to know before you enable it
 
-- **It is a shared identity, not per-viewer access.** Every viewer of the dashboard sees what the principal can read. Anyone who can edit queries on the Infinity data source (Grafana Editor and Admin) can run any Cost Management query the principal's role allows, so use `resourceGroupManaged` where you can and restrict those roles.
-- **The secret lives in Grafana, and in Terraform state.** Grafana never returns it through its API, but the Terraform Grafana stage records it in state. Supply it as `TF_VAR_cost_infinity_client_secret`, never in a `.tfvars` file, and protect the state like a credential. The Bicep path keeps it out of the parameters: the helper reads it from `AI_OBSERVABILITY_COST_CLIENT_SECRET` or `-CostInfinityClientSecret` and sends it only to Grafana.
+- **It is a shared identity, not per-viewer access.** Every viewer of the dashboard sees what the principal can read. Anyone who can edit queries on the Infinity data source (Grafana Editor and Admin) can run any Cost Management query the principal's role allows. The role allows only `Microsoft.CostManagement/query/read`, but that can expose all cost data at the scope, so use `resourceGroupManaged` where you can and restrict those roles.
+- **The secret lives in Grafana, and in Terraform state.** Grafana never returns it through its API, but Terraform records it in the state of both stages. Supply the Grafana stage's copy as `TF_VAR_cost_infinity_client_secret`, never in a `.tfvars` file, and protect the state like a credential. The Bicep path keeps it out of the parameters, outputs and deployment history: the helper mints it, or reads `AI_OBSERVABILITY_COST_CLIENT_SECRET` or `-CostInfinityClientSecret`, and sends it only to Grafana.
+- **Creating the principal needs Entra rights.** See [what the deployer needs](#set-it-up). If you cannot get them, create the secret out of band and use the Bicep override, or leave the feature off.
+- **Bicep cannot preview the principal.** What-if and deployment stacks are not supported for Microsoft Graph resources, so the app registration is not shown in a preview. Microsoft Graph replication can also delay the first deployment; rerun if it fails once.
 - **Expiry silently breaks the panels, and the health check will not tell you.** The panels fail with an authentication error (`AADSTS7000222` expired, `AADSTS7000215` wrong or revoked), but the data source's **Save & test** keeps reporting "Health check successful" with a wrong, revoked or expired secret, so it cannot be used to check the secret. The repo therefore ships a Grafana alert rule that fires when the Cost Management query fails (see [Get alerted when the secret fails](#get-alerted-when-the-secret-fails)). It detects a failure; it cannot warn before expiry, because Grafana cannot see the credential's end date, so still set a calendar reminder for the end date.
 - **A cached token can hide a bad secret for up to an hour.** Grafana keeps using the access token it already has after the secret is revoked or expires. The failure appears when the token expires (about an hour) or when the data source is updated, so a rotation can look fine until later. Always confirm after you update the data source.
 - **The Query API is throttled.** It returns HTTP 429 often. Infinity does not retry, so a panel can fail intermittently on refresh. Reload after a short wait. The daily panel is capped at 31 days per query (the API's limit for daily granularity), so the dashboard's time range should stay within a month.
@@ -126,11 +149,19 @@ Checked for a secretless option on 2026-11; none was found at lower cost:
 
 ### What has been validated
 
-A throwaway deployment in a sandbox subscription used the real `scripts\deploy_bicep.ps1` with `resourceGroupManaged` scope and a temporary service principal created with the commands above. The service principal, its secret and the resource group were removed afterwards.
+**Principal, secret and role created in code, verified live** in two further throwaway deployments (tagged resource groups, torn down afterwards). The deployer was a Global Administrator and subscription Owner, so the minimum Entra and Azure rights listed under [Set it up](#set-it-up) were **not** isolated.
+
+- **Bicep.** The real `infra\main.bicep` with `enableCostInfinity = true` and `costInfinityScope = 'subscription'` succeeded. It created a single-tenant (`AzureADMyOrg`) app registration with **no secrets**, its service principal with the deployer as owner, and one custom role whose only action is `Microsoft.CostManagement/query/read`, assigned to the principal at subscription scope. The principal had no other assignment, direct or inherited.
+- **Helper-minted secret.** As the deployer, `az ad app credential reset --append` (the helper's command) minted a secret for that app. The principal used it to sign in and run a Cost Management month-to-date query at subscription scope. This shows that a role with **only `query/read`** is enough at subscription scope, and that the app's owner can mint the secret. The provisioning helper itself was not run end to end against Grafana in this deployment; its flow is covered by unit tests with mocked `az` and Grafana calls.
+- **Read-only.** With that token, reading the resource group directly returned HTTP 403, and listing resource groups, resources and role assignments returned empty results.
+- **Terraform.** The Azure stage (pre-created resource group, `subscription` scope, no monitored accounts) applied 14 resources, including the app registration, service principal, secret and role, and a second plan showed no changes. The secret from the sensitive `cost_infinity_client_secret` output signed in and ran the same query, with a lifetime of the 90-day rotation plus the 30-day overlap. `terraform destroy` followed by deleting the resource group left no app registration or custom role behind. The Grafana stage was not re-run for this change; its Infinity data source was verified earlier, with a hand-made principal.
+- **Not verified:** `resourceGroupManaged` with the new principal (the role and assignment modules are unchanged, and the Terraform change is covered by mock-provider tests), a deployer that is a service principal rather than a user (`deployer().objectId` is untested for that case), the Terraform rotation after 90 days, and Bicep what-if for Graph resources.
+
+**Earlier validation, with a hand-made principal.** A throwaway deployment in a sandbox subscription used the real `scripts\deploy_bicep.ps1` with `resourceGroupManaged` scope and a temporary service principal created with `az ad` commands, which the repo no longer needs. The service principal, its secret and the resource group were removed afterwards.
 
 **Verified live:**
 
-- The three `az ad` commands work as documented.
+- The `az ad` commands for creating the app, service principal and secret worked.
 - The deployment succeeded end to end. ARM installed Infinity 4.0.0 on a Grafana 12 workspace at create time, the helper created the data source, and all four dashboards were imported. The only access created on the monitored resource group was the single-action custom role.
 - Grafana stores the client secret write-only: the data source reports only that a secret is set and never returns it.
 - All four panel queries run through Grafana's backend, which expands the `${__from:date:iso}` and `${__to:date:iso}` time macros itself.
@@ -249,7 +280,7 @@ The Infinity dashboard reports **actual cost** for Cognitive Services accounts (
 
 Billing can arrive late or be revised, so recent days can change. No rows means **no cost reported yet**, not zero cost. Validate coverage and billing behavior with your own agreement before making financial decisions.
 
-The built-in [Cost Management Reader role](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/management-and-governance#cost-management-reader) that the Infinity `subscription` scope assigns includes `Microsoft.Support/*`, which can permit support-ticket writes where those operations apply. It is not strictly read-only. A resource-group assignment can expose all cost data available at that group, and Viewer access and dashboard filters do not enforce the viewer's own Azure cost permissions. Review permissions for each customer, including permissions left over from an earlier deployment.
+The Infinity principal uses a custom role with the single action `Microsoft.CostManagement/query/read` at both scopes, not the built-in [Cost Management Reader role](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/management-and-governance#cost-management-reader), which also includes `Microsoft.Support/*` and so is not strictly read-only. Read-only here still means it can read all cost data available at its scope: Viewer access and dashboard filters do not enforce the viewer's own Azure cost permissions. Review permissions for each customer, including permissions left over from an earlier deployment (for example a Cost Management Reader assignment from the earlier manual setup).
 
 A separate [investigation](https://github.com/michael-rechani/azure-ai-observability/issues/4) verified that a temporary managed identity with only `Microsoft.CostManagement/query/read` on one resource group could query that group's actual and amortized costs in one subscription. Queries at subscription scope and another resource group, and a query by an unassigned identity, were denied. That test did not cover Grafana or other billing environments, so test any custom role and billing agreement before relying on it. The Infinity-specific live results are under [what has been validated](#what-has-been-validated).
 

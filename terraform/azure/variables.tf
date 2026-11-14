@@ -276,41 +276,23 @@ variable "cost_budget_threshold_percent" {
 }
 
 variable "enable_cost_infinity" {
-  description = "Opt in to direct Cost Management queries through the Grafana Infinity plugin: installs the plugin and grants cost query access to a service principal that you create. Adds no cluster or storage, but is NOT secretless: Infinity signs in with that principal's client secret, which you rotate and supply only to the Grafana stage."
+  description = "Opt in to direct Cost Management queries through the Grafana Infinity plugin: installs the plugin and creates an app registration, service principal and client secret with one read-only cost query action. Adds no cluster or storage, but is NOT secretless: Infinity signs in with that client secret, which Terraform rotates and exposes only as a sensitive output for the Grafana stage. Needs an Entra role that can create applications."
   type        = bool
   default     = false
 }
 
-variable "cost_infinity_client_id" {
-  description = "Application (client) ID of the service principal Infinity signs in with. Required with enable_cost_infinity. Create it with the az ad commands in docs/costs.md."
-  type        = string
-  default     = null
+variable "cost_infinity_secret_rotation_days" {
+  description = "Days before Terraform replaces the Infinity client secret. The first apply after this period creates a new secret; the old one stays valid for 30 more days. Apply this stage and then the Grafana stage."
+  type        = number
+  default     = 90
   validation {
-    condition = !var.enable_cost_infinity || (
-      var.cost_infinity_client_id != null &&
-      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.cost_infinity_client_id)) &&
-      var.cost_infinity_client_id != "00000000-0000-0000-0000-000000000000"
-    )
-    error_message = "enable_cost_infinity needs cost_infinity_client_id set to the real application (client) ID, not the all-zero placeholder."
-  }
-}
-
-variable "cost_infinity_service_principal_object_id" {
-  description = "Object ID of that service principal's enterprise application (az ad sp show --id <client id> --query id), which receives the cost query role. This is not the application object ID. Required with enable_cost_infinity."
-  type        = string
-  default     = null
-  validation {
-    condition = !var.enable_cost_infinity || (
-      var.cost_infinity_service_principal_object_id != null &&
-      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.cost_infinity_service_principal_object_id)) &&
-      var.cost_infinity_service_principal_object_id != "00000000-0000-0000-0000-000000000000"
-    )
-    error_message = "enable_cost_infinity needs cost_infinity_service_principal_object_id set to the real service principal object ID, not the all-zero placeholder."
+    condition     = var.cost_infinity_secret_rotation_days == floor(var.cost_infinity_secret_rotation_days) && var.cost_infinity_secret_rotation_days >= 7 && var.cost_infinity_secret_rotation_days <= 300
+    error_message = "cost_infinity_secret_rotation_days must be a whole number from 7 to 300."
   }
 }
 
 variable "cost_infinity_scope" {
-  description = "Cost access granted to the Infinity service principal: subscription (Cost Management Reader) or resourceGroupManaged (a query-only custom role on each monitored account's resource group)."
+  description = "Where the Infinity service principal may query cost: subscription, or resourceGroupManaged (each monitored account's resource group). Both grant a custom role whose only action is Microsoft.CostManagement/query/read."
   type        = string
   default     = "subscription"
   validation {

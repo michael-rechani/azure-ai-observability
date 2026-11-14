@@ -33,7 +33,13 @@ output "cost_infinity_tenant_id" {
 
 output "cost_infinity_client_id" {
   description = "Client ID for the Grafana stage's cost_infinity_client_id, or null when Infinity is disabled."
-  value       = var.enable_cost_infinity ? var.cost_infinity_client_id : null
+  value       = var.enable_cost_infinity ? azuread_application.cost_infinity[0].client_id : null
+}
+
+output "cost_infinity_client_secret" {
+  description = "Client secret for the Grafana stage's cost_infinity_client_secret (read it with terraform output -raw and pass it as TF_VAR_cost_infinity_client_secret), or null when Infinity is disabled. It is also recorded in this stage's state, so protect the state like a credential."
+  value       = var.enable_cost_infinity ? azuread_application_password.cost_infinity[0].value : null
+  sensitive   = true
 }
 
 output "cost_infinity_scope" {

@@ -118,8 +118,8 @@ jobs:
             if ! jq -e --arg file "$relative" \
               'any(.Results[]?; .Type == "azure-arm" and (.Target | endswith($file)))' \
               "$report" > /dev/null; then
-              if [[ "$relative" == "modules/budget.json" ]]; then
-                echo "::warning file=infra/${relative%.json}.bicep::Trivy did not recognize this subscription-scoped ARM template; review it separately."
+              if [[ "$relative" == "modules/budget.json" || "$relative" == "modules/cost-infinity-principal.json" ]]; then
+                echo "::warning file=infra/${relative%.json}.bicep::Trivy did not recognize this ARM template (subscription-scoped or Microsoft Graph extension resources); review it separately."
               else
                 echo "::error::Trivy did not recognize compiled ARM template $relative."
                 exit 1

@@ -20,9 +20,10 @@ telemetry_publisher_principals   = {}
 enable_agent_alerts              = false
 monthly_ai_cost_budget_amount    = 0
 # Billed cost in Grafana: Grafana queries Cost Management directly through the Infinity plugin. It adds no cluster
-# or storage, but it is NOT secretless: create a service principal with the az ad commands in docs/costs.md,
-# and give its client secret only to the Grafana stage. 'resourceGroupManaged' grants a query-only role per monitored group.
+# or storage, but it is NOT secretless: Terraform creates an app registration, service principal and rotating client
+# secret (needs an Entra role that can create applications), and the secret reaches only the Grafana stage through
+# the sensitive cost_infinity_client_secret output. Both scopes grant a custom role whose only action is
+# Microsoft.CostManagement/query/read; 'resourceGroupManaged' limits it to each monitored resource group.
 enable_cost_infinity = false
-# cost_infinity_client_id                  = "00000000-0000-0000-0000-000000000000"
-# cost_infinity_service_principal_object_id = "00000000-0000-0000-0000-000000000000"
-# cost_infinity_scope                      = "resourceGroupManaged" # Or "subscription" (Cost Management Reader).
+# cost_infinity_scope                = "resourceGroupManaged" # Or "subscription".
+# cost_infinity_secret_rotation_days = 90

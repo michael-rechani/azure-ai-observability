@@ -5,7 +5,8 @@ enable_business_overview = false
 
 # Opt-in direct Cost Management queries through Infinity. NOT secretless: the service principal client secret
 # is stored in Grafana and in this stage's Terraform state. Set enable_cost_infinity in the Azure stage first and
-# use its cost_infinity_* outputs. Supply the secret as TF_VAR_cost_infinity_client_secret, never in a tfvars file.
+# use its cost_infinity_* outputs. Supply the secret as TF_VAR_cost_infinity_client_secret (from the Azure stage's
+# sensitive cost_infinity_client_secret output), never in a tfvars file. After the Azure stage rotates it, re-apply here.
 enable_cost_infinity_dashboard = false
 # cost_infinity_tenant_id = "00000000-0000-0000-0000-000000000000"
 # cost_infinity_client_id = "00000000-0000-0000-0000-000000000000"

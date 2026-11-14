@@ -98,7 +98,7 @@ variable "cost_infinity_client_id" {
 }
 
 variable "cost_infinity_client_secret" {
-  description = "Client secret of the Infinity service principal. Supply it through TF_VAR_cost_infinity_client_secret rather than a tfvars file. Required with enable_cost_infinity_dashboard."
+  description = "Client secret of the Infinity service principal, from the Azure stage's sensitive cost_infinity_client_secret output (terraform output -raw cost_infinity_client_secret). Supply it through TF_VAR_cost_infinity_client_secret rather than a tfvars file. Required with enable_cost_infinity_dashboard."
   type        = string
   default     = null
   sensitive   = true
