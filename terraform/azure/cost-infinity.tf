@@ -15,7 +15,7 @@ locals {
   # One query-only role per scope: the whole subscription, or each monitored resource group.
   cost_infinity_role_scopes = !var.enable_cost_infinity ? {} : (
     var.cost_infinity_scope == "subscription" ? {
-      lower("/subscriptions/${var.subscription_id}") = "/subscriptions/${var.subscription_id}"
+      (lower("/subscriptions/${var.subscription_id}")) = "/subscriptions/${var.subscription_id}"
     } : local.cost_infinity_group_scopes
   )
 }
