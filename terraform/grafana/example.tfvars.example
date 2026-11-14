@@ -3,10 +3,6 @@ subscription_id          = "00000000-0000-0000-0000-000000000000"
 # Business overview dashboard (agent and PTU signals); it reads the telemetry workspace set in dashboard_defaults below.
 enable_business_overview = false
 
-# Set with enable_cost_export in the Azure stage; use its cost_export_adx_cluster_uri output.
-enable_cost_export_dashboard = false
-# cost_export_cluster_uri = "https://replace-me.eastus.kusto.windows.net"
-
 # Opt-in direct Cost Management queries through Infinity. NOT secretless: the service principal client secret
 # is stored in Grafana and in this stage's Terraform state. Set enable_cost_infinity in the Azure stage first and
 # use its cost_infinity_* outputs. Supply the secret as TF_VAR_cost_infinity_client_secret, never in a tfvars file.

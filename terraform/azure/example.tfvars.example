@@ -19,13 +19,7 @@ existing_telemetry_workspace_ids = []
 telemetry_publisher_principals   = {}
 enable_agent_alerts              = false
 monthly_ai_cost_budget_amount    = 0
-# Cost export path (export -> storage -> Azure Data Explorer -> Grafana). The ADX cluster bills
-# continuously (roughly $95/month at retail). The start date is required when enabled and must stay unchanged.
-enable_cost_export = false
-# cost_export_start_date = "2026-01-15"
-# cost_export_deployer_principal_type = "App" # Default "User"; the identity running Terraform gets AllDatabasesAdmin on the cost cluster.
-# cost_export_grafana_access = "privateEndpoint" # Or "privateOnly". Approve with scripts/approve_grafana_private_endpoint.ps1; see docs/costs.md.
-# Cheapest billed-cost path: Grafana queries Cost Management directly through the Infinity plugin. It adds no cluster
+# Billed cost in Grafana: Grafana queries Cost Management directly through the Infinity plugin. It adds no cluster
 # or storage, but it is NOT secretless: create a service principal with the az ad commands in docs/costs.md,
 # and give its client secret only to the Grafana stage. 'resourceGroupManaged' grants a query-only role per monitored group.
 enable_cost_infinity = false

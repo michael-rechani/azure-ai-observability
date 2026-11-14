@@ -60,9 +60,7 @@ run "business_overview_is_opt_in" {
   }
   assert {
     condition = (
-      length(grafana_data_source.azure_data_explorer) == 0 &&
       length(grafana_data_source.infinity) == 0 &&
-      !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_native") &&
       !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_infinity")
     )
     error_message = "Enabling the Business overview must not enable any cost data source or dashboard."
@@ -159,56 +157,6 @@ run "dashboard_defaults_target_real_resources" {
     ]))
     error_message = "Every textbox query, displayed value, and selected value must agree."
   }
-}
-
-run "cost_export_dashboard_is_opt_in_and_uses_managed_identity" {
-  command = plan
-  assert {
-    condition     = length(grafana_data_source.azure_data_explorer) == 0 && !contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_native")
-    error_message = "The Data Explorer data source and native cost dashboard must be opt-in."
-  }
-}
-
-run "cost_export_dashboard_binds_data_explorer" {
-  command = plan
-  variables {
-    enable_cost_export_dashboard = true
-    cost_export_cluster_uri      = "https://adx.eastus.kusto.windows.net"
-  }
-  assert {
-    condition = (
-      jsondecode(grafana_data_source.azure_data_explorer[0].json_data_encoded).azureCredentials.authType == "msi" &&
-      jsondecode(grafana_data_source.azure_data_explorer[0].json_data_encoded).clusterUrl == "https://adx.eastus.kusto.windows.net" &&
-      jsondecode(grafana_data_source.azure_data_explorer[0].json_data_encoded).defaultDatabase == "costs"
-    )
-    error_message = "The Data Explorer data source must use managed identity against the supplied cluster and database."
-  }
-  assert {
-    condition = (
-      contains(keys(grafana_dashboard.monitoring), "azure_ai_costs_native") &&
-      !strcontains(grafana_dashboard.monitoring["azure_ai_costs_native"].config_json, "$${DS_AZURE_DATA_EXPLORER}") &&
-      strcontains(grafana_dashboard.monitoring["azure_ai_costs_native"].config_json, "ai-observability-azure-data-explorer")
-    )
-    error_message = "The native cost dashboard must use the provisioned Data Explorer data source."
-  }
-}
-
-run "cost_export_dashboard_requires_cluster_uri" {
-  command = plan
-  variables {
-    enable_cost_export_dashboard = true
-  }
-  expect_failures = [
-    grafana_dashboard.monitoring["azure_ai_costs_native"],
-  ]
-}
-
-run "reject_untrusted_cost_export_cluster_uri" {
-  command = plan
-  variables {
-    cost_export_cluster_uri = "https://adx.kusto.windows.net.attacker.example"
-  }
-  expect_failures = [var.cost_export_cluster_uri]
 }
 
 run "cost_infinity_dashboard_is_opt_in" {

@@ -30,8 +30,6 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 
 $sourceUid = 'ai-observability-azure-monitor'
 $sourceName = 'AI observability - Azure Monitor'
-$adxSourceUid = 'ai-observability-azure-data-explorer'
-$adxSourceName = 'AI observability - Azure Data Explorer'
 $infinityUid = 'ai-observability-cost-infinity'
 $infinityName = 'AI observability - Cost Management (Infinity)'
 $infinityPluginId = 'yesoreyeram-infinity-datasource'
@@ -50,19 +48,6 @@ $files = [ordered]@{
 }
 if ($DashboardConfiguration.enableBusinessOverview) {
     $files['business-overview.json'] = 'business'
-}
-$adxClusterUri = $null
-$adxDatabase = $null
-if ($DashboardConfiguration.enableCostExportDashboard) {
-    $adxClusterUri = [string]$DashboardConfiguration.costExportClusterUri
-    $adxDatabase = [string]$DashboardConfiguration.costExportDatabase
-    if ($adxClusterUri -notmatch '^(?i)https://[a-z0-9][a-z0-9-]*\.[a-z0-9]+\.kusto\.windows\.net/?$') {
-        throw 'costExportClusterUri must be an Azure Data Explorer HTTPS cluster URI such as https://name.region.kusto.windows.net.'
-    }
-    if ($adxDatabase -notmatch '^[A-Za-z0-9_-]+$') {
-        throw 'costExportDatabase must be a simple Azure Data Explorer database name.'
-    }
-    $files['azure-ai-costs-native.json'] = 'native'
 }
 $infinityTenantId = $null
 $infinityClientId = $null
@@ -158,7 +143,7 @@ function Set-DashboardDefaults {
 $prepared = [System.Collections.Generic.List[object]]::new()
 foreach ($entry in $files.GetEnumerator()) {
     $path = Join-Path $root 'dashboards' $entry.Key
-    $content = [IO.File]::ReadAllText($path).Replace('${DS_AZURE_MONITOR}', $sourceUid).Replace('${DS_AZURE_DATA_EXPLORER}', $adxSourceUid).Replace('${DS_COST_INFINITY}', $infinityUid)
+    $content = [IO.File]::ReadAllText($path).Replace('${DS_AZURE_MONITOR}', $sourceUid).Replace('${DS_COST_INFINITY}', $infinityUid)
     $dashboard = $content | ConvertFrom-Json -AsHashtable -Depth 100
     if ($dashboard.uid -notmatch '^[A-Za-z0-9_-]+$') {
         throw "Dashboard '$($entry.Key)' has an invalid UID."
@@ -171,7 +156,6 @@ foreach ($entry in $files.GetEnumerator()) {
         }
         'agents' { @{ workspaceResourceId = $DashboardConfiguration.telemetryWorkspaceResourceId } }
         'ptu' { Get-AccountDefaults $DashboardConfiguration.ptuAccount }
-        'native' { @{} }
         'infinity' { @{ costScope = $infinityScope } }
         'business' {
             $values = @{
@@ -281,11 +265,6 @@ function Save-DataSource {
 
 $existingSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$sourceUid" -AllowNotFound
 Assert-OwnedDataSource -Existing $existingSource -Uid $sourceUid -Name $sourceName -Type 'grafana-azure-monitor-datasource'
-$existingAdxSource = $null
-if ($adxClusterUri) {
-    $existingAdxSource = Invoke-GrafanaApi -Method 'Get' -Path "/api/datasources/uid/$adxSourceUid" -AllowNotFound
-    Assert-OwnedDataSource -Existing $existingAdxSource -Uid $adxSourceUid -Name $adxSourceName -Type 'grafana-azure-data-explorer-datasource'
-}
 $existingInfinitySource = $null
 if ($infinitySecret) {
     $plugin = Invoke-GrafanaApi -Method 'Get' -Path "/api/plugins/$infinityPluginId/settings" -AllowNotFound
@@ -335,21 +314,6 @@ $source = @{
     }
 }
 Save-DataSource -Existing $existingSource -Source $source
-if ($adxClusterUri) {
-    Save-DataSource -Existing $existingAdxSource -Source @{
-        uid = $adxSourceUid
-        name = $adxSourceName
-        type = 'grafana-azure-data-explorer-datasource'
-        access = 'proxy'
-        jsonData = @{
-            clusterUrl = $adxClusterUri.TrimEnd('/')
-            defaultDatabase = $adxDatabase
-            dataConsistency = 'strong'
-            azureCredentials = @{ authType = 'msi' }
-            aiObservabilityOwner = $owner
-        }
-    }
-}
 if ($infinitySecret) {
     Save-DataSource -Existing $existingInfinitySource -Source @{
         uid = $infinityUid

@@ -1,4 +1,0 @@
-AiCost()
-| where $__timeFilter(Date)
-| summarize BillingCost = round(sum(Cost), 2), CostUsd = round(sum(CostUsd), 2) by BillingCurrency
-| order by BillingCost desc

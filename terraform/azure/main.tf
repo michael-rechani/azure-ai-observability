@@ -17,7 +17,7 @@ locals {
   alert_accounts      = { for key, account in var.monitored_accounts : key => account if var.enable_ptu_alerts && length(account.ptu_deployments) > 0 }
   agent_alert_suffix  = "${var.name_prefix}-${local.suffix}-agent"
 
-  # Suffix for the cost export and Infinity resource names; changing it renames those resources.
+  # Suffix for the Infinity cost resource names; changing it renames those resources.
   cost_suffix = substr(sha256(lower("${var.subscription_id}/${var.resource_group_name}/${var.name_prefix}")), 0, 12)
 }
 

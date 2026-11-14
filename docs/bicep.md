@@ -1,6 +1,6 @@
 # Bicep deployment
 
-The Bicep path deploys Azure monitoring resources, scoped access, alerts, the Grafana data source and dashboards, an optional budget, and two opt-in billed-cost routes. Foundry, PTU, agent-trace and capacity panels are read by Grafana's managed identity with no secret. Billed cost needs an opt-in route (see [billed cost options](costs.md)). Nothing here involves GitHub. **Terraform and Python are not required.** Bicep creates the Azure resources; the PowerShell 7 helper uses the Grafana data-plane API.
+The Bicep path deploys Azure monitoring resources, scoped access, alerts, the Grafana data source and dashboards, an optional budget, and one opt-in billed-cost route. Foundry, PTU, agent-trace and capacity panels are read by Grafana's managed identity with no secret. Billed cost needs the opt-in route (see [billed cost options](costs.md)). Nothing here involves GitHub. **Terraform and Python are not required.** Bicep creates the Azure resources; the PowerShell 7 helper uses the Grafana data-plane API.
 
 The complete Bicep deployment was run live in an isolated Lab subscription: Grafana, Log Analytics, alerts and the native data sources and dashboards deployed, and Grafana's managed identity read live Foundry metrics, Resource Graph inventory and agent traces. That run predates the removal of the optional cost pipeline, so confirm your own deployment. Start in nonproduction, review expected charges, and complete the [acceptance checklist](setup.md#acceptance-checklist). The templates monitor existing Foundry/OpenAI accounts; they do not create or resize model deployments, instrument applications, or run evaluations.
 
@@ -67,30 +67,6 @@ Setting the switch back to false does not remove the principal, role assignments
 
 The helper also creates an alert rule, **Infinity cost data source cannot query Cost Management**, that fires when the cost query fails, for example after the secret expires. It is on by default; tune or disable it with `enableCostInfinityAlert`, `costInfinityAlertIntervalMinutes` (5-1440, default 60) and `costInfinityAlertPendingMinutes` (0-1440, default 60). You must add a Grafana contact point and a notification policy that routes `component = cost-infinity`, because Azure Managed Grafana's default contact point has no integration. The helper updates only a rule group it created (every rule labelled `managed_by = azure-ai-observability-bicep-v1`) and stops before any change if a group with the same name belongs to someone else. Setting `enableCostInfinityAlert` to false does not delete an existing rule group; remove it in Grafana. See [Get alerted when the secret fails](costs.md#get-alerted-when-the-secret-fails).
 
-### Optional cost export to Azure Data Explorer
-
-Set `enableCostExport = true` to get billed cost without a service principal secret. The template deploys a private storage account, two subscription-scoped Cost Management exports (daily month-to-date and monthly last-month), an Azure Data Explorer cluster and database with external tables, and the role assignments that let the exports write, ADX read, and Grafana query, all by managed identity. The helper then provisions an Azure Data Explorer data source (uid `ai-observability-azure-data-explorer`, managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. It needs no monitored accounts, and can be enabled together with the Infinity route.
-
-```bicep
-param enableCostExport = true
-// Object ID of the identity running the deployment: az ad signed-in-user show --query id -o tsv
-param costExportDeployerObjectId = '00000000-0000-0000-0000-000000000000'
-// param costExportDeployerPrincipalType = 'App' // when a service principal deploys
-// Keep the first deployment's value on later deployments; the default is tomorrow (UTC) and moves each time.
-param costExportStartDate = '2026-01-15'
-```
-
-Before deploying:
-
-- Register the provider once per subscription: `az provider register --namespace Microsoft.CostManagementExports`.
-- Review the standing charge: the default `Dev(No SLA)_Standard_E2a_v4` cluster bills continuously (roughly $95 per month at retail; confirm current pricing) and is never auto-stopped.
-- The deployer needs permission to create role assignments on the storage account and to create subscription-scoped exports.
-- Set `costExportDeployerObjectId`. The deployer is granted **AllDatabasesAdmin on the dedicated cost cluster**, because only that role can set the database `managed_identity` policy the export script needs; a deployer without it fails with "not authorized to perform operation `DatabaseScopedManagedIdentityPolicyAlterCommand`". The cluster holds nothing but the cost export, and you can remove that assignment after the deployment (redeploying re-adds it). `scripts\deploy_bicep.ps1` rejects a missing or invalid value before calling Azure.
-- Exports only cover the deployment subscription and start collecting from `costExportStartDate`; `costExportEndDate` defaults to about five years out, after which exports stop.
-- Optional: set `costExportGrafanaAccess` to `privateEndpoint` or `privateOnly` so Grafana reaches the cluster through a managed private endpoint instead of its public endpoint. The endpoint stays Pending until you run `scripts\approve_grafana_private_endpoint.ps1` (Bicep cannot approve it), and `privateOnly` also disables the cluster's public network access. Deploy `privateEndpoint` first, approve, then switch. See [Private access from Grafana](costs.md#private-access-from-grafana-optional).
-
-The export contains the whole subscription's cost rows, so anyone who can edit queries on the ADX data source can read them. See [Cost Management export to Azure Data Explorer](costs.md#cost-management-export-to-azure-data-explorer) for validation status, the positional-schema caveat, first-run timing and the **Run now** option. Like the other optional features, setting `enableCostExport` back to false does not delete the cluster, exports or storage; remove them explicitly to stop the charge, and delete the subscription-scoped exports separately from the resource group.
-
 ## Deploy and provision Grafana
 
 Sign in and create the monitoring resource group if necessary. Creating the group is a real Azure change, even before what-if:
@@ -113,6 +89,6 @@ The helper marks resources it creates in Grafana. It refuses to overwrite an unr
 
 ## Lifecycle and removal
 
-Bicep uses **incremental** Azure deployments: removing a principal or monitored group, setting an alert or cost feature to false, or setting the budget amount to zero does **not** delete resources created by a previous deployment. A previously deployed Azure Data Explorer cluster can keep incurring charges, a budget can keep sending alerts, and removed Viewer/publisher or cost role assignments can remain effective. Explicitly review and remove the specific unwanted Azure resources and role assignments through Azure's management tools. Remove an obsolete managed cost role's assignments before deleting its role definition, after confirming neither is used elsewhere. Disabling a cost route also does not delete its Grafana dashboard or stored data. Preserve or delete data according to your retention requirements.
+Bicep uses **incremental** Azure deployments: removing a principal or monitored group, setting an alert or cost feature to false, or setting the budget amount to zero does **not** delete resources created by a previous deployment. A previously deployed Azure Data Explorer cluster from the removed cost export can keep incurring charges (see [the migration note](costs.md#migrating-from-the-removed-azure-data-explorer-export)), a budget can keep sending alerts, and removed Viewer/publisher or cost role assignments can remain effective. Explicitly review and remove the specific unwanted Azure resources and role assignments through Azure's management tools. Remove an obsolete managed cost role's assignments before deleting its role definition, after confirming neither is used elsewhere. Disabling a cost route also does not delete its Grafana dashboard or stored data. Preserve or delete data according to your retention requirements.
 
 The helper updates its managed Grafana resources but does not delete them. Disabling the Business overview or a cost route does not remove its previously provisioned dashboard. Azure resources and dashboards have separate lifecycles; do not delete a resource group containing other workloads. For Terraform-managed resources, use the separate [Terraform lifecycle guidance](terraform.md#validation-and-lifecycle).
