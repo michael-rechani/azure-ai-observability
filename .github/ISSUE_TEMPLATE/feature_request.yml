@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an improvement, a dashboard, an alert or a deployment option
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The templates monitor existing Microsoft Foundry and Azure OpenAI accounts. They do not create or resize model deployments, instrument applications or run evaluations. If your idea goes beyond that, it is still worth proposing, but say so here.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What you are trying to monitor or manage, and what is hard to do today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Existing Microsoft views or other approaches you tried, and where they fall short.

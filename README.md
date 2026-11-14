@@ -153,7 +153,7 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 - [Direct Grafana managed-identity cost queries and delegated per-viewer access](https://github.com/michael-rechani/azure-ai-observability/issues/4) remain under investigation and have not been demonstrated.
 - Grafana hosting, telemetry ingestion/retention and alert rules can incur charges. PTU deployment and reservation charges remain separate.
 
-For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md). This repository is licensed under [Apache-2.0](LICENSE).
+To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md). This repository is licensed under [Apache-2.0](LICENSE).
 
 ## References
 
