@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/michael-rechani/azure-ai-observability/security/advisories/new
+    about: Report vulnerabilities privately. Do not open a public issue.
+  - name: Deployment guide and troubleshooting
+    url: https://github.com/michael-rechani/azure-ai-observability/blob/main/docs/getting-started.md#troubleshooting-and-cleanup
+    about: Check the troubleshooting section before opening an issue about a failed deployment.
