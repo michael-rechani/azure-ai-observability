@@ -756,5 +756,5 @@
       "targetBlank": false
     }
   ],
-  "description": "A concise view of observed agent activity and Azure OpenAI PTU signals. It does not calculate a blended health score and shows no cost; use Azure Cost Management or the optional cost dashboards for billed cost. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
+  "description": "A concise view of observed agent activity and Azure OpenAI PTU signals. It does not calculate a blended health score and shows no cost; use Azure Cost Management or the optional cost dashboard for billed cost. No data can indicate no traffic, missing permissions, unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
 }

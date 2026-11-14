@@ -103,10 +103,6 @@ function Test-BicepDeploymentParameters {
         throw 'dashboardTelemetryWorkspaceResourceId must identify an entry in existingTelemetryWorkspaces; leave it empty to use the new workspace.'
     }
 
-    if ([bool](Get-BicepParameter $Parameters 'enableCostExport' $false)) {
-        Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costExportDeployerObjectId' '')) 'costExportDeployerObjectId (the deploying identity, required for enableCostExport)'
-    }
-
     if ([bool](Get-BicepParameter $Parameters 'enableCostInfinity' $false)) {
         Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costInfinityClientId' '')) 'costInfinityClientId (the application ID of the Infinity service principal)'
         Assert-RealGuid ([string](Get-BicepParameter $Parameters 'costInfinityServicePrincipalObjectId' '')) 'costInfinityServicePrincipalObjectId (the object ID of the same principal in Enterprise applications)'

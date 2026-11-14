@@ -21,7 +21,7 @@ The deployment guides provision these automatically. For an existing Grafana ins
 
 1. Open the Grafana endpoint and sign in as the assigned administrator. RBAC propagation can take several minutes.
 2. Configure the built-in **Azure Monitor** data source for **Managed Identity** authentication. Run **Save & test**. No client secret is required.
-3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. Also import `dashboards/business-overview.json` if you want the optional Business overview. Select the Azure Monitor data source for each import. If you use the opt-in cost export, also add an **Azure Data Explorer** data source with **Managed Identity** authentication, point it at your cluster URI with default database `costs`, grant Grafana's managed identity the database **Viewer** role (the Bicep and Terraform paths already do this), and import `dashboards/azure-ai-costs-native.json`, selecting that data source. For the opt-in direct Cost Management query, install the **Infinity** plugin, add an Infinity data source that uses OAuth2 client credentials for a service principal, and import `dashboards/azure-ai-costs-infinity.json` (see [Costs](costs.md#direct-cost-management-queries-with-infinity-opt-in) for the exact settings, the secret-rotation requirement and the access caveat).
+3. Import `dashboards/foundry-overview.json`, `dashboards/foundry-agents.json`, and `dashboards/openai-ptu.json` using Grafana's dashboard import UI. Also import `dashboards/business-overview.json` if you want the optional Business overview. Select the Azure Monitor data source for each import. If you use the opt-in direct Cost Management query, install the **Infinity** plugin, add an Infinity data source that uses OAuth2 client credentials for a service principal, and import `dashboards/azure-ai-costs-infinity.json` (see [Costs](costs.md#direct-cost-management-queries-with-infinity-opt-in) for the exact settings, the secret-rotation requirement and the access caveat).
 4. Set the top textbox controls to real values. `workspaceResourceId` is a **Log Analytics workspace ARM resource ID**, not a workspace GUID or an Application Insights ID; set it to the agent-telemetry workspace. The Business overview needs only that control. Resource/region values must match the target account.
 5. Optionally generate personalized files using `config.local.json` and the Python dashboard generator. This is not required: the shared subscription default can be changed independently in each dashboard, and the workspace ARM ID can point to another subscription.
 
@@ -56,7 +56,7 @@ Agent-trace queries were checked against a real workspace that received Azure AI
 
 ## Acceptance checklist
 
-- The three core dashboards and, when enabled, the business overview query using Grafana's managed identity. The opt-in cost export dashboard reads Azure Data Explorer with that identity; the opt-in Infinity dashboard uses its own service principal.
+- The three core dashboards and, when enabled, the business overview query using Grafana's managed identity. The opt-in Infinity dashboard uses its own service principal.
 - Resource inventory contains expected authorized accounts/projects; missing rows trigger an RBAC check.
 - A known agent execution produces correlated run, tool, and model spans with an OperationId.
 - Model usage totals match known calls and do not count parent agent summaries twice.
@@ -64,7 +64,7 @@ Agent-trace queries were checked against a real workspace that received Azure AI
 - A known request appears in request/token panels. No traffic is distinguished from missing permissions or unsupported metrics.
 - A controlled failure appears in the trace table and the business overview failure-rate panel. Test alerts/action-group delivery in a nonproduction environment; do not overload a production PTU deployment to induce 429s.
 - Evaluation panels are connected to actual evaluator events or clearly left unused.
-- If you enabled an opt-in cost route, the dashboard shows the expected account and currency data and agrees with Cost Management in the portal. Billing data can lag, and the export route has no data before it was deployed.
+- If you enabled the opt-in Infinity cost route, the dashboard shows the expected account and currency data and agrees with Cost Management in the portal. Billing data can lag.
 - Retention, ingestion cap, access controls, and privacy settings meet your requirements.
 
 The repository's offline CI cannot verify live data, KQL execution, model/SKU support, or notification delivery without your Azure environment.

@@ -54,20 +54,7 @@ param monthlyAiCostBudgetAmount = 0
 param costBudgetStartDate = ''
 param costBudgetEndDate = ''
 
-// Optional secretless cost path: Cost Management export -> private storage -> Azure Data Explorer -> Grafana.
-// The ADX cluster bills continuously (roughly $95/month at retail) and the export holds the whole subscription's
-// cost rows. Register Microsoft.CostManagementExports first. See docs/costs.md.
-param enableCostExport = false
-// Required with enableCostExport: the deploying identity, granted AllDatabasesAdmin on the dedicated cost cluster
-// (az ad signed-in-user show --query id -o tsv). Use costExportDeployerPrincipalType = 'App' for a service principal.
-// param costExportDeployerObjectId = '00000000-0000-0000-0000-000000000000'
-// After the first deployment, set costExportStartDate to the value used then; the default (tomorrow, UTC) moves on every deployment.
-// param costExportStartDate = '2026-01-15'
-// Optional private path from Grafana to the cost cluster: 'privateEndpoint' (keeps public access) or 'privateOnly'.
-// The managed private endpoint stays Pending until scripts/approve_grafana_private_endpoint.ps1 runs. See docs/costs.md.
-// param costExportGrafanaAccess = 'privateEndpoint'
-
-// Optional cheapest billed-cost path: Grafana queries Cost Management directly through the Infinity plugin.
+// Optional billed-cost path: Grafana queries Cost Management directly through the Infinity plugin.
 // It adds no cluster or storage, but it is NOT secretless: Infinity signs in with a service principal
 // client secret that you create, supply only to the provisioning step (never to this template) and rotate.
 // Create the principal with the `az ad` commands in docs/costs.md, then fill in its client ID and service principal object ID.

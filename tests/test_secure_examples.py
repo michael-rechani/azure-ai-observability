@@ -29,7 +29,7 @@ class SecureExampleTests(unittest.TestCase):
                 content = path.read_text(encoding="utf-8")
                 self.assertNotRegex(
                     content,
-                    r"(?m)^(?:param )?(?:enable_cost_infinity|enableCostInfinity|enable_cost_export|enableCostExport)\s*=\s*true$",
+                    r"(?m)^(?:param )?(?:enable_cost_infinity|enableCostInfinity)\s*=\s*true$",
                 )
 
 

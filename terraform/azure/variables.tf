@@ -275,48 +275,6 @@ variable "cost_budget_threshold_percent" {
   }
 }
 
-variable "enable_cost_export" {
-  description = "Deploy the cost export path: Cost Management exports into private storage, read by an Azure Data Explorer cluster through its managed identity, queried by Managed Grafana through its managed identity. The cluster is a standing cost. The subscription must have the Microsoft.CostManagementExports resource provider registered."
-  type        = bool
-  default     = false
-}
-
-variable "cost_export_adx_sku_name" {
-  description = "Azure Data Explorer SKU for the cost export database. The default is the smallest Dev/Test SKU, which has no SLA."
-  type        = string
-  default     = "Dev(No SLA)_Standard_E2a_v4"
-}
-
-variable "cost_export_adx_capacity" {
-  description = "Azure Data Explorer instance count. Dev/Test SKUs support exactly one."
-  type        = number
-  default     = 1
-  validation {
-    condition     = var.cost_export_adx_capacity >= 1 && floor(var.cost_export_adx_capacity) == var.cost_export_adx_capacity
-    error_message = "cost_export_adx_capacity must be a positive integer."
-  }
-}
-
-variable "cost_export_deployer_principal_type" {
-  description = "Principal type of the identity running Terraform: User for a signed-in user, App for a service principal. That identity is granted AllDatabasesAdmin on the dedicated cost cluster, because only that role can set the managed-identity policy the export script needs."
-  type        = string
-  default     = "User"
-  validation {
-    condition     = contains(["User", "App", "Group"], var.cost_export_deployer_principal_type)
-    error_message = "cost_export_deployer_principal_type must be User, App, or Group."
-  }
-}
-
-variable "cost_export_grafana_access" {
-  description = "How Managed Grafana reaches the cost cluster. public (default) uses the cluster public endpoint. privateEndpoint adds a Grafana managed private endpoint and keeps the public endpoint. privateOnly adds the managed private endpoint and disables the public endpoint. Either private option leaves the connection Pending until scripts/approve_grafana_private_endpoint.ps1 approves it, so use privateEndpoint first if Grafana must keep working during the switch."
-  type        = string
-  default     = "public"
-  validation {
-    condition     = contains(["public", "privateEndpoint", "privateOnly"], var.cost_export_grafana_access)
-    error_message = "cost_export_grafana_access must be public, privateEndpoint, or privateOnly."
-  }
-}
-
 variable "enable_cost_infinity" {
   description = "Opt in to direct Cost Management queries through the Grafana Infinity plugin: installs the plugin and grants cost query access to a service principal that you create. Adds no cluster or storage, but is NOT secretless: Infinity signs in with that principal's client secret, which you rotate and supply only to the Grafana stage."
   type        = bool
@@ -358,25 +316,5 @@ variable "cost_infinity_scope" {
   validation {
     condition     = contains(["subscription", "resourceGroupManaged"], var.cost_infinity_scope)
     error_message = "cost_infinity_scope must be subscription or resourceGroupManaged."
-  }
-}
-
-variable "cost_export_start_date" {
-  description = "UTC date (YYYY-MM-DD) the export schedule starts. Required when enable_cost_export is true. Keep it unchanged on later applies, because changing it rewrites the schedule."
-  type        = string
-  default     = null
-  validation {
-    condition     = var.cost_export_start_date == null || can(regex("^\\d{4}-\\d{2}-\\d{2}$", var.cost_export_start_date))
-    error_message = "cost_export_start_date must use YYYY-MM-DD."
-  }
-}
-
-variable "cost_export_end_date" {
-  description = "UTC date (YYYY-MM-DD) the export schedule ends. Defaults to five years after the start date; exports stop silently after it."
-  type        = string
-  default     = null
-  validation {
-    condition     = var.cost_export_end_date == null || can(regex("^\\d{4}-\\d{2}-\\d{2}$", var.cost_export_end_date))
-    error_message = "cost_export_end_date must use YYYY-MM-DD."
   }
 }

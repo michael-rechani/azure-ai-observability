@@ -30,11 +30,11 @@ New to Azure or this repository? Start with the [step-by-step deployment guide](
 
 ## Deploy to Azure
 
-Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, alerts, a Grafana data source, and dashboards. Both support an optional Business overview dashboard (agent and PTU signals, no cost data) and two opt-in billed-cost routes. Neither path requires Python to deploy. Use one tool per deployment; the paths do not share state or ownership.
+Choose **Terraform or Bicep**. Both deploy Azure monitoring resources, roles, alerts, a Grafana data source, and dashboards. Both support an optional Business overview dashboard (agent and PTU signals, no cost data) and one opt-in billed-cost route. Neither path requires Python to deploy. Use one tool per deployment; the paths do not share state or ownership.
 
 **Before deploying:** have Azure CLI, an Azure identity allowed to create resources and assign roles, existing account details and regions, PTU deployment names, a Grafana admin object ID, and an alert email. The Bicep path uses PowerShell 7 and Azure CLI for Grafana's data-plane API.
 
-The commands below show an interactive deployer login. Grafana reads Azure Monitor, Log Analytics and Resource Graph with its **managed identity**, so Foundry, PTU and agent-trace dashboards need no secret or GitHub. Billed cost is the one exception: no tested Grafana data source can query Cost Management or a private storage account with that identity directly. The baseline is the Azure portal and an optional budget alert, and there are two opt-in routes into Grafana. The [export route](docs/costs.md#cost-management-export-to-azure-data-explorer) exports cost to private storage that Azure Data Explorer reads, and Grafana queries ADX, all by managed identity with no code or secret, at the price of a continuously billed ADX cluster. The cheaper and simpler [Infinity route](docs/costs.md#direct-cost-management-queries-with-infinity-opt-in) has Grafana query Cost Management directly with no added resources, but it is **not secretless**: it needs a service principal whose client secret Grafana stores and you rotate. Neither route gives per-viewer cost authorization.
+The commands below show an interactive deployer login. Grafana reads Azure Monitor, Log Analytics and Resource Graph with its **managed identity**, so Foundry, PTU and agent-trace dashboards need no secret or GitHub. Billed cost is the one exception: no tested Grafana data source can query Cost Management or a private storage account with that identity directly. The baseline is the Azure portal and an optional budget alert, and one opt-in route puts billed cost into Grafana: the [Infinity route](docs/costs.md#direct-cost-management-queries-with-infinity-opt-in) has Grafana query Cost Management directly with no added resources, but it is **not secretless**: it needs a service principal whose client secret Grafana stores and you rotate. It does not give per-viewer cost authorization.
 
 ### Deploy with Terraform
 
@@ -42,7 +42,7 @@ Install Terraform 1.7+ and configure protected, locked remote Terraform state fo
 
 **1. Create Azure monitoring resources**
 
-Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars` and replace its placeholders. If you enable an opt-in cost route (`enable_cost_infinity` or `enable_cost_export`), review its permissions in the [cost guide](docs/costs.md) first. If PTU metric support is not yet confirmed, set `enable_ptu_alerts = false` initially; enable it after [metric discovery](docs/setup.md#metric-discovery).
+Copy `terraform/azure/example.tfvars.example` to `terraform/azure/local.tfvars` and replace its placeholders. If you enable the opt-in cost route (`enable_cost_infinity`), review its permissions in the [cost guide](docs/costs.md) first. If PTU metric support is not yet confirmed, set `enable_ptu_alerts = false` initially; enable it after [metric discovery](docs/setup.md#metric-discovery).
 
 ```powershell
 az login
@@ -73,7 +73,7 @@ Remove-Item Env:\GRAFANA_AUTH
 
 ### Deploy with Bicep
 
-Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. If you enable an opt-in cost route (`enableCostInfinity` or `enableCostExport`), review its permissions in the [cost guide](docs/costs.md) first. Use real account regions and deployment names in the dashboard defaults.
+Install Azure CLI with Bicep and PowerShell 7. Copy `infra/main.example.bicepparam` to `infra/main.local.bicepparam` and replace its placeholders. Add `param enablePtuAlerts = false` until you have verified the metrics. If you enable the opt-in cost route (`enableCostInfinity`), review its permissions in the [cost guide](docs/costs.md) first. Use real account regions and deployment names in the dashboard defaults.
 
 ```powershell
 az login
@@ -97,7 +97,6 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 | Foundry agents | Run latency percentiles, failures, tool performance, token usage, trace IDs, observed telemetry counts | Application Insights instrumentation matching the documented contract |
 | Foundry model usage | OpenAI requests and inference tokens on a selected Foundry account | OpenAI-specific metrics; not a universal endpoint for all Foundry model providers |
 | Estimated token cost | Per-model table of tokens × list price on the Foundry overview, with no secret | An estimate, not billed cost: prices are a table you maintain in `queries/model-prices.kql`, prompt caching overstates input, and PTU, batch, regional and negotiated pricing are not covered. See [cost interpretation](docs/costs.md#native-estimate-from-azure-monitor-metrics-no-secret) |
-| Billed cost, export (opt-in) | A Cost Management export to private storage, read by Azure Data Explorer and queried by Grafana, all by managed identity, with the `azure-ai-costs-native` dashboard | Adds an ADX cluster that bills continuously (roughly $95 per month at retail). The export holds the whole subscription's cost rows, and data starts at deployment. Live-validated with Bicep, apart from a scheduled run and month rollover; Terraform is not live-validated. Optionally, Grafana can reach ADX over a managed private endpoint with the cluster's public access disabled (Bicep live-validated; needs an approval script). See [export to ADX](docs/costs.md#cost-management-export-to-azure-data-explorer) and [private access](docs/costs.md#private-access-from-grafana-optional) |
 | Billed cost, direct query (opt-in) | Grafana's Infinity plugin queries the Cost Management API directly for month-to-date, daily, per-account and per-meter actual cost, with the `azure-ai-costs-infinity` dashboard. No cluster or storage | **Not secretless:** it needs a service principal client secret that Grafana stores (and Terraform state records) and you must rotate. A shared identity, so anyone who can edit queries on the data source inherits its cost access. Throttled live API, 31-day daily limit, no stored history. See [direct queries with Infinity](docs/costs.md#direct-cost-management-queries-with-infinity-opt-in) for its validation status |
 | Evaluations | Optional evaluator score / pass-fail dashboard | Publish evaluation events explicitly; this repo does not run evaluations |
 | Azure OpenAI PTUs | Utilization V2, requests by status, 429s, input/output tokens, gateway latency, cache hit rate, and the deployments reporting utilization | Existing provisioned deployments and supported metric definitions. Allocated PTUs and regional quota are not exposed by Azure Monitor or Resource Graph |
@@ -112,14 +111,14 @@ Existing Foundry/OpenAI accounts and deployments are monitored, not created or r
 
 Microsoft already provides several adjacent options: the [Foundry Agent Monitoring Dashboard](https://learn.microsoft.com/azure/foundry/observability/how-to/how-to-monitor-agents-dashboard), the [Azure Monitor Agents view](https://learn.microsoft.com/azure/azure-monitor/app/agents-view), and an [Azure Managed Grafana Foundry dashboard](https://learn.microsoft.com/azure/managed-grafana/azure-ai-foundry-dashboard). These are worth evaluating first if you primarily need Microsoft's built-in agent or Foundry views.
 
-This repository combines deployable Terraform or Bicep monitoring infrastructure and Grafana dashboards with agent telemetry, Azure OpenAI PTU service metrics, and opt-in billed-cost routes.
+This repository combines deployable Terraform or Bicep monitoring infrastructure and Grafana dashboards with agent telemetry, Azure OpenAI PTU service metrics, and opt-in billed-cost route.
 
 ## Repository layout
 
 ```text
-infra/       Bicep monitoring resources, access, alerts, budget and optional cost routes
+infra/       Bicep monitoring resources, access, alerts, budget and optional cost route
 terraform/   Native Azure resources and Grafana data source/dashboard deployment
-dashboards/  Importable Foundry, agent, PTU, business overview, and opt-in cost dashboards
+dashboards/  Importable Foundry, agent, PTU, business overview, and opt-in cost dashboard
 demo/        Local-only Grafana preview using simulated data
 docs/images/ Actual Grafana screenshots with simulated data (no live Azure connection)
 queries/     Workspace KQL and the Azure Resource Graph inventory query (accounts, projects, ML workspaces)
@@ -150,10 +149,9 @@ These commands do not deploy anything. CI also validates and mock-tests both Ter
 - No prompt, response, tool-argument, or exception-content capture in the demo.
 - Log retention defaults to 30 days with a 1 GB daily ingestion cap. A cap can cause gaps and is **not** a complete spending limit.
 - The Infinity cost query's `subscription` scope uses **Cost Management Reader for the subscription**. The role includes `Microsoft.Support/*`, which can permit support-ticket writes. The `resourceGroupManaged` scope uses a deployment-managed custom role with the single action `Microsoft.CostManagement/query/read` on each monitored group instead. Grafana Viewer access is read-only, not a data-isolation boundary.
-- The opt-in cost export stores the **whole subscription's** cost rows in Azure Data Explorer, so anyone who can use Explore or edit queries on that data source can read them, which is equivalent to Cost Management Reader. Restrict Grafana Editor and Admin roles. It uses managed identities only (no secret, no shared key, no public storage access). It was live-validated with Bicep in a Lab; an Active scheduled run, the month rollover and the Terraform path are not live-validated.
 - The opt-in Infinity cost query is the **only route that stores a secret**: a service principal client secret held in the Grafana data source (and, with Terraform, in the Grafana stage's state). Rotate it before its expiry. Anyone who can edit queries on that data source can run any query the principal's role allows. Prefer the `resourceGroupManaged` scope, whose role has the single action `Microsoft.CostManagement/query/read`, over the subscription-wide **Cost Management Reader** role.
 - [Direct Grafana managed-identity cost queries and delegated per-viewer access](https://github.com/michael-rechani/azure-ai-observability/issues/4) remain under investigation and have not been demonstrated.
-- Grafana hosting, telemetry ingestion/retention and alert rules can incur charges. The opt-in cost export adds a continuously billed Azure Data Explorer cluster (roughly $95 per month at retail). PTU deployment and reservation charges remain separate.
+- Grafana hosting, telemetry ingestion/retention and alert rules can incur charges. PTU deployment and reservation charges remain separate.
 
 For repository security checks and private vulnerability reporting, see [SECURITY.md](SECURITY.md). This repository is licensed under [Apache-2.0](LICENSE).
 

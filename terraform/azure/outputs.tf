@@ -42,28 +42,3 @@ output "cost_infinity_scope" {
     var.cost_infinity_scope == "subscription" ? "/subscriptions/${var.subscription_id}" : try(sort(values(local.cost_infinity_group_scopes))[0], null)
   )
 }
-
-output "cost_export_storage_account_name" {
-  description = "Storage account receiving the Cost Management exports, or null when the export path is disabled."
-  value       = try(azurerm_storage_account.cost_export[0].name, null)
-}
-
-output "cost_export_adx_cluster_uri" {
-  description = "Azure Data Explorer cluster URI for the Grafana data source, or null when the export path is disabled."
-  value       = try(azurerm_kusto_cluster.cost_export[0].uri, null)
-}
-
-output "cost_export_adx_database" {
-  description = "Azure Data Explorer database name for the Grafana data source, or null when the export path is disabled."
-  value       = try(azurerm_kusto_database.cost_export[0].name, null)
-}
-
-output "cost_export_adx_cluster_name" {
-  description = "Azure Data Explorer cluster name. Pass it to scripts/approve_grafana_private_endpoint.ps1 when cost_export_grafana_access is not public."
-  value       = try(azurerm_kusto_cluster.cost_export[0].name, null)
-}
-
-output "cost_export_grafana_private_endpoint_name" {
-  description = "Name of the Grafana managed private endpoint to the cost cluster, or null when cost_export_grafana_access is public."
-  value       = try(azapi_resource.cost_export_grafana_private_endpoint[0].name, null)
-}

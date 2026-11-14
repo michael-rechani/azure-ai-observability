@@ -104,31 +104,6 @@ param costBudgetThresholdPercent int = 80
 @description('Provision the Business overview dashboard (agent and PTU signals) when Grafana is provisioned from dashboardConfiguration. It has no cost panels.')
 param enableBusinessOverview bool = false
 
-@description('Deploy the native cost path: subscription Cost Management Exports to private storage, read by Azure Data Explorer, queried by Grafana over managed identities. No secrets, but it adds a standing Azure Data Explorer cluster cost.')
-param enableCostExport bool = false
-
-@description('Azure Data Explorer SKU for the cost database. The Dev SKU is the cheapest and carries no SLA.')
-param costExportAdxSkuName string = 'Dev(No SLA)_Standard_E2a_v4'
-
-@minValue(1)
-param costExportAdxCapacity int = 1
-
-@description('Object ID of the identity that runs this deployment (for example, az ad signed-in-user show --query id). Required when enableCostExport is true: it is granted AllDatabasesAdmin on the dedicated cost cluster because only that role can set the managed-identity policy the export script needs. Remove the assignment afterwards if you do not need it.')
-param costExportDeployerObjectId string = ''
-
-@allowed(['User', 'App', 'Group'])
-param costExportDeployerPrincipalType string = 'User'
-
-@allowed(['public', 'privateEndpoint', 'privateOnly'])
-@description('How Grafana reaches the cost cluster. public (default) uses the cluster public endpoint. privateEndpoint adds a Grafana managed private endpoint and keeps the public endpoint. privateOnly adds the managed private endpoint and disables the public endpoint. Either private option leaves the connection Pending until scripts/approve_grafana_private_endpoint.ps1 approves it, so use privateEndpoint first if you want Grafana to keep working during the switch.')
-param costExportGrafanaAccess string = 'public'
-
-@description('First scheduled export date (yyyy-MM-dd); it must be in the future. Pass the existing value on redeploys so the schedule is not moved.')
-param costExportStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
-
-@description('Last scheduled export date (yyyy-MM-dd). Exports stop after this date.')
-param costExportEndDate string = dateTimeAdd(utcNow(), 'P5Y', 'yyyy-MM-dd')
-
 @description('Opt in to direct Cost Management queries from Grafana through the Infinity plugin. It needs no export or cluster, but it is NOT secretless: Infinity supports only a service principal client secret, which you create, pass to the Grafana provisioning step (never to this template) and rotate.')
 param enableCostInfinity bool = false
 
@@ -411,44 +386,6 @@ module costInfinityGroupReaders 'modules/cost-group-reader.bicep' = [for group i
   }
 }]
 
-module costExport 'modules/cost-export.bicep' = if (enableCostExport) {
-  name: '${namePrefix}-cost-export'
-  params: {
-    location: location
-    namePrefix: namePrefix
-    grafanaPrincipalId: grafana.identity.principalId
-    adxSkuName: costExportAdxSkuName
-    adxCapacity: costExportAdxCapacity
-    deployerObjectId: costExportDeployerObjectId
-    deployerPrincipalType: costExportDeployerPrincipalType
-    grafanaName: grafana.name
-    grafanaAccess: costExportGrafanaAccess
-  }
-}
-
-module costExports 'modules/cost-exports.bicep' = if (enableCostExport) {
-  name: '${namePrefix}-cost-exports'
-  scope: subscription()
-  params: {
-    location: location
-    exportNamePrefix: '${namePrefix}-${take(suffix, 8)}'
-    storageAccountId: costExport!.outputs.storageAccountId
-    currentContainerName: costExport!.outputs.currentContainerName
-    closedContainerName: costExport!.outputs.closedContainerName
-    rootFolderPath: 'ai-observability'
-    startDate: costExportStartDate
-    endDate: costExportEndDate
-  }
-}
-
-module costExportWriters 'modules/cost-export-writer.bicep' = if (enableCostExport) {
-  name: '${namePrefix}-cost-export-writers'
-  params: {
-    storageAccountName: costExport!.outputs.storageAccountName
-    exportIdentities: costExports!.outputs.exportIdentities
-  }
-}
-
 module budget 'modules/budget.bicep' = if (monthlyAiCostBudgetAmount > 0) {
   name: '${namePrefix}-budget'
   scope: subscription()
@@ -470,18 +407,12 @@ output grafanaPrincipalId string = grafana.identity.principalId
 output workspaceResourceId string = workspace.id
 output applicationInsightsResourceId string = insights.id
 output actionGroupResourceId string = actionGroup.id
-output costExportStorageAccountName string = enableCostExport ? costExport!.outputs.storageAccountName : ''
-output costExportAdxClusterName string = enableCostExport ? costExport!.outputs.clusterName : ''
-output costExportPrivateEndpointName string = enableCostExport ? costExport!.outputs.privateEndpointName : ''
 output dashboardConfiguration object = {
   monitoringWorkspaceResourceId: workspace.id
   telemetryWorkspaceResourceId: empty(dashboardTelemetryWorkspaceResourceId) ? workspace.id : dashboardTelemetryWorkspaceResourceId
   foundryAccount: foundryDashboardAccount
   ptuAccount: ptuDashboardAccount
   enableBusinessOverview: enableBusinessOverview
-  enableCostExportDashboard: enableCostExport
-  costExportClusterUri: enableCostExport ? costExport!.outputs.clusterUri : ''
-  costExportDatabase: enableCostExport ? costExport!.outputs.databaseName : ''
   enableCostInfinityDashboard: enableCostInfinity
   enableCostInfinityAlert: enableCostInfinity && enableCostInfinityAlert
   costInfinityAlertIntervalMinutes: costInfinityAlertIntervalMinutes

@@ -362,5 +362,5 @@
       "pluginName": "Infinity"
     }
   ],
-  "description": "Actual cost of Azure AI resources queried directly from the Cost Management Query API through the Infinity data source, with no export, Function or Data Explorer cluster. The data source uses a service principal client secret that you must rotate, and every user who can edit its queries inherits that principal's cost access. No data can mean billing has not caught up, not zero cost."
+  "description": "Actual cost of Azure AI resources queried directly from the Cost Management Query API through the Infinity data source, with no export, storage or cluster. The data source uses a service principal client secret that you must rotate, and every user who can edit its queries inherits that principal's cost access. No data can mean billing has not caught up, not zero cost."
 }

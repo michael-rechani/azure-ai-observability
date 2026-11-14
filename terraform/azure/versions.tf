@@ -6,7 +6,7 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.81"
     }
-    # Cost Management exports need a managed identity, which azurerm cannot set on them.
+    # The Grafana Infinity plugin is enabled through an azapi update, which azurerm cannot do.
     azapi = {
       source  = "Azure/azapi"
       version = "~> 2.4"
@@ -20,11 +20,5 @@ provider "azapi" {
 
 provider "azurerm" {
   subscription_id = var.subscription_id
-  features {
-    storage {
-      # Storage is managed through ARM only. The cost account disables shared keys, and tenants
-      # that force public network access off make the data plane unreachable from the deployer.
-      data_plane_available = false
-    }
-  }
+  features {}
 }

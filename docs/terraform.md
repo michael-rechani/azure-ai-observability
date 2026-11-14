@@ -64,33 +64,9 @@ Agent failure-rate, retained-span p95 latency, and heartbeat rules are opt-in (`
 
 An optional monthly Azure Cost Management budget is disabled by default (`monthly_ai_cost_budget_amount = 0`). To enable it, enter a positive amount in subscription billing currency and set `cost_budget_start_date` and `cost_budget_end_date` as UTC `YYYY-MM-DDT00:00:00Z` values. It includes only the configured monitored AI account resource IDs and sends the existing action-group email at `cost_budget_threshold_percent` (80% by default). This is an alert, not a hard cap; billing data can lag, and account-scope budgets are not PTU-deployment- or reservation-specific.
 
-### Optional cost export to Azure Data Explorer
-
-To get billed cost without a service principal secret, add to the Azure stage's `local.tfvars`:
-
-```hcl
-enable_cost_export     = true
-cost_export_start_date = "2026-01-15" # Required, UTC YYYY-MM-DD, in the future. Keep it unchanged on later applies.
-```
-
-Terraform creates a private storage account, two subscription-scoped Cost Management exports (daily month-to-date and monthly last-month) through the `azapi` provider (azurerm cannot give an export a managed identity), an Azure Data Explorer cluster and database with external tables over both containers, and the roles that let each export write, ADX read, and Grafana query. `cost_export_end_date` defaults to 43,800 hours after the start (about five years); exports stop after it. `cost_export_adx_sku_name` defaults to the cheapest Dev/Test SKU, which bills continuously (roughly $95 per month at retail; confirm current pricing). Terraform also grants the identity running it **AllDatabasesAdmin on the dedicated cost cluster**, because only that role can set the database `managed_identity` policy the export script needs. Set `cost_export_deployer_principal_type = "App"` when a service principal runs Terraform (default `User`); you can remove the assignment afterwards, but the next apply re-adds it. Register the provider first with `az provider register --namespace Microsoft.CostManagementExports`. No secret is involved.
-
-In the Grafana stage, set `enable_cost_export_dashboard = true` and pass the Azure stage's outputs:
-
-```powershell
-terraform -chdir=terraform\azure output -raw cost_export_adx_cluster_uri
-terraform -chdir=terraform\azure output -raw cost_export_adx_database
-```
-
-This creates an Azure Data Explorer data source (managed-identity authentication, no secret) and the `azure-ai-costs-native` dashboard. The export holds the whole subscription's cost rows, so anyone who can edit queries on that data source can read them. A tenant policy that forces storage public access off may normalize the account's network setting and show as drift on later plans.
-
-To let Grafana reach the cluster over a managed private endpoint, set `cost_export_grafana_access` to `privateEndpoint` (keeps the public endpoint) or `privateOnly` (also disables it). Terraform creates the endpoint through `azapi`, but the connection stays Pending until you approve it with `scripts\approve_grafana_private_endpoint.ps1 -ResourceGroupName <rg> -ClusterName (terraform output -raw cost_export_adx_cluster_name) -GrafanaName <grafana>`, because Azure generates the connection name. Apply `privateEndpoint` first, approve, confirm the dashboard returns data, then switch to `privateOnly`; Terraform's `public_network_access_enabled` then closes the cluster to the internet. See [Private access from Grafana](costs.md#private-access-from-grafana-optional).
-
-**This path passes `terraform validate` and mock-provider tests but has not been applied live**, including the managed private endpoint; the equivalent [Bicep deployment](bicep.md#optional-cost-export-to-azure-data-explorer) was. See [Cost Management export to Azure Data Explorer](costs.md#cost-management-export-to-azure-data-explorer) for the full caveats.
-
 ### Optional direct cost queries with Infinity
 
-The cheapest billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin, with no cluster or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret that Grafana stores and you must rotate, and **the Grafana stage's Terraform state will contain that secret**. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first.
+The billed-cost path: Grafana queries the Cost Management Query API directly through the Infinity plugin, with no cluster or storage. **It is not secretless.** Infinity signs in as a service principal with a client secret that Grafana stores and you must rotate, and **the Grafana stage's Terraform state will contain that secret**. Read [the trade-offs](costs.md#direct-cost-management-queries-with-infinity-opt-in) first.
 
 Create the service principal with the `az ad` commands in [Set it up](costs.md#set-it-up). In the Azure stage's `local.tfvars`:
 
@@ -114,7 +90,7 @@ Set `enable_cost_infinity_dashboard = true`, `cost_infinity_tenant_id`, `cost_in
 
 The alert rule is on by default. Tune or disable it with `enable_cost_infinity_alert`, `cost_infinity_alert_interval_minutes` (5-1440, default 60) and `cost_infinity_alert_pending_minutes` (0-1440, default 60). Terraform creates the rule, not a way to notify anyone: add a Grafana contact point and a notification policy that routes `component = cost-infinity`, because Azure Managed Grafana's default contact point has no integration. See [Get alerted when the secret fails](costs.md#get-alerted-when-the-secret-fails).
 
-**This path has been applied live** in a throwaway deployment, with both stages applied, re-planned with no changes, and destroyed (see [what has been validated](costs.md#what-has-been-validated-1)). The `azapi` resource installed the Infinity plugin, the single-action role limited queries to the monitored resource group, and all four panels returned HTTP 200 through Grafana. Rotating the secret changed the data source in place. The monitored group had no billed Azure AI cost, so no panel returned rows in that run. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
+**This path has been applied live** in a throwaway deployment, with both stages applied, re-planned with no changes, and destroyed (see [what has been validated](costs.md#what-has-been-validated)). The `azapi` resource installed the Infinity plugin, the single-action role limited queries to the monitored resource group, and all four panels returned HTTP 200 through Grafana. Rotating the secret changed the data source in place. The monitored group had no billed Azure AI cost, so no panel returned rows in that run. If an in-place update of the Grafana workspace removes the plugin, the `azapi` resource is replaced and reinstalls it on the next apply. Rotate the secret as described in [Rotate or remove the secret](costs.md#rotate-or-remove-the-secret) and reapply the Grafana stage.
 
 From the repository root in PowerShell:
 

@@ -25,14 +25,14 @@ Customers deploy into their own Azure subscriptions. Grafana uses a managed iden
 ## Capabilities and Constraints
 
 - PTU metrics come from Azure Monitor; agent panels require compatible, real telemetry.
-- Billed cost is not part of the default deployment. The Azure portal and an optional budget alert are the baseline; opt-in dashboards read Azure Cost Management actual cost, either live through Infinity (which needs a client secret) or from an export to Azure Data Explorer. Billing can lag, and neither route reports amortized cost.
+- Billed cost is not part of the default deployment. The Azure portal and an optional budget alert are the baseline; opt-in dashboards read Azure Cost Management actual cost live through Infinity (which needs a client secret). Billing can lag, and it does not report amortized cost.
 - Screenshots and local demo dashboards use simulated data. Live Azure deployment and customer-specific telemetry must be validated in the target environment.
 - Private networking, sovereign-cloud endpoints, and strict customer data separation are not provided by the starter defaults.
 - The business overview summarizes observed agent activity and PTU signals, with no cost data; absent or unsupported telemetry must be shown as unavailable, not zero.
 
 ## Evidence on Hand
 
-The repository contains Grafana dashboard JSON, simulated preview screenshots, Terraform and Bicep deployment paths, offline tests, and CI. The preview screenshots are not evidence of a live Azure deployment. Both deployment paths were also applied once in an isolated Lab subscription, where the Foundry, PTU and agent-trace panels and the PTU alerts returned or fired on real data. That run predates the removal of the optional cost pipeline, and the opt-in billed-cost routes are the least-proven part (see [billed cost options](docs/costs.md)).
+The repository contains Grafana dashboard JSON, simulated preview screenshots, Terraform and Bicep deployment paths, offline tests, and CI. The preview screenshots are not evidence of a live Azure deployment. Both deployment paths were also applied once in an isolated Lab subscription, where the Foundry, PTU and agent-trace panels and the PTU alerts returned or fired on real data. That run predates the removal of the optional cost pipeline, and the opt-in billed-cost route is the least-proven part (see [billed cost options](docs/costs.md)).
 
 ## Product Principles
 

@@ -8,9 +8,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 DS = {"type": "grafana-azure-monitor-datasource", "uid": "${DS_AZURE_MONITOR}"}
-DS_ADX = {"type": "grafana-azure-data-explorer-datasource", "uid": "${DS_AZURE_DATA_EXPLORER}"}
 DS_INFINITY = {"type": "yesoreyeram-infinity-datasource", "uid": "${DS_COST_INFINITY}"}
-ADX_DATABASE = "costs"
 NAMESPACE = "Microsoft.CognitiveServices/accounts"
 COST_QUERY_URL = "https://management.azure.com${costScope}/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
 # Rows become one object per row keyed by column name, so the panels never depend on column order.
@@ -204,7 +202,7 @@ def token_cost_panel(number):
             "a PTU deployment are priced as if pay-as-you-go. A model missing from the price table shows "
             "'no list price' and is left out of the cost total in the footer (its tokens are still "
             "counted). Costs are rounded to cents. Use Azure Cost Management, or the optional cost "
-            "dashboards, for billed cost."
+            "dashboard, for billed cost."
         ),
     )
     item["targets"] = [input_tokens, output_tokens, prices]
@@ -236,15 +234,6 @@ def resource_graph(filename, subscription):
             "query": (ROOT / "queries" / filename).read_text(encoding="utf-8"),
             "resultFormat": "table", "scope": "subscription",
         },
-    }
-
-
-def adx_query(filename, table=False):
-    return {
-        "refId": "A", "datasource": DS_ADX, "queryType": "KQL", "querySource": "raw",
-        "database": ADX_DATABASE,
-        "query": (ROOT / "queries" / filename).read_text(encoding="utf-8"),
-        "resultFormat": "table" if table else "time_series",
     }
 
 
@@ -604,75 +593,12 @@ def build(config):
     business["description"] = (
         "A concise view of observed agent activity and Azure OpenAI PTU signals. "
         "It does not calculate a blended health score and shows no cost; use Azure Cost Management or the "
-        "optional cost dashboards for billed cost. No data can indicate no traffic, missing permissions, "
+        "optional cost dashboard for billed cost. No data can indicate no traffic, missing permissions, "
         "unsupported metrics, or absent instrumentation. Agent telemetry requires application instrumentation."
     )
     business["timezone"] = "utc"
     business["refresh"] = "1h"
     business["time"] = {"from": "now-7d", "to": "now"}
-
-    native_panels = [
-        panel(
-            1, "Actual cost by currency",
-            adx_query("adx-cost-total.kql", table=True),
-            unit="none", kind="table",
-            description="Actual AI cost in the selected UTC period, read from the Cost Management export. "
-            "Billing-currency cost and USD cost are separate columns. Billing can be revised or delayed.",
-        ),
-        panel(
-            2, "Export data freshness",
-            adx_query("adx-cost-freshness.kql", table=True),
-            unit="none", kind="table",
-            description="What the export holds, not when it last ran. A growing DaysBehind means the export is "
-            "stale or billing is delayed; missing days are not zero cost.",
-        ),
-        panel(
-            3, "Daily actual cost by account",
-            adx_query("adx-cost-daily.kql"),
-            unit="none",
-            description="Daily actual cost per Foundry or Azure OpenAI account in its billing currency. "
-            "Each currency is a separate series.",
-        ),
-        panel(
-            4, "Cost by account",
-            adx_query("adx-cost-by-account.kql", table=True),
-            unit="none", kind="table",
-            description="Actual cost by account and resource group for the selected period.",
-        ),
-        panel(
-            5, "Cost by meter",
-            adx_query("adx-cost-by-meter.kql", table=True),
-            unit="none", kind="table",
-            description="Actual cost and quantity by meter, which separates input, output and provisioned charges.",
-        ),
-    ]
-    for item in native_panels:
-        item["datasource"] = DS_ADX
-    for item, position in zip(native_panels, (
-        {"h": 6, "w": 12, "x": 0, "y": 0},
-        {"h": 6, "w": 12, "x": 12, "y": 0},
-        {"h": 9, "w": 24, "x": 0, "y": 6},
-        {"h": 9, "w": 12, "x": 0, "y": 15},
-        {"h": 9, "w": 12, "x": 12, "y": 15},
-    ), strict=True):
-        item["gridPos"] = position
-    native = dashboard(
-        "azure-ai-costs-native", "Azure AI - Cost visibility (Cost Management export)",
-        [], native_panels,
-        inputs=[{
-            "name": "DS_AZURE_DATA_EXPLORER", "label": "Azure Data Explorer",
-            "type": "datasource", "pluginId": "grafana-azure-data-explorer-datasource",
-            "pluginName": "Azure Data Explorer",
-        }],
-    )
-    native["description"] = (
-        "Actual cost of Azure AI resources from a Cost Management export read by Azure Data Explorer. "
-        "The export covers one subscription and begins at deployment. "
-        "No data can mean the export has not run yet, not zero cost."
-    )
-    native["timezone"] = "utc"
-    native["refresh"] = "1h"
-    native["time"] = {"from": "now-30d", "to": "now"}
 
     infinity_panels = [
         panel(
@@ -742,7 +668,7 @@ def build(config):
     )
     infinity["description"] = (
         "Actual cost of Azure AI resources queried directly from the Cost Management Query API through the "
-        "Infinity data source, with no export, Function or Data Explorer cluster. The data source uses a "
+        "Infinity data source, with no export, storage or cluster. The data source uses a "
         "service principal client secret that you must rotate, and every user who can edit its queries "
         "inherits that principal's cost access. No data can mean billing has not caught up, not zero cost."
     )
@@ -753,7 +679,6 @@ def build(config):
         "foundry-overview.json": foundry, "foundry-agents.json": agents,
         "openai-ptu.json": ptu,
         "business-overview.json": business,
-        "azure-ai-costs-native.json": native,
         "azure-ai-costs-infinity.json": infinity,
     }
 

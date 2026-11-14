@@ -23,9 +23,6 @@ $configuration = @{
         deployment = 'ptu-one'
     }
     enableBusinessOverview = $env:TEST_BUSINESS_OVERVIEW -ne 'false'
-    enableCostExportDashboard = $env:TEST_COST_EXPORT -eq 'true'
-    costExportClusterUri = if ($env:TEST_COST_EXPORT_URI) { $env:TEST_COST_EXPORT_URI } else { 'https://adx.eastus.kusto.windows.net' }
-    costExportDatabase = 'costs'
     enableCostInfinityDashboard = $env:TEST_COST_INFINITY -eq 'true'
     costInfinityTenantId = '55555555-5555-5555-5555-555555555555'
     costInfinityClientId = if ($env:TEST_INFINITY_CLIENT_ID) { $env:TEST_INFINITY_CLIENT_ID } else { '66666666-6666-6666-6666-666666666666' }
@@ -101,15 +98,14 @@ function global:Invoke-WebRequest {
         }
         else {
             $uid = $path.Split('/')[-1]
-            $isAdx = $uid -eq 'ai-observability-azure-data-explorer'
             $isInfinity = $uid -eq 'ai-observability-cost-infinity'
-            $unmanaged = $mode -eq 'unmanaged-source' -or ($isAdx -and $mode -eq 'unmanaged-adx-source') -or ($isInfinity -and $mode -eq 'unmanaged-infinity-source')
+            $unmanaged = $mode -eq 'unmanaged-source' -or ($isInfinity -and $mode -eq 'unmanaged-infinity-source')
             $content = @{
-                id = if ($isInfinity) { 6 } elseif ($isAdx) { 5 } else { 4 }
-                version = if ($isInfinity) { 2 } elseif ($isAdx) { 3 } else { 7 }
+                id = if ($isInfinity) { 6 } else { 4 }
+                version = if ($isInfinity) { 2 } else { 7 }
                 uid = $uid
-                name = if ($isInfinity) { 'AI observability - Cost Management (Infinity)' } elseif ($isAdx) { 'AI observability - Azure Data Explorer' } else { 'AI observability - Azure Monitor' }
-                type = if ($isInfinity) { 'yesoreyeram-infinity-datasource' } elseif ($isAdx) { 'grafana-azure-data-explorer-datasource' } else { 'grafana-azure-monitor-datasource' }
+                name = if ($isInfinity) { 'AI observability - Cost Management (Infinity)' } else { 'AI observability - Azure Monitor' }
+                type = if ($isInfinity) { 'yesoreyeram-infinity-datasource' } else { 'grafana-azure-monitor-datasource' }
                 readOnly = $false
                 jsonData = if ($unmanaged) { @{} } else { @{ aiObservabilityOwner = 'azure-ai-observability-bicep-v1' } }
             }

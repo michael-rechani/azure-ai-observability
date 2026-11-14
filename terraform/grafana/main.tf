@@ -8,19 +8,6 @@ resource "grafana_data_source" "azure_monitor" {
   })
 }
 
-resource "grafana_data_source" "azure_data_explorer" {
-  count = var.enable_cost_export_dashboard ? 1 : 0
-  type  = "grafana-azure-data-explorer-datasource"
-  name  = "AI observability - Azure Data Explorer"
-  uid   = "ai-observability-azure-data-explorer"
-  json_data_encoded = jsonencode({
-    clusterUrl       = var.cost_export_cluster_uri
-    defaultDatabase  = var.cost_export_database
-    dataConsistency  = "strong"
-    azureCredentials = { authType = "msi" }
-  })
-}
-
 # Infinity cannot use a managed identity, so this is the one data source that holds a secret.
 resource "grafana_data_source" "infinity" {
   count = var.enable_cost_infinity_dashboard ? 1 : 0
@@ -63,8 +50,6 @@ locals {
     openai_ptu       = "openai-ptu.json"
     }, var.enable_business_overview ? {
     business_overview = "business-overview.json"
-    } : {}, var.enable_cost_export_dashboard ? {
-    azure_ai_costs_native = "azure-ai-costs-native.json"
     } : {}, var.enable_cost_infinity_dashboard ? {
     azure_ai_costs_infinity = "azure-ai-costs-infinity.json"
   } : {})
@@ -103,7 +88,6 @@ locals {
     foundry_overview        = merge(local.foundry_defaults, local.telemetry_defaults)
     foundry_agents          = local.telemetry_defaults
     openai_ptu              = local.ptu_defaults
-    azure_ai_costs_native   = tomap({})
     azure_ai_costs_infinity = tomap({ costScope = var.cost_infinity_scope != null ? var.cost_infinity_scope : "/subscriptions/${var.subscription_id}" })
     business_overview = merge(
       local.telemetry_defaults,
@@ -116,30 +100,26 @@ resource "grafana_dashboard" "monitoring" {
   for_each = local.dashboard_files
   config_json = replace(
     replace(
-      replace(
-        jsonencode(merge(local.source_dashboards[each.key], {
-          links = [
-            for link in try(local.source_dashboards[each.key].links, []) :
-            link if contains(local.dashboard_uids, split("/", link.url)[2])
+      jsonencode(merge(local.source_dashboards[each.key], {
+        links = [
+          for link in try(local.source_dashboards[each.key].links, []) :
+          link if contains(local.dashboard_uids, split("/", link.url)[2])
+        ]
+        templating = merge(local.source_dashboards[each.key].templating, {
+          list = [
+            for variable in local.source_dashboards[each.key].templating.list :
+            contains(keys(local.dashboard_default_values[each.key]), variable.name) ? merge(variable, {
+              query = local.dashboard_default_values[each.key][variable.name]
+              current = merge(try(variable.current, {}), {
+                text  = local.dashboard_default_values[each.key][variable.name]
+                value = local.dashboard_default_values[each.key][variable.name]
+              })
+            }) : variable
           ]
-          templating = merge(local.source_dashboards[each.key].templating, {
-            list = [
-              for variable in local.source_dashboards[each.key].templating.list :
-              contains(keys(local.dashboard_default_values[each.key]), variable.name) ? merge(variable, {
-                query = local.dashboard_default_values[each.key][variable.name]
-                current = merge(try(variable.current, {}), {
-                  text  = local.dashboard_default_values[each.key][variable.name]
-                  value = local.dashboard_default_values[each.key][variable.name]
-                })
-              }) : variable
-            ]
-          })
-        })),
-        "$${DS_AZURE_MONITOR}",
-        grafana_data_source.azure_monitor.uid
-      ),
-      "$${DS_AZURE_DATA_EXPLORER}",
-      try(grafana_data_source.azure_data_explorer[0].uid, "")
+        })
+      })),
+      "$${DS_AZURE_MONITOR}",
+      grafana_data_source.azure_monitor.uid
     ),
     "$${DS_COST_INFINITY}",
     try(grafana_data_source.infinity[0].uid, "")
@@ -150,10 +130,6 @@ resource "grafana_dashboard" "monitoring" {
     precondition {
       condition     = each.key != "business_overview" || local.telemetry_workspace != null
       error_message = "Set dashboard_defaults.telemetry_workspace_resource_id (or monitoring_workspace_resource_id) when enabling the Business overview dashboard."
-    }
-    precondition {
-      condition     = each.key != "azure_ai_costs_native" || var.cost_export_cluster_uri != null
-      error_message = "Set cost_export_cluster_uri (the cost_export_adx_cluster_uri output of the Azure stage) when enabling the cost export dashboard."
     }
     precondition {
       condition = alltrue([
